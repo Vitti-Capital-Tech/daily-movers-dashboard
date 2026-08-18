@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import { saveMover, type MoverFormState } from "@/app/daily-movers/actions";
+import { saveMover, type MoverFormState } from "@/actions/movers";
 import { CompanyCombobox } from "@/components/daily-movers/company-combobox";
 import { Button } from "@/components/ui/button";
 import {

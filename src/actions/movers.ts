@@ -5,6 +5,12 @@ import { revalidatePath } from "next/cache";
 
 import { getDb } from "@/db";
 import { companies, dailyMovers } from "@/db/schema";
+import {
+  NotAuthenticatedError,
+  NotAuthorisedError,
+  requireAdmin,
+  type SessionUser,
+} from "@/lib/auth";
 import { parseMoverForm } from "@/lib/validation";
 
 export type MoverFormState = {
@@ -14,15 +20,23 @@ export type MoverFormState = {
 } | null;
 
 /**
- * Single chokepoint for every write.
- *
- * TODO(auth): currently a no-op — the app has no auth yet, so anyone who can
- * reach it can write. Supabase Auth lands next; the check goes HERE (and in an
- * RLS policy as a second layer), not in the UI. Hiding the button is not a
- * permission check.
+ * Single chokepoint for every write. Server-side and role-based — hiding the
+ * button in the UI is not a permission check, since a Server Action is a public
+ * HTTP endpoint that anyone can call directly.
  */
-async function assertCanWrite(): Promise<void> {
-  return;
+async function assertCanWrite(): Promise<SessionUser> {
+  return requireAdmin();
+}
+
+/** Turns an auth failure into a form message instead of a stack trace. */
+function authMessage(error: unknown): string | null {
+  if (error instanceof NotAuthenticatedError) {
+    return "Your session expired. Reload the page and sign in again.";
+  }
+  if (error instanceof NotAuthorisedError) {
+    return "Your account has read-only access, so this wasn't saved.";
+  }
+  return null;
 }
 
 async function revalidateFor(companyId: number) {
@@ -44,7 +58,14 @@ export async function saveMover(
   _prev: MoverFormState,
   formData: FormData,
 ): Promise<MoverFormState> {
-  await assertCanWrite();
+  let actor: SessionUser;
+  try {
+    actor = await assertCanWrite();
+  } catch (error) {
+    const message = authMessage(error);
+    if (message) return { ok: false, message };
+    throw error;
+  }
 
   const parsed = parseMoverForm(formData);
   if (!parsed.success) {
@@ -76,7 +97,9 @@ export async function saveMover(
         return { ok: false, message: "That Daily Mover no longer exists." };
       }
     } else {
-      await db.insert(dailyMovers).values(parsed.data);
+      await db
+        .insert(dailyMovers)
+        .values({ ...parsed.data, createdBy: actor.email });
     }
 
     await revalidateFor(parsed.data.companyId);
@@ -100,7 +123,13 @@ export async function deleteMover(
   _prev: MoverFormState,
   formData: FormData,
 ): Promise<MoverFormState> {
-  await assertCanWrite();
+  try {
+    await assertCanWrite();
+  } catch (error) {
+    const message = authMessage(error);
+    if (message) return { ok: false, message };
+    throw error;
+  }
 
   const rawId = formData.get("id");
   const id = typeof rawId === "string" ? Number(rawId) : NaN;

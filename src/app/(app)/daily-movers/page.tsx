@@ -5,6 +5,7 @@ import { MoversTable } from "@/components/daily-movers/movers-table";
 import { Pagination } from "@/components/daily-movers/pagination";
 import { Card, CardContent } from "@/components/ui/card";
 import { isDbConfigured } from "@/db";
+import { requireSessionUser } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-error";
 import {
   DEFAULT_PER_PAGE,
@@ -84,6 +85,7 @@ export default async function DailyMoversPage({
     );
   }
 
+  const user = await requireSessionUser();
   const filters = parseFilters(params);
 
   let result: Awaited<ReturnType<typeof listDailyMovers>>;
@@ -109,7 +111,9 @@ export default async function DailyMoversPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <PageHeading />
-        <MoverDialog options={options} mode="create" />
+        {/* Hidden for viewers as a courtesy — `assertCanWrite()` in the Server
+            Action is what actually enforces it. */}
+        {user.canWrite ? <MoverDialog options={options} mode="create" /> : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -128,6 +132,7 @@ export default async function DailyMoversPage({
         options={options}
         sort={filters.sort ?? "date"}
         dir={filters.dir ?? "desc"}
+        canWrite={user.canWrite}
       />
 
       <Pagination

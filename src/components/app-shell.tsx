@@ -2,13 +2,22 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { NavLink } from "@/components/nav-link";
+import { UserMenu } from "@/components/user-menu";
+import { Badge } from "@/components/ui/badge";
+import type { SessionUser } from "@/lib/auth";
 
 const NAV = [
   { href: "/daily-movers", label: "Daily Movers" },
   { href: "/companies", label: "Companies" },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  user,
+}: {
+  children: ReactNode;
+  user: SessionUser;
+}) {
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-card/40 md:flex">
@@ -31,20 +40,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        <div className="mt-auto px-6 py-6 text-xs text-muted-foreground">
-          V1 — research archive
+        <div className="mt-auto space-y-3 px-4 py-5">
+          {!user.canWrite ? (
+            <Badge variant="outline" className="font-normal">
+              Read-only access
+            </Badge>
+          ) : null}
+          <UserMenu user={user} />
         </div>
       </aside>
 
       <main className="min-w-0 flex-1">
-        {/* Mobile nav */}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3 md:hidden">
-          <span className="mr-2 text-sm font-semibold">Vitti Capital</span>
+          <span className="mr-1 text-sm font-semibold">Vitti Capital</span>
           {NAV.map((item) => (
             <NavLink key={item.href} href={item.href} compact>
               {item.label}
             </NavLink>
           ))}
+          <div className="ml-auto">
+            <UserMenu user={user} compact />
+          </div>
         </div>
 
         <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-8 md:py-10">

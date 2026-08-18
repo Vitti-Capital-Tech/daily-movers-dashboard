@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { deleteMover, type MoverFormState } from "@/app/daily-movers/actions";
+import { deleteMover, type MoverFormState } from "@/actions/movers";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
 import { Button } from "@/components/ui/button";
 import {

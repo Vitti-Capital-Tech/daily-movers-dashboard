@@ -12,7 +12,9 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
+import { authUsers } from "drizzle-orm/supabase";
 
 /**
  * Whether the quoted share-price move is an intra-session figure or the
@@ -20,6 +22,37 @@ import {
  * wording from the PDF is preserved in `daily_movers.move_window_label`.
  */
 export const moveTypeEnum = pgEnum("move_type", ["intraday", "closing"]);
+
+export const userRoleEnum = pgEnum("user_role", ["admin", "viewer"]);
+
+/**
+ * Write-access allowlist, keyed by email. A table rather than a hardcoded list
+ * in the trigger so granting write access is one INSERT, with no code change
+ * or deploy.
+ */
+export const adminEmails = pgTable("admin_emails", {
+  email: text("email").primaryKey(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
+
+/**
+ * One row per signed-in user, created automatically by a trigger on
+ * `auth.users` (see drizzle/auth-setup.sql). `role` is the authorisation
+ * source of truth — checked server-side in `assertCanWrite()`.
+ */
+export const profiles = pgTable("profiles", {
+  id: uuid("id")
+    .primaryKey()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: userRoleEnum("role").notNull().default("viewer"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
 
 /**
  * One row per listed company. Daily movers reference this by id, never by
@@ -42,7 +75,7 @@ export const companies = pgTable(
     uniqueIndex("companies_ticker_key").on(t.ticker),
     index("companies_name_idx").on(t.name),
   ],
-);
+).enableRLS();
 
 /**
  * Closed list of catalyst types. A lookup table rather than free text so the
@@ -58,7 +91,7 @@ export const catalysts = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [uniqueIndex("catalysts_slug_key").on(t.slug)],
-);
+).enableRLS();
 
 export const analysts = pgTable(
   "analysts",
@@ -68,7 +101,7 @@ export const analysts = pgTable(
     active: boolean("active").notNull().default(true),
   },
   (t) => [uniqueIndex("analysts_name_key").on(t.name)],
-);
+).enableRLS();
 
 export const dailyMovers = pgTable(
   "daily_movers",
@@ -150,7 +183,7 @@ export const dailyMovers = pgTable(
     index("daily_movers_date_idx").on(t.moveDate.desc()),
     index("daily_movers_catalyst_idx").on(t.catalystId),
   ],
-);
+).enableRLS();
 
 export const companiesRelations = relations(companies, ({ many }) => ({
   dailyMovers: many(dailyMovers),
@@ -185,3 +218,5 @@ export type Analyst = typeof analysts.$inferSelect;
 export type DailyMover = typeof dailyMovers.$inferSelect;
 export type NewDailyMover = typeof dailyMovers.$inferInsert;
 export type MoveType = (typeof moveTypeEnum.enumValues)[number];
+export type Profile = typeof profiles.$inferSelect;
+export type UserRole = (typeof userRoleEnum.enumValues)[number];

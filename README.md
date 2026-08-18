@@ -10,6 +10,7 @@ comes up again you can immediately see what we said last time.
 | Framework | Next.js 16 (App Router) + TypeScript |
 | UI | Tailwind 4 + shadcn/ui (Base UI primitives) |
 | Database | Postgres (Supabase) |
+| Auth | Supabase Auth — email magic link |
 | Data access | Drizzle ORM + postgres.js |
 | Validation | Zod |
 
@@ -17,11 +18,17 @@ comes up again you can immediately see what we said last time.
 
 ```bash
 npm install
-cp .env.example .env.local     # then fill in DATABASE_URL
+cp .env.example .env.local     # then fill in DATABASE_URL + Supabase keys
 npm run db:push                # create the tables
+npm run db:auth                # auth trigger, domain allowlist, admin seed
 npm run db:seed                # catalysts, analyst, JBH + SPZ samples
 npm run dev
 ```
+
+> `db:push` currently crashes once `profiles.id` references `auth.users` —
+> drizzle-kit fails introspecting a CHECK constraint in Supabase's `auth`
+> schema. Use `npm run db:generate` then `npm run db:apply <file.sql>` instead;
+> the generated SQL is reviewable, which is arguably better anyway.
 
 ### DATABASE_URL
 
@@ -48,8 +55,52 @@ account password.
 | `npm run db:generate` | Generate a SQL migration from the schema |
 | `npm run db:push` | Push the schema straight to the database |
 | `npm run db:migrate` | Apply generated migrations |
+| `npm run db:apply <f>` | Apply one .sql file, statement by statement, re-runnably |
+| `npm run db:auth` | Apply `drizzle/auth-setup.sql` (trigger, allowlist, admin seed) |
 | `npm run db:seed` | Idempotent seed |
 | `npm run db:studio` | Drizzle Studio |
+
+## Auth
+
+**Sign-in:** email magic link. No passwords. Restricted to
+`@vitti.capital` addresses, enforced in three places — the login action (clear
+error message, and avoids emailing outsiders), the middleware (an out-of-domain
+session is signed out, not just redirected), and a database trigger on
+`auth.users` that refuses the sign-up outright.
+
+**Roles:** `profiles.role` is either `admin` or `viewer`. Everyone gets
+`viewer` on first sign-in; `admin` is granted by membership of the
+`admin_emails` table. A trigger keeps roles in step, so granting write access is
+one statement and takes effect immediately:
+
+```sql
+INSERT INTO admin_emails (email, note) VALUES ('someone@vitti.capital', 'why');
+DELETE FROM admin_emails WHERE email = 'someone@vitti.capital';   -- revoke
+```
+
+**Where enforcement lives:**
+
+| Layer | Protects against | Mechanism |
+| --- | --- | --- |
+| Middleware | Unauthenticated page access | Redirect to `/login`, session refresh |
+| `(app)/layout.tsx` | A middleware misconfiguration | Re-checks the session server-side |
+| `assertCanWrite()` | Non-admins calling a Server Action directly | `requireAdmin()` at the top of every write |
+| RLS | Anyone using the public anon key | RLS on, zero policies — see below |
+
+Hiding the Add/Edit buttons is a courtesy, not a control: a Server Action is a
+public HTTP endpoint, so the check has to be server-side.
+
+### Why RLS has no policies
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` ships to the browser, so anyone can call
+Supabase's auto-generated REST API with it. Every table therefore has RLS
+enabled and **no policies at all**, which makes that API return nothing and
+refuse writes. The app is unaffected because Drizzle connects as the table
+owner, which bypasses RLS.
+
+The consequence to know about: any future feature that queries Supabase
+*directly from the browser* will read zero rows until a policy is added
+deliberately. All data access is meant to go through Drizzle server-side.
 
 ## Layout
 
@@ -104,13 +155,13 @@ anything a client component needs at runtime lives in `lib/movers.ts` instead.
 
 ## Not done yet
 
-- **Auth.** There is no authentication. `assertCanWrite()` in
-  `src/app/daily-movers/actions.ts` is the single chokepoint and is currently a
-  no-op — anyone who can reach the app can write. Supabase Auth plus an RLS
-  policy are next.
 - **PDF upload + extraction.** Schema fields exist (`report_storage_path`,
   `extraction`); the pipeline does not.
 - **Adding new companies from the UI.** Companies come from the seed for now.
+- **Admin screen for `admin_emails`.** Granting write access is a SQL statement
+  (above), not a UI.
+- **Rate limiting on the magic-link endpoint.** Supabase applies its own send
+  limits, but there's nothing app-side.
 
 ## Open question
 

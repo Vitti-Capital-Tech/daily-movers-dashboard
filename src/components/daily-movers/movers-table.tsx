@@ -29,11 +29,13 @@ export function MoversTable({
   options,
   sort,
   dir,
+  canWrite,
 }: {
   rows: MoverRow[];
   options: FormOptions;
   sort: SortKey;
   dir: SortDir;
+  canWrite: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -68,7 +70,7 @@ export function MoversTable({
             </SortableHead>
             <TableHead>Move Type</TableHead>
             <TableHead>Analyst</TableHead>
-            <TableHead className="w-10" />
+            {canWrite ? <TableHead className="w-10" /> : null}
           </TableRow>
         </TableHeader>
 
@@ -144,9 +146,11 @@ export function MoversTable({
                   {row.analystName ?? "—"}
                 </TableCell>
 
-                <TableCell>
-                  <MoverRowActions row={row} options={options} />
-                </TableCell>
+                {canWrite ? (
+                  <TableCell>
+                    <MoverRowActions row={row} options={options} />
+                  </TableCell>
+                ) : null}
               </TableRow>
             );
           })}
