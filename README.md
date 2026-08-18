@@ -242,3 +242,4 @@ July FY27 trading update. The seed records the catalyst as `trading_update` (the
 price-moving event). If the convention should instead be the announcement,
 change it in `src/db/seed.ts` — the same decision determines what the extraction
 prompt will be asked to identify.
+
