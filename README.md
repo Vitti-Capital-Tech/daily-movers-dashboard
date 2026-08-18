@@ -121,6 +121,59 @@ The consequence to know about: any future feature that queries Supabase
 *directly from the browser* will read zero rows until a policy is added
 deliberately. All data access is meant to go through Drizzle server-side.
 
+## Deploying to Vercel
+
+> **Read the Auth warning above first.** Deploying puts this on a public URL,
+> and sign-in currently accepts any `@vitti.capital` address on trust. Add a
+> verification step, or gate the deployment, before it goes live.
+
+**Environment variables** (Vercel → Settings → Environment Variables). Only two
+are needed — the Supabase keys aren't referenced any more:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | The pooler URI, port 6543, username `postgres.<ref>` |
+| `AUTH_SECRET` | A **fresh** 32-byte hex string, not the local one |
+
+Generate a separate production secret so a leaked dev value can't mint
+production sessions:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Function region.** `vercel.json` pins functions to `hnd1` (Tokyo) because the
+Supabase project is in `ap-northeast-1`. Vercel defaults to US East, which adds
+roughly 150–200 ms per query round trip — and the table page issues several
+queries. If a deploy complains about the region (plan restrictions), delete
+`vercel.json` and set the region in Vercel → Settings → Functions instead.
+
+**Connection pooling** is already handled: `src/db/index.ts` drops the pool to a
+single connection when `process.env.VERCEL` is set, because each concurrent
+invocation is its own process with its own pool. Supabase's pooler does the real
+pooling.
+
+**No migration step.** The schema is already applied to the Supabase project,
+and production uses the same database as local development — so deploying does
+not need `db:push`, but it does mean the live site and your local dev server
+edit the same rows. Create a second Supabase project if you want them separate.
+
+**Steps**
+
+```bash
+npm i -g vercel
+vercel login
+vercel link          # connect this repo to a Vercel project
+vercel --prod        # or just push to main once GitHub is connected
+```
+
+Connecting the GitHub repo in the Vercel dashboard is the better path: every
+push to `main` deploys, and pull requests get preview URLs.
+
+**After the first deploy, check:** signing in works, `/daily-movers` shows both
+seeded rows, and the account menu opens (that last one is client-side only, so
+it isn't covered by the server-rendered checks).
+
 ## Layout
 
 ```

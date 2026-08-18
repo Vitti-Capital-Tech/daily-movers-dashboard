@@ -56,5 +56,8 @@
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "unrs-resolver@1.12.2": true
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

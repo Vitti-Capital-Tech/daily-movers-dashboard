@@ -38,7 +38,20 @@ export function getDb(): Db {
       // Required for Supabase's transaction-mode pooler (port 6543), harmless
       // on a direct connection.
       prepare: false,
-      max: 10,
+      /**
+       * On Vercel every concurrent invocation is its own process with its own
+       * pool, so a generous `max` multiplies: 10 × 50 warm lambdas would try to
+       * open 500 connections and exhaust the Supabase pooler. One connection per
+       * invocation is the correct shape for serverless — the pooler does the
+       * pooling. Locally there's a single long-lived process, so a real pool
+       * helps the parallel queries on the table page.
+       */
+      max: process.env.VERCEL ? 1 : 10,
+      // Don't hold a connection open across an idle serverless instance.
+      idle_timeout: 20,
+      // Tokyo-hosted database from a US-default function region can be slow to
+      // connect on a cold start.
+      connect_timeout: 15,
     });
   const db = drizzle(sql, { schema });
 
