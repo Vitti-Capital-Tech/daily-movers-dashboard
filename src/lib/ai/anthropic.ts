@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { extractText } from "unpdf";
 
 export type ExtractedMoverData = {
   ticker: string;
@@ -20,7 +21,8 @@ export type ExtractedMoverData = {
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
   name: "save_daily_mover_research",
-  description: "Extracts structured metadata and investment takeaways from a Vitti Capital Daily Mover research report PDF.",
+  description:
+    "Extracts structured metadata and investment takeaways from a Vitti Capital Daily Mover research report.",
   input_schema: {
     type: "object",
     properties: {
@@ -34,7 +36,8 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       sector: {
         type: "string",
-        description: "GICS industry sector if identified (e.g. Consumer Discretionary, Industrials, Materials, Financials, Healthcare, Information Technology).",
+        description:
+          "GICS industry sector if identified (e.g. Consumer Discretionary, Industrials, Materials, Financials, Healthcare, Information Technology).",
       },
       moveDate: {
         type: "string",
@@ -42,12 +45,14 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       movePct: {
         type: "number",
-        description: "SIGNED percentage move (e.g. -11.5 for a fall, +20.6 for a rise). CRITICAL: If the headline says 'Fall', 'Drop', 'Plunge', 'Tumble', or 'Down', this MUST be negative. If 'Rise', 'Gain', 'Surge', or 'Up', this MUST be positive.",
+        description:
+          "SIGNED percentage move (e.g. -11.5 for a fall, +20.6 for a rise). CRITICAL: If the headline says 'Fall', 'Drop', 'Plunge', 'Tumble', or 'Down', this MUST be negative. If 'Rise', 'Gain', 'Surge', or 'Up', this MUST be positive.",
       },
       moveType: {
         type: "string",
         enum: ["intraday", "closing"],
-        description: "Whether the move is 'intraday' (e.g. 'Morning Trade', 'Intraday') or 'closing' (official market close).",
+        description:
+          "Whether the move is 'intraday' (e.g. 'Morning Trade', 'Intraday') or 'closing' (official market close).",
       },
       moveWindowLabel: {
         type: "string",
@@ -77,11 +82,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       reasonForMove: {
         type: "string",
-        description: "Detailed explanation of what actually caused the share price move (max 1000 chars).",
+        description:
+          "Detailed explanation of what actually caused the share price move (max 1000 chars).",
       },
       mainTakeaway: {
         type: "string",
-        description: "Core investment takeaway or conclusion for future reference: 'What did we say last time?' (max 1000 chars).",
+        description:
+          "Core investment takeaway or conclusion for future reference: 'What did we say last time?' (max 1000 chars).",
       },
       reportPrice: {
         type: "number",
@@ -89,7 +96,8 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       analystName: {
         type: "string",
-        description: "Name of the research analyst author if listed (e.g. 'Prasham Doshi'), otherwise null.",
+        description:
+          "Name of the research analyst author if listed (e.g. 'Prasham Doshi'), otherwise null.",
       },
       asxAnnouncementUrl: {
         type: "string",
@@ -123,8 +131,55 @@ export async function extractMoverFromPdfBuffer(
   pdfBuffer: Buffer,
 ): Promise<ExtractedMoverData> {
   const anthropic = getAnthropicClient();
-  const base64Data = pdfBuffer.toString("base64");
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+
+  // Step 1: Attempt highly token-efficient text extraction first
+  let extractedPdfText = "";
+  try {
+    const uint8Array = new Uint8Array(pdfBuffer);
+    const parsed = await extractText(uint8Array);
+
+    if (Array.isArray(parsed.text)) {
+      extractedPdfText = parsed.text
+        .map((pageText, idx) => `=== PAGE ${idx + 1} ===\n${pageText.trim()}`)
+        // Filter out boilerplate disclaimer pages to save additional tokens
+        .filter((page) => !/Disclaimer:/i.test(page))
+        .join("\n\n");
+    } else if (typeof parsed.text === "string") {
+      extractedPdfText = parsed.text;
+    }
+  } catch (err) {
+    console.warn("Text extraction failed, falling back to visual document mode", err);
+  }
+
+  const isTextExtracted = extractedPdfText.trim().length > 50;
+
+  // Step 2: Construct user message (either low-cost text payload or visual PDF fallback)
+  let userMessageContent:
+    | string
+    | Anthropic.MessageParam["content"];
+
+  if (isTextExtracted) {
+    // Ultra-compact text payload (~1,000 tokens instead of ~16,000 visual tokens)
+    userMessageContent = `Here is the extracted text of the Vitti Capital Daily Mover research report:\n\n${extractedPdfText}\n\nExtract all structured research metadata using the save_daily_mover_research tool.`;
+  } else {
+    // Fallback to visual document processing for image-only/scanned PDFs
+    const base64Data = pdfBuffer.toString("base64");
+    userMessageContent = [
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: base64Data,
+        },
+      },
+      {
+        type: "text",
+        text: "Extract all research metadata from this Daily Mover PDF using the save_daily_mover_research tool.",
+      },
+    ];
+  }
 
   const response = await anthropic.messages.create({
     model,
@@ -135,26 +190,13 @@ Your job is to accurately extract structured metadata from Vitti Capital 'Daily 
 
 Key rules to follow:
 1. TICKER: Extract the ASX ticker without exchange suffixes (e.g. 'JBH', not 'JBH.AX').
-2. SIGN OF MOVE (%): The source PDFs print magnitudes like '~11.5%' while the direction is in the headline text ('Shares Fall as Much as...'). If the headline indicates a fall/drop/decline, movePct MUST be NEGATIVE (e.g. -11.5). If it indicates a rise/surge/gain, movePct MUST be POSITIVE (e.g. 20.6).
+2. SIGN OF MOVE (%): The source reports print magnitudes like '~11.5%' while the direction is in the headline text ('Shares Fall as Much as...'). If the headline indicates a fall/drop/decline, movePct MUST be NEGATIVE (e.g. -11.5). If it indicates a rise/surge/gain, movePct MUST be POSITIVE (e.g. 20.6).
 3. CATALYST: Categorize the primary price-moving catalyst into the closest matching slug. For example, if FY26 earnings results were released but the sell-off was triggered by a weak July trading update, select 'trading_update'. If a buyback or dividend was the main news, select 'capital_management'.
 4. TAKEAWAY: Synthesize the key forward-looking takeaway so when an analyst reviews this company in the future, they know exactly what Vitti Capital concluded.`,
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: base64Data,
-            },
-          },
-          {
-            type: "text",
-            text: "Extract all research metadata from this Daily Mover PDF using the save_daily_mover_research tool.",
-          },
-        ],
+        content: userMessageContent,
       },
     ],
     tools: [EXTRACTION_TOOL],
