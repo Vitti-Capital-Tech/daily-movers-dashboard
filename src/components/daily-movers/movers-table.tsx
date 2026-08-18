@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, ArrowDownRight, FileSearch } from "lucide-react";
+import {
+  ArrowUpRight,
+  ArrowDownRight,
+  ExternalLink,
+  FileSearch,
+  FileText,
+} from "lucide-react";
 
 import { MoverRowActions } from "@/components/daily-movers/mover-row-actions";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +24,14 @@ import {
   formatMoveDate,
   formatPct,
 } from "@/lib/format";
-import type { FormOptions, MoverRow, SortDir, SortKey } from "@/lib/movers";
+import {
+  hasReport,
+  reportHref,
+  type FormOptions,
+  type MoverRow,
+  type SortDir,
+  type SortKey,
+} from "@/lib/movers";
 import { useQueryParams } from "@/lib/use-query-params";
 import { cn } from "@/lib/utils";
 import { MOVE_TYPE_LABELS } from "@/lib/validation";
@@ -71,6 +84,7 @@ export function MoversTable({
               </SortableHead>
               <TableHead className="font-semibold text-xs">Pricing Type</TableHead>
               <TableHead className="font-semibold text-xs">Covering Analyst</TableHead>
+              <TableHead className="font-semibold text-xs">Documents</TableHead>
               {canWrite ? <TableHead className="w-10" /> : null}
             </TableRow>
           </TableHeader>
@@ -168,6 +182,29 @@ export function MoversTable({
                     )}
                   </TableCell>
 
+                  {/* Documents — one click to the PDF or the announcement */}
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <DocLink
+                        href={hasReport(row) ? reportHref(row.id) : null}
+                        label="Daily Mover report"
+                        missingLabel="No report attached"
+                      >
+                        <FileText className="size-3.5" />
+                        <span>Report</span>
+                      </DocLink>
+
+                      <DocLink
+                        href={row.asxAnnouncementUrl}
+                        label="Original ASX announcement"
+                        missingLabel="No announcement link"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        <span>ASX</span>
+                      </DocLink>
+                    </div>
+                  </TableCell>
+
                   {/* Row Actions */}
                   {canWrite ? (
                     <TableCell className="text-right">
@@ -223,5 +260,55 @@ function SortableHead({
         </span>
       </button>
     </TableHead>
+  );
+}
+
+/**
+ * One document link. Renders as a disabled-looking chip when absent, so it's
+ * visible at a glance which rows still need a report or announcement attached
+ * rather than the column silently collapsing.
+ */
+function DocLink({
+  href,
+  label,
+  missingLabel,
+  children,
+}: {
+  href: string | null;
+  label: string;
+  missingLabel: string;
+  children: React.ReactNode;
+}) {
+  const base =
+    "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition-colors whitespace-nowrap";
+
+  if (!href) {
+    return (
+      <span
+        className={cn(
+          base,
+          "border-border/40 text-muted-foreground/40 cursor-not-allowed",
+        )}
+        title={missingLabel}
+        aria-disabled="true"
+      >
+        {children}
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      className={cn(
+        base,
+        "border-border/80 bg-background/80 text-foreground/80 hover:border-primary/60 hover:bg-primary/5 hover:text-primary shadow-2xs",
+      )}
+    >
+      {children}
+    </a>
   );
 }

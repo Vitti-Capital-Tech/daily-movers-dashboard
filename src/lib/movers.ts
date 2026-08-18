@@ -43,10 +43,24 @@ export type MoverRow = {
   mainTakeaway: string;
   reportPrice: number | null;
   reportUrl: string | null;
+  reportStoragePath: string | null;
   asxAnnouncementUrl: string | null;
   analystId: number | null;
   analystName: string | null;
 };
+
+/** True when there's a PDF to open — uploaded file or external link. */
+export function hasReport(row: {
+  reportStoragePath: string | null;
+  reportUrl: string | null;
+}): boolean {
+  return Boolean(row.reportStoragePath || row.reportUrl);
+}
+
+/** Always go via the route: it checks the session and signs a short-lived URL. */
+export function reportHref(moverId: number): string {
+  return `/api/reports/${moverId}`;
+}
 
 export type CompanyOption = { id: number; ticker: string; name: string };
 export type CatalystOption = { id: number; label: string; slug: string };

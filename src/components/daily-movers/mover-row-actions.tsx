@@ -22,7 +22,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatMoveDate, formatPct } from "@/lib/format";
-import type { FormOptions, MoverRow } from "@/lib/movers";
+import {
+  hasReport,
+  reportHref,
+  type FormOptions,
+  type MoverRow,
+} from "@/lib/movers";
 
 export function MoverRowActions({
   row,
@@ -53,10 +58,10 @@ export function MoverRowActions({
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             Edit
           </DropdownMenuItem>
-          {row.reportUrl ? (
+          {hasReport(row) ? (
             <DropdownMenuItem
               render={
-                <a href={row.reportUrl} target="_blank" rel="noreferrer" />
+                <a href={reportHref(row.id)} target="_blank" rel="noreferrer" />
               }
             >
               Open report

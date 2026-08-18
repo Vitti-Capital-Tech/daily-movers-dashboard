@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { saveMover, type MoverFormState } from "@/actions/movers";
 import { CompanyCombobox } from "@/components/daily-movers/company-combobox";
+import { ReportUpload } from "@/components/daily-movers/report-upload";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -116,6 +117,9 @@ function MoverForm({
   );
   const [reason, setReason] = useState(mover?.reasonForMove ?? "");
   const [takeaway, setTakeaway] = useState(mover?.mainTakeaway ?? "");
+  // Controlled because the upload widget files the PDF under
+  // <ticker>/<date>-… and needs both as they're chosen.
+  const [moveDate, setMoveDate] = useState(mover?.moveDate ?? todayIso());
 
   useEffect(() => {
     if (state?.ok) {
@@ -165,7 +169,8 @@ function MoverForm({
           <Input
             type="date"
             name="moveDate"
-            defaultValue={mover?.moveDate ?? todayIso()}
+            value={moveDate}
+            onChange={(event) => setMoveDate(event.target.value)}
             required
           />
         </Row>
@@ -312,9 +317,21 @@ function MoverForm({
         </Row>
 
         <Row
-          label="Daily Mover link"
+          label="Daily Mover PDF"
+          error={errors.reportStoragePath}
+          className="sm:col-span-2"
+        >
+          <ReportUpload
+            ticker={selectedCompany?.ticker ?? ""}
+            moveDate={moveDate}
+            existingPath={mover?.reportStoragePath ?? null}
+          />
+        </Row>
+
+        <Row
+          label="Daily Mover link (instead of a PDF)"
           error={errors.reportUrl}
-          hint="Optional — PDF upload comes with the extraction step"
+          hint="Optional — only if the report is already published somewhere. The uploaded PDF takes precedence."
           className="sm:col-span-2"
         >
           <Input

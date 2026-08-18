@@ -23,7 +23,7 @@ import {
   formatPct,
   formatPrice,
 } from "@/lib/format";
-import type { MoverRow } from "@/lib/movers";
+import { hasReport, reportHref, type MoverRow } from "@/lib/movers";
 import { getResearchHistory } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { MOVE_TYPE_LABELS } from "@/lib/validation";
@@ -213,9 +213,12 @@ function HistoryEntry({ row }: { row: MoverRow }) {
               </span>
             </span>
 
-            {row.reportUrl ? (
+            {/* Always via /api/reports/[id]: it checks the session, then signs a
+                60-second URL for the private bucket. Works for an uploaded PDF
+                and for an external link. */}
+            {hasReport(row) ? (
               <a
-                href={row.reportUrl}
+                href={reportHref(row.id)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 font-medium text-primary hover:underline underline-offset-4"
@@ -224,7 +227,7 @@ function HistoryEntry({ row }: { row: MoverRow }) {
                 <ExternalLink className="size-3" />
               </a>
             ) : (
-              <span className="text-muted-foreground/60">No PDF link</span>
+              <span className="text-muted-foreground/60">No PDF attached</span>
             )}
 
             {row.asxAnnouncementUrl ? (
