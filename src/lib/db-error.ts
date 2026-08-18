@@ -1,4 +1,22 @@
 /**
+ * Removes credentials from anything about to be displayed or logged.
+ *
+ * A driver or URL-parse error can carry the whole connection string, and that
+ * ends up in the hosting provider's runtime logs where anyone with project
+ * access can read the password. Belt-and-braces alongside not putting the value
+ * into our own messages in the first place.
+ */
+export function redactCredentials(text: string): string {
+  return (
+    text
+      // postgres://user:password@host -> postgres://user:***@host
+      .replace(/(\b[a-z+]*:\/\/[^\s:/@]+:)[^\s@]*(@)/gi, "$1***$2")
+      // Any remaining bare connection string.
+      .replace(/postgres(ql)?:\/\/\S+/gi, "postgres://***")
+  );
+}
+
+/**
  * Turns a postgres.js failure into one short line worth showing on screen.
  * Deliberately does not include the connection string — that carries the
  * password.
@@ -32,5 +50,5 @@ export function describeDbError(error: unknown): string {
   }
 
   const message = cause instanceof Error ? cause.message : error.message;
-  return code ? `${code}: ${message}` : message;
+  return redactCredentials(code ? `${code}: ${message}` : message);
 }

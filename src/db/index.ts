@@ -13,8 +13,30 @@ const globalForDb = globalThis as unknown as {
   __db?: Db;
 };
 
+/**
+ * Reads DATABASE_URL, tolerating the two ways it usually arrives broken.
+ *
+ * Hosting dashboards store the value literally, so pasting a line copied out of
+ * a .env file leaves the surrounding quotes attached — `"postgres://…"` — and
+ * `new URL()` then fails on the leading quote. Stray whitespace and newlines
+ * come from the same copy-paste. Both are stripped here rather than left to
+ * produce an opaque parse error at request time.
+ */
+function readConnectionString(): string | null {
+  const raw = process.env.DATABASE_URL;
+  if (typeof raw !== "string") return null;
+
+  const unquoted = raw
+    .trim()
+    // Only a *matching* pair, so a quote inside a password is untouched.
+    .replace(/^(['"])([\s\S]*)\1$/, "$2")
+    .trim();
+
+  return unquoted === "" ? null : unquoted;
+}
+
 export function isDbConfigured(): boolean {
-  return Boolean(process.env.DATABASE_URL);
+  return readConnectionString() !== null;
 }
 
 /**
@@ -25,10 +47,32 @@ export function isDbConfigured(): boolean {
 export function getDb(): Db {
   if (globalForDb.__db) return globalForDb.__db;
 
-  const url = process.env.DATABASE_URL;
+  const url = readConnectionString();
   if (!url) {
     throw new Error(
       "DATABASE_URL is not set. Copy .env.example to .env.local and add your Postgres connection string.",
+    );
+  }
+
+  /**
+   * Validated here so a malformed value produces a message we control.
+   *
+   * Critically, the message must never include the value: it contains the
+   * database password, and an unguarded `new URL(url)` failure puts the whole
+   * connection string into the error — which then lands in the hosting
+   * provider's runtime logs for anyone with project access to read.
+   */
+  try {
+    const parsed = new URL(url);
+    if (!parsed.protocol.startsWith("postgres")) {
+      throw new Error("wrong protocol");
+    }
+  } catch {
+    throw new Error(
+      "DATABASE_URL is not a valid Postgres URL. Check for surrounding quotes, " +
+        "stray whitespace, or a password containing characters that need " +
+        "percent-encoding. (The value is not shown here because it contains the " +
+        "password.)",
     );
   }
 
