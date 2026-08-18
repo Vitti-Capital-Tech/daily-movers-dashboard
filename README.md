@@ -62,33 +62,52 @@ account password.
 
 ## Auth
 
-**Sign-in:** email magic link. No passwords. Restricted to
-`@vitti.capital` addresses, enforced in three places — the login action (clear
-error message, and avoids emailing outsiders), the middleware (an out-of-domain
-session is signed out, not just redirected), and a database trigger on
-`auth.users` that refuses the sign-up outright.
+**Sign-in is by email address alone.** Type an `@vitti.capital` address and
+you're in. No password, no emailed link, no verification.
 
-**Roles:** `profiles.role` is either `admin` or `viewer`. Everyone gets
-`viewer` on first sign-in; `admin` is granted by membership of the
-`admin_emails` table. A trigger keeps roles in step, so granting write access is
-one statement and takes effect immediately:
+> ### Read this before deploying
+>
+> This is **identification, not authentication**. Nothing proves the person owns
+> the address they typed. Anyone who can reach the login page and knows a
+> colleague's address gets that person's access — including admin write access
+> to the research archive.
+>
+> It is fine behind a VPN, on localhost, or on a URL only staff can reach. It is
+> not fine on a public URL. The fix, when wanted, is to add a verification step
+> back into `signIn()` in `src/app/login/actions.ts`; everything else —
+> sessions, roles, middleware, RLS — stays as it is.
+
+**Sessions** are an HMAC-SHA256-signed cookie (`vitti_session`), signed with
+`AUTH_SECRET`. The signature stops a visitor editing their own cookie to become
+an admin; it can't stop them typing someone else's address at the login screen.
+Rotating `AUTH_SECRET` signs everyone out. 30-day expiry.
+
+**Roles:** `admin` if the address is in `admin_emails`, otherwise `viewer`.
+Looked up on every request rather than stored on a user row, so there is no
+second copy to fall out of sync and revoking takes effect immediately:
 
 ```sql
 INSERT INTO admin_emails (email, note) VALUES ('someone@vitti.capital', 'why');
 DELETE FROM admin_emails WHERE email = 'someone@vitti.capital';   -- revoke
 ```
 
+`app_users` records who has signed in. It's audit only — role is never read from
+it.
+
 **Where enforcement lives:**
 
 | Layer | Protects against | Mechanism |
 | --- | --- | --- |
-| Middleware | Unauthenticated page access | Redirect to `/login`, session refresh |
-| `(app)/layout.tsx` | A middleware misconfiguration | Re-checks the session server-side |
+| Middleware | Unauthenticated page access | Verifies the cookie, redirects to `/login` |
+| `(app)/layout.tsx` | A middleware misconfiguration | Re-checks server-side |
 | `assertCanWrite()` | Non-admins calling a Server Action directly | `requireAdmin()` at the top of every write |
 | RLS | Anyone using the public anon key | RLS on, zero policies — see below |
 
 Hiding the Add/Edit buttons is a courtesy, not a control: a Server Action is a
 public HTTP endpoint, so the check has to be server-side.
+
+The domain rule is re-checked when the cookie is read, not just at sign-in, so
+narrowing `ALLOWED_EMAIL_DOMAIN` invalidates existing sessions.
 
 ### Why RLS has no policies
 

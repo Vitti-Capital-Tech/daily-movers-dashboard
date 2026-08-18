@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -55,18 +56,27 @@ export function UserMenu({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <span className="block truncate text-xs">{user.email}</span>
-          <span className="block text-[10px] text-muted-foreground">
-            {user.role === "admin"
-              ? "Admin — can add, edit and delete"
-              : "Viewer — read-only"}
-          </span>
-        </DropdownMenuLabel>
+        {/* Base UI requires GroupLabel to sit inside a Group — using
+            DropdownMenuLabel bare throws MenuGroupContext is missing. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="font-normal">
+            <span className="block truncate text-xs">{user.email}</span>
+            <span className="block text-[10px] text-muted-foreground">
+              {user.role === "admin"
+                ? "Admin — can add, edit and delete"
+                : "Viewer — read-only"}
+            </span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* A form POST, not a link: signing out is a state change. */}
+        {/* A form POST, not a link: signing out is a state change.
+            Menu.Item defaults to nativeButton=false, so it must be told the
+            rendered element really is a <button> — otherwise Base UI adds
+            non-native a11y attributes on top of native ones. (Triggers already
+            default to true, which is why only this one needed it.) */}
         <form action="/auth/signout" method="post">
           <DropdownMenuItem
+            nativeButton
             render={
               <button type="submit" className="w-full cursor-default text-left" />
             }

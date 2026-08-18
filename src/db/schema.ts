@@ -12,9 +12,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
-  uuid,
 } from "drizzle-orm/pg-core";
-import { authUsers } from "drizzle-orm/supabase";
 
 /**
  * Whether the quoted share-price move is an intra-session figure or the
@@ -39,17 +37,16 @@ export const adminEmails = pgTable("admin_emails", {
 }).enableRLS();
 
 /**
- * One row per signed-in user, created automatically by a trigger on
- * `auth.users` (see drizzle/auth-setup.sql). `role` is the authorisation
- * source of truth — checked server-side in `assertCanWrite()`.
+ * One row per person who has signed in. Audit only — role is NOT stored here,
+ * it's derived from `admin_emails` membership at request time, so revoking
+ * access takes effect on the next request with nothing to keep in sync.
  */
-export const profiles = pgTable("profiles", {
-  id: uuid("id")
-    .primaryKey()
-    .references(() => authUsers.id, { onDelete: "cascade" }),
-  email: text("email").notNull(),
-  role: userRoleEnum("role").notNull().default("viewer"),
-  createdAt: timestamp("created_at", { withTimezone: true })
+export const appUsers = pgTable("app_users", {
+  email: text("email").primaryKey(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 }).enableRLS();
@@ -218,5 +215,5 @@ export type Analyst = typeof analysts.$inferSelect;
 export type DailyMover = typeof dailyMovers.$inferSelect;
 export type NewDailyMover = typeof dailyMovers.$inferInsert;
 export type MoveType = (typeof moveTypeEnum.enumValues)[number];
-export type Profile = typeof profiles.$inferSelect;
+export type AppUser = typeof appUsers.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];

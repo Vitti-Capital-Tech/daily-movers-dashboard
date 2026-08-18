@@ -1,15 +1,14 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { cookies } from "next/headers";
 
 import { getDb } from "@/db";
-import { profiles } from "@/db/schema";
+import { adminEmails, appUsers, type UserRole } from "@/db/schema";
 import { isAllowedEmail } from "@/lib/auth-config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { UserRole } from "@/db/schema";
+import { readSessionToken, SESSION_COOKIE } from "@/lib/session";
 
 export type SessionUser = {
-  id: string;
   email: string;
   role: UserRole;
   /** True only for `admin`. The single flag the UI should branch on. */
@@ -17,34 +16,42 @@ export type SessionUser = {
 };
 
 /**
- * The signed-in user plus their role, or null if unauthenticated.
- *
- * Uses `getUser()` (which revalidates the token against Supabase) rather than
- * `getSession()` (which only decodes the cookie and is therefore forgeable).
+ * Role is looked up from `admin_emails` on every request rather than copied onto
+ * a user row, so revoking write access takes effect immediately and there is no
+ * second copy to fall out of sync.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user?.email || !isAllowedEmail(user.email)) return null;
-
+export async function roleFor(email: string): Promise<UserRole> {
   const db = getDb();
-  const [profile] = await db
-    .select({ role: profiles.role })
-    .from(profiles)
-    .where(eq(profiles.id, user.id));
+  const [row] = await db
+    .select({ email: adminEmails.email })
+    .from(adminEmails)
+    .where(eq(adminEmails.email, email.trim().toLowerCase()));
+  return row ? "admin" : "viewer";
+}
 
-  // Fail closed: a missing profile row means viewer, never admin.
-  const role: UserRole = profile?.role ?? "viewer";
+/** The signed-in user, or null. Fails closed on every unexpected input. */
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const store = await cookies();
+  const email = await readSessionToken(store.get(SESSION_COOKIE)?.value);
 
-  return {
-    id: user.id,
-    email: user.email.toLowerCase(),
-    role,
-    canWrite: role === "admin",
-  };
+  // A valid signature is not enough — the domain rule is re-checked so that
+  // narrowing the allowlist invalidates existing cookies.
+  if (!email || !isAllowedEmail(email)) return null;
+
+  const role = await roleFor(email);
+  return { email, role, canWrite: role === "admin" };
+}
+
+/** Records the sign-in for audit. Never affects authorisation. */
+export async function touchUser(email: string): Promise<void> {
+  const db = getDb();
+  await db
+    .insert(appUsers)
+    .values({ email })
+    .onConflictDoUpdate({
+      target: appUsers.email,
+      set: { lastSeenAt: sql`now()` },
+    });
 }
 
 export class NotAuthenticatedError extends Error {

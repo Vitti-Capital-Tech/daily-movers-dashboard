@@ -1,31 +1,31 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 
+import { ALLOWED_EMAIL_DOMAIN, isAllowedEmail, safeNextPath } from "@/lib/auth-config";
+import { touchUser } from "@/lib/auth";
 import {
-  ALLOWED_EMAIL_DOMAIN,
-  isAllowedEmail,
-  safeNextPath,
-} from "@/lib/auth-config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+  createSessionToken,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+} from "@/lib/session";
 
 export type LoginState = {
   ok: boolean;
   message: string;
+  /** Set when a session was established and the browser should navigate. */
+  redirectTo?: string;
 } | null;
 
-async function origin(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_SITE_URL) {
-    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
-  }
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto =
-    h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-export async function sendMagicLink(
+/**
+ * Sign-in by email address alone.
+ *
+ * There is no verification step: an allowlisted address is accepted on trust.
+ * The domain allowlist is therefore the ONLY access control on who gets in, and
+ * `admin_emails` the only control on who can write. Anyone who can reach this
+ * page and types a colleague's address receives that person's access.
+ */
+export async function signIn(
   _prev: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
@@ -36,8 +36,6 @@ export async function sendMagicLink(
     return { ok: false, message: "Enter your work email address." };
   }
 
-  // Checked here as well as in the database trigger. This gives a clear message
-  // instead of a generic failure, and avoids emailing people outside the firm.
   if (!isAllowedEmail(email)) {
     return {
       ok: false,
@@ -45,32 +43,28 @@ export async function sendMagicLink(
     };
   }
 
-  const site = await origin();
-  const rawNext = formData.get("next");
-  const redirectTo = new URL("/auth/confirm", site);
-  if (typeof rawNext === "string" && rawNext !== "") {
-    const next = safeNextPath(rawNext, site, "");
-    if (next) redirectTo.searchParams.set("next", next);
-  }
+  try {
+    const token = await createSessionToken(email);
+    const store = await cookies();
+    store.set(SESSION_COOKIE, token, sessionCookieOptions);
 
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: redirectTo.toString() },
-  });
+    // Audit only — a failure here must not block sign-in.
+    try {
+      await touchUser(email);
+    } catch (error) {
+      console.error("touchUser failed (non-fatal)", error);
+    }
 
-  if (error) {
-    console.error("signInWithOtp failed", error);
-    // Don't echo the provider message — it can distinguish existing accounts
-    // from unknown ones, which is an account-enumeration leak.
+    const next = safeNextPath(formData.get("next")?.toString(), "http://local");
+    return { ok: true, message: "Signed in.", redirectTo: next };
+  } catch (error) {
+    console.error("signIn failed", error);
     return {
       ok: false,
-      message: "Could not send the sign-in link. Try again in a moment.",
+      message:
+        error instanceof Error && error.message.includes("AUTH_SECRET")
+          ? error.message
+          : "Could not sign in. Check the server logs.",
     };
   }
-
-  return {
-    ok: true,
-    message: `Sign-in link sent to ${email}. It expires in 60 minutes.`,
-  };
 }

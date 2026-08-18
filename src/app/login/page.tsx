@@ -4,9 +4,8 @@ import { ALLOWED_EMAIL_DOMAIN } from "@/lib/auth-config";
 export const dynamic = "force-dynamic";
 
 const ERRORS: Record<string, string> = {
-  domain: `That account isn't an @${ALLOWED_EMAIL_DOMAIN} address, so it was signed out.`,
-  link: "That sign-in link was invalid or had already been used. Request a new one.",
-  expired: "That sign-in link has expired. Request a new one.",
+  domain: `That address isn't an @${ALLOWED_EMAIL_DOMAIN} account, so you were signed out.`,
+  expired: "Your session expired. Enter your email again.",
 };
 
 export default async function LoginPage({
@@ -21,7 +20,7 @@ export default async function LoginPage({
   };
 
   const errorKey = pick("error");
-  const error = errorKey ? (ERRORS[errorKey] ?? ERRORS.link) : null;
+  const error = errorKey ? (ERRORS[errorKey] ?? ERRORS.expired) : null;
   const next = pick("next");
 
   return (
@@ -36,8 +35,8 @@ export default async function LoginPage({
           </p>
         </div>
 
-        {/* Only a rough shape check here — `sendMagicLink` and /auth/confirm
-            both run the value through safeNextPath, which is authoritative. */}
+        {/* Only a rough shape check here — the sign-in action runs the value
+            through safeNextPath, which is authoritative. */}
         <LoginForm
           error={error}
           next={
@@ -51,8 +50,7 @@ export default async function LoginPage({
         />
 
         <p className="mt-6 text-xs text-muted-foreground">
-          Sign-in is limited to @{ALLOWED_EMAIL_DOMAIN} email addresses. You
-          will get a one-time link — there is no password to remember.
+          Access is limited to @{ALLOWED_EMAIL_DOMAIN} email addresses.
         </p>
       </div>
     </div>
