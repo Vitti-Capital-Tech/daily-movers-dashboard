@@ -15,10 +15,12 @@ daily-movers-dashboard/
 │   ├── 0001_military_senator_kelly.sql
 │   └── auth-setup.sql           # RLS, app_users table, admin_emails seed
 ├── scripts/                     # Operational automation scripts
-│   └── apply-sql.mts            # Idempotent statement-by-statement SQL runner
+│   ├── apply-sql.mts            # Idempotent statement-by-statement SQL runner
+│   └── storage-setup.mts        # Private Supabase Storage bucket initialization
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
-│   │   └── movers.ts            # saveMover, deleteMover
+│   │   ├── movers.ts            # saveMover, deleteMover
+│   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
 │   ├── app/                     # Next.js App Router routes & pages
 │   │   ├── (app)/               # Protected application layout group
 │   │   │   ├── companies/       # Company directory & research history
@@ -27,14 +29,17 @@ daily-movers-dashboard/
 │   │   │   ├── daily-movers/    # Main Daily Movers table & filters
 │   │   │   │   └── page.tsx
 │   │   │   └── layout.tsx       # Auth protection barrier & shell wrapper
+│   │   ├── api/                 # API route handlers
+│   │   │   └── reports/[id]/    # Protected 60-second signed PDF redirect handler
+│   │   │       └── route.ts
 │   │   ├── auth/signout/        # POST sign-out route handler
 │   │   │   └── route.ts
 │   │   ├── login/               # Passwordless identification UI & actions
 │   │   │   ├── actions.ts       # signIn Server Action
 │   │   │   ├── login-form.tsx   # Client-side form with useActionState
 │   │   │   └── page.tsx
-│   │   ├── globals.css          # Tailwind CSS 4 theme & custom utilities
-│   │   ├── layout.tsx           # Root HTML layout with Sonner toast provider
+│   │   ├── globals.css          # Tailwind CSS 4 theme, typography & OKLCH color tokens
+│   │   ├── layout.tsx           # Root HTML layout with ThemeProvider and fonts
 │   │   └── page.tsx             # Root redirect to /daily-movers
 │   ├── components/              # UI Component Library
 │   │   ├── daily-movers/        # Domain-specific components
@@ -42,12 +47,15 @@ daily-movers-dashboard/
 │   │   │   ├── filter-bar.tsx
 │   │   │   ├── mover-dialog.tsx
 │   │   │   ├── mover-row-actions.tsx
-│   │   │   ├── movers-table.tsx
-│   │   │   └── pagination.tsx
+│   │   │   ├── movers-table.tsx # Table with directional chips & Documents column
+│   │   │   ├── pagination.tsx
+│   │   │   └── report-upload.tsx# Direct browser-to-storage PDF uploader
 │   │   ├── ui/                  # shadcn/ui Base UI & Radix primitives
-│   │   ├── app-shell.tsx        # Navigation sidebar & responsive header
+│   │   ├── app-shell.tsx        # Navigation sidebar, branding & mobile header
 │   │   ├── db-not-configured.tsx# Fallback diagnostic alerts
-│   │   ├── nav-link.tsx         # Active-state navigation anchor
+│   │   ├── nav-link.tsx         # Active-state navigation anchor with icons
+│   │   ├── theme-provider.tsx   # next-themes client wrapper
+│   │   ├── theme-toggle.tsx     # Light / Dark / System theme switcher
 │   │   └── user-menu.tsx        # User profile, role badge & sign-out trigger
 │   ├── db/                      # Database connection & schema definitions
 │   │   ├── index.ts             # Connection caching & pooler configuration
@@ -58,9 +66,11 @@ daily-movers-dashboard/
 │   │   ├── auth.ts              # RBAC & session verification (server-only)
 │   │   ├── db-error.ts          # Postgres error code parser & credential scrubbing
 │   │   ├── format.ts            # Date, percentage & price formatters
-│   │   ├── movers.ts            # Shared runtime types & pagination constants
+│   │   ├── movers.ts            # Shared runtime types, reportState helpers & pagination constants
 │   │   ├── queries.ts           # Drizzle SQL query builder (server-only)
 │   │   ├── session.ts           # Web Crypto HMAC-SHA256 token manager
+│   │   ├── storage.ts           # Storage path sanitization & bucket limits
+│   │   ├── supabase/admin.ts    # Service-role Supabase admin client
 │   │   ├── use-query-params.ts  # Client hook for URL searchParams synchronization
 │   │   ├── utils.ts             # clsx & tailwind-merge helper
 │   │   └── validation.ts        # Zod validation schema & form parsers
@@ -176,35 +186,58 @@ erDiagram
 | `main_takeaway` | `text` | NOT NULL (Max 1000 chars) | Core investment conclusion for future reference. |
 | `report_price` | `numeric(12,4)` | Nullable | Share price recorded at time of report publication. |
 | `report_url` | `text` | Nullable | External link to research PDF/document. |
-| `report_storage_path`| `text` | Nullable | Bucket path for uploaded PDF asset. |
+| `report_storage_path`| `text` | Nullable | Relative object key in private `reports` bucket. |
 | `asx_announcement_url`| `text` | Nullable | External link to company ASX announcement. |
 | `extraction` | `jsonb` | Nullable | Verbatim raw LLM/OCR structured JSON output. |
 | `created_by` | `text` | Nullable | Email address of the creator. |
 | `created_at` | `timestamptz` | NOT NULL, Default `now()` | Record creation timestamp. |
 | `updated_at` | `timestamptz` | NOT NULL, Default `now()` | Last modification timestamp. |
 
-**Indexes on `daily_movers`**:
-- `daily_movers_company_date_idx`: `(company_id, move_date DESC)` — Accelerates company research history queries.
-- `daily_movers_date_idx`: `(move_date DESC)` — Accelerates default chronological dashboard listings.
-- `daily_movers_catalyst_idx`: `(catalyst_id)` — Accelerates catalyst filtering queries.
+---
 
-#### 5. `admin_emails`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `email` | `text` | Primary Key | Work email address granted admin write privileges. |
-| `note` | `text` | Nullable | Description of role or reason for access. |
-| `created_at` | `timestamptz` | NOT NULL, Default `now()` | Access grant timestamp. |
+## 4. Report PDF Storage & Delivery Architecture
 
-#### 6. `app_users`
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `email` | `text` | Primary Key | Work email address that has authenticated. |
-| `first_seen_at` | `timestamptz` | NOT NULL, Default `now()` | Initial sign-in timestamp. |
-| `last_seen_at` | `timestamptz` | NOT NULL, Default `now()` | Most recent sign-in timestamp. |
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Browser (ReportUpload Component)
+    participant Action as Server Action (createReportUploadUrl)
+    participant AdminClient as Supabase Admin Client (lib/supabase/admin.ts)
+    participant Storage as Supabase Storage ('reports' bucket)
+    participant API as Download Endpoint (/api/reports/[id])
+
+    Note over Client,Storage: Upload Phase
+    Client->>Action: createReportUploadUrl({ fileName, fileSize, fileType, ticker, moveDate })
+    Action->>Action: Verify Admin Role & File Constraints (PDF <= 25MB)
+    Action->>AdminClient: Mint signed upload token
+    AdminClient->>Storage: createSignedUploadUrl(sanitizedPath)
+    Storage-->>Action: { path, token }
+    Action-->>Client: Return Upload Ticket { ok: true, path, token }
+    Client->>Storage: Direct PUT file using token (bypasses Serverless limit)
+
+    Note over Client,API: Download Phase
+    Client->>API: GET /api/reports/:id
+    API->>API: Verify Session (redirect to /login if unauthenticated)
+    API->>AdminClient: Mint 60s signed download URL
+    AdminClient->>Storage: createSignedUrl(reportStoragePath, 60s)
+    Storage-->>API: signedUrl
+    API-->>Client: 307 Redirect to signedUrl
+```
+
+### 4.1 Storage Path Sanitization (`src/lib/storage.ts`)
+- Storage key format: `reports/<ticker>/<moveDate>-<slug>-<random>.pdf`
+- Path sanitization converts directory traversal markers (`..`) and non-alphanumeric characters into safe dashes to prevent escape attacks.
+- File size limit: `MAX_REPORT_BYTES = 25 * 1024 * 1024` (25 MB).
+
+### 4.2 Protected PDF Route (`/api/reports/[id]/route.ts`)
+- Intercepts requests for report documents.
+- Verifies session token via `getSessionUser()`. If unauthenticated, redirects to `/login?error=expired`.
+- If `reportStoragePath` exists, mints a 60-second signed download URL via `createSupabaseAdminClient()`.
+- Falls back to `reportUrl` if only an external link is present.
 
 ---
 
-## 4. Authentication, Session & Access Control Layer
+## 5. Authentication, Session & Access Control Layer
 
 ```mermaid
 graph TD
@@ -232,7 +265,7 @@ graph TD
     RoleQuery --> SessionUser
 ```
 
-### 4.1 Session Token Format (`src/lib/session.ts`)
+### 5.1 Session Token Format (`src/lib/session.ts`)
 - **Structure**: `<base64url(payload)>.<base64url(signature)>`
 - **Payload Schema**:
   ```typescript
@@ -245,32 +278,9 @@ graph TD
 - **Constant-Time Verification**: `timingSafeEqual()` bitwise loop prevents timing attacks during signature verification.
 - **Cookie Security Attributes**: `HttpOnly = true`, `SameSite = Lax`, `Secure = true` (in production), `Path = /`, `Max-Age = 2,592,000` (30 days).
 
-### 4.2 Middleware Pipeline (`src/middleware.ts`)
-- Intercepts all paths excluding Next.js static bundles and media files.
-- Reads `vitti_session` cookie via `readSessionToken()`.
-- Validates domain suffix against `ALLOWED_EMAIL_DOMAIN` (`vitti.capital`).
-- Enforces redirection rules:
-  - If unauthenticated and accessing a non-public route $\rightarrow$ 302 Redirect to `/login?next=<sanitized_path>`.
-  - If authenticated and accessing `/login` $\rightarrow$ 302 Redirect to `/daily-movers`.
-  - If cookie domain is no longer permitted $\rightarrow$ Clears cookie and redirects to `/login?error=domain`.
-
-### 4.3 Role-Based Authorization Model (`src/lib/auth.ts`)
-```typescript
-export type SessionUser = {
-  email: string;
-  role: "admin" | "viewer";
-  canWrite: boolean; // role === 'admin'
-};
-```
-- **Dynamic Role Resolution**: Role is queried dynamically from `admin_emails` on every request. No role metadata is stored inside the session cookie or `app_users`.
-- **Fail-Closed Strategy**: If a database error occurs during role resolution, `roleFor()` catches the error and safely falls back to `viewer`.
-- **Enforcement Helpers**:
-  - `requireSessionUser()`: Asserts that an active session exists; throws `NotAuthenticatedError`.
-  - `requireAdmin()`: Asserts that `user.canWrite === true`; throws `NotAuthorisedError`.
-
 ---
 
-## 5. Data Access Layer (`src/lib/queries.ts`)
+## 6. Data Access Layer (`src/lib/queries.ts`)
 
 All database queries are marked `server-only` to guarantee zero PostgreSQL driver leakage into client bundles.
 
@@ -286,148 +296,57 @@ classDiagram
     }
 ```
 
-### 5.1 Query Specifications
+### 6.1 Query Specifications
 
 #### `listDailyMovers(filters: MoverFilters)`
 - **Purpose**: Retrieves paginated, sorted, and filtered research rows for the main table.
 - **Joins**: `daily_movers` $\bowtie$ `companies` $\bowtie$ `catalysts` $\leftouterjoin$ `analysts`.
+- **Selection**: Returns full row metadata including `reportStoragePath`, `reportUrl`, and `asxAnnouncementUrl`.
 - **Filter Clauses (`buildWhere`)**:
   - `q`: Matches `ilike(companies.name, %q%)` $\lor$ `ilike(companies.ticker, %q%)` $\lor$ `ilike(catalysts.label, %q%)`.
   - `from` / `to`: Date bounds against `daily_movers.move_date`.
   - `catalystId`: Direct match on `daily_movers.catalyst_id`.
   - `direction`: Evaluates `daily_movers.move_pct >= 0` (for `up`) or `< 0` (for `down`).
-- **Sorting (`buildOrderBy`)**:
-  - `date`: `daily_movers.move_date [ASC|DESC], daily_movers.id DESC` (tie-breaker).
-  - `move`: `daily_movers.move_pct [ASC|DESC], daily_movers.id DESC`.
-  - `ticker`: `companies.ticker [ASC|DESC], daily_movers.move_date DESC`.
-  - `company`: `companies.name [ASC|DESC], daily_movers.move_date DESC`.
-- **Return Type**: `{ rows: MoverRow[], total: number, page: number, perPage: number, pageCount: number }`.
-
-#### `getResearchHistory(ticker: string)`
-- **Purpose**: Retrieves all historical research for a given ASX ticker.
-- **Operation**: Resolves company record by `ilike(companies.ticker, ticker)`, then executes a single indexed join query filtered by `company_id`, sorted by `move_date DESC, id DESC`.
-
-#### `listCompaniesWithCounts()`
-- **Purpose**: Populates the company directory page.
-- **Operation**: Performs `companies` $\leftouterjoin$ `daily_movers` with `COUNT(daily_movers.id)` and `MAX(daily_movers.move_date)`, grouped by company columns, ordered by `companies.ticker ASC`.
-
-#### `getFormOptions()`
-- **Purpose**: Provides lookup values for Add/Edit dialogs.
-- **Operation**: Executes `Promise.all` over `companies` (sorted by ticker), `catalysts` (sorted by `sortOrder`), and `analysts` (where `active = true`).
 
 ---
 
-## 6. Server Actions & Mutation Lifecycle
+## 7. Server Actions & Mutation Lifecycle
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Browser (MoverForm)
-    participant Action as Server Action (saveMover)
-    participant Auth as requireAdmin()
-    participant Validation as parseMoverForm()
-    participant DB as Postgres (getDb())
-    participant Cache as Next.js Cache (revalidatePath)
-
-    Client->>Action: Form Submission (FormData)
-    Action->>Auth: Verify Admin Role
-    alt Not Admin / Unauthenticated
-        Auth-->>Action: Throw Error
-        Action-->>Client: Return { ok: false, message: "Your account has read-only access..." }
-    end
-
-    Action->>Validation: Validate & Sanitize Payload
-    alt Validation Failure
-        Validation-->>Action: Zod Field Errors
-        Action-->>Client: Return { ok: false, fieldErrors: Record<string, string[]> }
-    end
-
-    Action->>DB: Check for 'id' field in FormData
-    alt id present (Update)
-        Action->>DB: UPDATE daily_movers SET ... WHERE id = :id
-    else id absent (Insert)
-        Action->>DB: INSERT INTO daily_movers VALUES (...)
-    end
-
-    Action->>Cache: revalidatePath('/daily-movers')
-    Action->>Cache: revalidatePath('/companies')
-    Action->>Cache: revalidatePath('/companies/:ticker')
-    Action-->>Client: Return { ok: true, message: "Daily Mover saved." }
-```
-
-### 6.1 `saveMover(_prev: MoverFormState, formData: FormData)`
-1. **Authorization Gate**: Executes `assertCanWrite()` $\rightarrow$ `requireAdmin()`. Catches `NotAuthenticatedError` and `NotAuthorisedError` to return user-friendly messages.
-2. **Schema Validation**: Calls `parseMoverForm(formData)`. If validation fails, returns field-level error mapping to the form.
-3. **Branching Logic**:
-   - **Update (`id` exists)**: Validates positive integer ID, updates `daily_movers`, updates `updatedAt = new Date()`.
-   - **Insert (`id` absent)**: Inserts record with `createdBy = actor.email`.
+### 7.1 `saveMover(_prev: MoverFormState, formData: FormData)`
+1. **Authorization Gate**: Executes `assertCanWrite()` $\rightarrow$ `requireAdmin()`.
+2. **Schema Validation**: Calls `parseMoverForm(formData)` validating `reportStoragePath`, `reportUrl`, and `asxAnnouncementUrl`.
+3. **Execution**: Performs `UPDATE` (if ID present) or `INSERT`.
 4. **Cache Invalidation**: Triggers cache revalidation across `/daily-movers`, `/companies`, and `/companies/[ticker]`.
 
-### 6.2 `deleteMover(_prev: MoverFormState, formData: FormData)`
-1. Verifies admin permissions via `assertCanWrite()`.
-2. Validates target integer record ID.
-3. Executes `DELETE FROM daily_movers WHERE id = :id RETURNING company_id`.
-4. Triggers revalidation for the associated company ticker route and main tables.
-
-### 6.3 `signIn(_prev: LoginState, formData: FormData)`
-1. Validates presence of email input.
-2. Validates `@vitti.capital` email domain via `isAllowedEmail()`.
-3. Creates HMAC session token via `createSessionToken(email)`.
-4. Writes `vitti_session` cookie to HTTP response headers.
-5. Invokes non-blocking audit write `touchUser(email)` to update `app_users`.
-6. Returns validated redirect path computed via `safeNextPath()`.
+### 7.2 `createReportUploadUrl(input)`
+1. Verifies admin permissions via `requireAdmin()`.
+2. Validates PDF mime type and file size ($\le 25$ MB).
+3. Builds sanitized path via `buildReportPath()`.
+4. Mints signed upload token via Supabase Storage admin client.
 
 ---
 
-## 7. Input Validation & Form Serialization (`src/lib/validation.ts`)
-
-```typescript
-export const moverInputSchema = z.object({
-  companyId: z.coerce.number().int().positive("Select a company"),
-  catalystId: z.coerce.number().int().positive("Select a catalyst"),
-  analystId: z.union([z.coerce.number().int().positive(), z.null()]),
-  moveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date"),
-  movePct: z.coerce
-    .number()
-    .min(-100, "A fall cannot exceed 100%")
-    .max(1000, "That looks too large — check the figure")
-    .refine((n) => n !== 0, "A 0% move isn't a mover"),
-  moveType: z.enum(["intraday", "closing"]),
-  moveWindowLabel: z.union([z.string().max(60), z.null()]),
-  reasonForMove: z.string().min(1).max(1000),
-  mainTakeaway: z.string().min(1).max(1000),
-  reportPrice: z.union([z.coerce.number().positive(), z.null()]),
-  reportUrl: z.union([z.url(), z.null()]),
-  asxAnnouncementUrl: z.union([z.url(), z.null()]),
-});
-```
-
-### Form Value Coercion Rules:
-- Empty strings (`""`) are normalized to `null` for optional strings and URLs.
-- Sentinel value `"none"` for Radix Select components is normalized to `null`.
-- Missing required numbers remain `undefined` prior to Zod parsing to prevent accidental coercion to `0`.
-
----
-
-## 8. Frontend Component Architecture & State Management
+## 8. Frontend Component Architecture, Theming & State Management
 
 ```mermaid
 graph TD
     subgraph Layout["(app)/layout.tsx"]
         Shell["AppShell (Responsive Sidebar / Header / Mobile Navigation)"]
         UserMenu["UserMenu (Email, Role Badge, Sign-Out)"]
+        Toggle["ThemeToggle (Light / Dark / System Dropdown)"]
     end
 
     subgraph DailyMoversPage["/daily-movers (Page Component)"]
         Summary["Summary Cards (Total Movers, Companies, Showing)"]
-        Filter["FilterBar (Search, Date Bounds, Catalyst, Direction)"]
-        Table["MoversTable (Sortable Headers, Colored % Move Indicators)"]
-        Dialog["MoverDialog (Add/Edit Modal with Form Validation)"]
-        RowActions["MoverRowActions (Edit / Delete Dialog Trigger)"]
+        Filter["FilterBar (Search, Date Bounds, Catalyst, Direction, Active Count)"]
+        Table["MoversTable (Sortable Headers, Directional Move Chips, Documents Column)"]
+        Dialog["MoverDialog (Add/Edit Modal with ReportUpload)"]
+        RowActions["MoverRowActions (Edit / Delete / Download Triggers)"]
         Pager["Pagination (Previous, Next, Per-Page Selector)"]
     end
 
     Shell --> UserMenu
+    Shell --> Toggle
     Shell --> DailyMoversPage
     DailyMoversPage --> Summary
     DailyMoversPage --> Filter
@@ -437,38 +356,43 @@ graph TD
     Table --> RowActions
 ```
 
-### 8.1 Component Responsibilities
+### 8.1 Component Specifications
 
 | Component | Type | Responsibility |
 | :--- | :--- | :--- |
-| `AppShell` | Server | Renders institutional navigation sidebar, branding, mobile header, and main container. |
-| `UserMenu` | Client | Renders user email, read-only indicator badge (if viewer), and sign-out form POST trigger. |
-| `FilterBar` | Client | Binds search inputs, date pickers, catalyst dropdowns, and direction selectors to URL query parameters. |
-| `MoversTable` | Client | Renders tabular daily mover records with directional color coding (emerald for gains, red for losses) and sortable column headers. |
-| `MoverDialog` | Client | Modal dialog handling research record creation and editing via `useActionState(saveMover)`. |
+| `ThemeProvider` | Client | Wraps application with `next-themes` provider supporting `attribute="class"`, `defaultTheme="dark"`, `enableSystem`. |
+| `ThemeToggle` | Client | Interactive mode selector (Light / Midnight Dark / System) using `useSyncExternalStore` for hydration-safe rendering. |
+| `AppShell` | Server | Renders institutional navigation sidebar, branding with live pulse indicator, mobile header, and main container. |
+| `UserMenu` | Client | Renders user avatar circle, role status pill (Admin vs Viewer), and sign-out form POST trigger. |
+| `FilterBar` | Client | Binds search inputs, date pickers, catalyst dropdowns, and direction selectors to URL query parameters with active filter counts and reset. |
+| `MoversTable` | Client | Renders tabular daily mover records with directional move chips, monospace ticker badges, and **Documents column** (`Report` and `ASX` action buttons). |
+| `ReportUpload` | Client | Direct browser-to-storage PDF upload component with drag & drop, file progress, and client validation. |
+| `MoverDialog` | Client | Modal dialog handling research record creation and editing, integrating `ReportUpload` with server actions. |
 | `CompanyCombobox` | Client | Accessible searchable combobox for selecting companies by ticker and company name. |
-| `MoverRowActions` | Client | Contextual dropdown menu for editing and deleting research records (rendered for admins only). |
+| `MoverRowActions` | Client | Contextual dropdown menu for editing, deleting, and downloading research records. |
 | `Pagination` | Client | Controls current page offset, page size selector (10, 25, 50, 100), and result count display. |
-| `DbNotConfigured` | Client | Diagnostic card displayed when `DATABASE_URL` is missing or the database connection is unreachable. |
 
-### 8.2 URL-Driven State Management (`src/lib/use-query-params.ts`)
-- URL search parameters serve as the single source of truth for dashboard state.
-- Debounced search execution (300ms) on text input prevents query churn.
-- Changing any filter parameter automatically resets `page` to `1` to avoid landing on empty offset ranges.
-- React 19 `useTransition` wraps router state updates to maintain UI responsiveness during server-side re-renders.
+### 8.2 Design System, Typography & Color Tokens
+
+- **Primary Font (`--font-sans`)**: **Plus Jakarta Sans** (weights 300 to 800) for clean geometric hierarchy.
+- **Monospace Font (`--font-mono`)**: **JetBrains Mono** (weights 400 to 700) for stock tickers, dates, and percentage figures.
+- **Dark Theme (Midnight Navy)**:
+  - Background: `oklch(0.13 0.032 255)` (`#090e18`)
+  - Card Surface: `oklch(0.17 0.035 255)` (`#101726`)
+  - Luminous Border: `oklch(0.30 0.035 255 / 55%)`
+  - Gains: `bg-emerald-500/10 text-emerald-400 border-emerald-500/25`
+  - Declines: `bg-rose-500/10 text-rose-400 border-rose-500/25`
+- **Light Theme (Crisp Institutional Slate)**:
+  - Background: `oklch(0.985 0.008 245)` (`#f8fafc`)
+  - Card Surface: `oklch(1 0 0)` (`#ffffff`)
+  - Foreground: `oklch(0.145 0.035 260)` (`#0f172a`)
 
 ---
 
 ## 9. Error Handling & Diagnostics
 
 ### 9.1 Database Error Categorization (`src/lib/db-error.ts`)
-Maps PostgreSQL driver error codes to actionable diagnostic messages:
-- `28P01`: Password authentication failure.
-- `ENOTFOUND`: Host unreachable / DNS failure.
-- `ETIMEDOUT` / `CONNECT_TIMEOUT`: Connection timeout.
-- `ECONNREFUSED`: Port connection refused.
-- `3D000`: Target database does not exist.
-- `42P01`: Missing table error (prompts user to run migrations).
+Maps PostgreSQL driver error codes to actionable diagnostic messages (`28P01`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNREFUSED`, `3D000`, `42P01`).
 
 ### 9.2 Credential Redaction Pattern
 ```typescript

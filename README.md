@@ -3,14 +3,21 @@
 Searchable archive of Vitti Capital Daily Mover research, so that when a company
 comes up again you can immediately see what we said last time.
 
+## Documentation
+
+- **[High-Level Design (HLD)](docs/HLD.md)**: System architecture, multi-layer authorization, direct-to-storage PDF pipeline, and infrastructure topology.
+- **[Low-Level Design (LLD)](docs/LLD.md)**: Database schemas, Drizzle SQL queries, Server Actions, session crypto, component hierarchy, and error handling.
+
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
 | Framework | Next.js 16 (App Router) + TypeScript |
-| UI | Tailwind 4 + shadcn/ui (Base UI primitives) |
+| UI | Tailwind 4 + shadcn/ui (Base UI primitives) + Lucide Icons |
+| Theming | next-themes (Light / Dark / System mode toggle) |
+| Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
 | Database | Postgres (Supabase) |
-| Auth | Supabase Auth — email magic link |
+| Auth | HMAC-SHA256 Signed Sessions (@vitti.capital domain allowlist) |
 | Data access | Drizzle ORM + postgres.js |
 | Validation | Zod |
 
@@ -185,19 +192,28 @@ it isn't covered by the server-rendered checks).
 ```
 src/
   app/
-    daily-movers/        table view + Server Actions (create/update/delete)
-    companies/           company list
-    companies/[ticker]/  research history — the point of the app
+    (app)/
+      daily-movers/      table view + Server Actions (create/update/delete)
+      companies/         company directory
+      companies/[ticker]/ research history timeline — the point of the app
+    login/               passwordless email identification screen
+    auth/signout/        POST sign-out route handler
   components/
-    daily-movers/        filter bar, table, form dialog, row actions
-    ui/                  shadcn primitives
+    daily-movers/        filter bar, table, form dialog, row actions, combobox, pagination
+    ui/                  shadcn primitives (Base UI / Radix)
+    theme-provider.tsx   next-themes client wrapper
+    theme-toggle.tsx     Light / Dark / System theme switcher
+    app-shell.tsx        navigation sidebar, header, and role badge
+    user-menu.tsx        analyst profile dropdown & sign-out trigger
   db/
-    schema.ts            tables, indexes, relations
+    schema.ts            tables, indexes, relations, enums
     seed.ts              catalysts, analysts, companies, sample movers
   lib/
     movers.ts            types + constants shared with client components
-    queries.ts           server-only data access
-    validation.ts        Zod schema for the form
+    queries.ts           server-only data access layer
+    validation.ts        Zod schema for form mutations
+    session.ts           Web Crypto HMAC-SHA256 session token manager
+    auth.ts              RBAC role lookup and permission assertions
 ```
 
 ## Design decisions worth knowing

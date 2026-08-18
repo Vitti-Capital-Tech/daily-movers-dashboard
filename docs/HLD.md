@@ -16,6 +16,7 @@ Historically, equity research reports and daily mover summaries were stored in u
 - **Entity Disconnect**: Variations in ticker naming (e.g., `JBH` vs `JBH.AX`) splitting research history.
 - **Inconsistent Categorisation**: Unstandardized catalyst classification (e.g., "Earnings Result" vs "FY26 Results").
 - **Loss of Nuance**: Discrepancies between headline percentage moves, intraday peaks, and final closing figures.
+- **File Distribution Risk**: Unrestricted public URLs or large attachments failing serverless payload limits.
 
 ### 2.2 The Solution
 A unified, web-based intelligence archive featuring:
@@ -23,19 +24,23 @@ A unified, web-based intelligence archive featuring:
 2. **Standardized Lookups**: Controlled vocabularies for catalysts and analysts.
 3. **Derived Metrics**: Deterministic derivation of price movement direction from signed percentage values.
 4. **URL-Synchronized Server-Side Filtering**: Performant, deep-linkable search, catalyst filtering, date-range filtering, and pagination handled entirely at the database layer.
-5. **Role-Gated Research Operations**: Distinction between research consumers (Viewers) and research authors (Admins).
+5. **Direct-to-Storage PDF Management**: Direct browser-to-storage signed uploads bypassing serverless payload limits, coupled with short-lived (60s) signed download URLs.
+6. **Role-Gated Research Operations**: Distinction between research consumers (Viewers) and research authors (Admins).
+7. **Institutional Terminal Aesthetics**: Purpose-built financial UI featuring Light / Midnight Navy Dark theme toggle, Plus Jakarta Sans & JetBrains Mono typography, and high-density directional metrics.
 
 ---
 
 ## 3. High-Level System Architecture
 
-The application adopts a **Modern Server-First Architecture** utilizing Next.js App Router, React Server Components (RSC), Drizzle ORM, and Supabase Postgres.
+The application adopts a **Modern Server-First Architecture** utilizing Next.js App Router, React Server Components (RSC), Drizzle ORM, Supabase Postgres, and Supabase Private Storage.
 
 ```mermaid
 graph TD
     subgraph Client["Client Tier (Browser)"]
-        UI["Web UI (React 19 / Tailwind 4 / shadcn)"]
+        UI["Web UI (React 19 / Tailwind 4 / shadcn / next-themes)"]
         Cookie["Session Cookie (vitti_session HMAC-SHA256)"]
+        Theme["Theme State (Light / Midnight Dark / System)"]
+        Uploader["Direct S3-Compatible Upload Client"]
     end
 
     subgraph Edge["Edge Infrastructure"]
@@ -44,7 +49,8 @@ graph TD
 
     subgraph Server["Application Server Tier (Next.js App Router / Vercel Serverless)"]
         RSC["React Server Components (Layouts, Pages)"]
-        SA["Server Actions (saveMover, deleteMover, signIn)"]
+        SA["Server Actions (saveMover, deleteMover, createReportUploadUrl, signIn)"]
+        PDFRoute["Protected PDF Route (/api/reports/[id])"]
         AuthLayer["Auth & Session Verification (Web Crypto)"]
         QueryLayer["Data Access Layer (lib/queries.ts - server-only)"]
     end
@@ -52,6 +58,7 @@ graph TD
     subgraph Database["Data Tier (Supabase / AWS Tokyo)"]
         Pooler["Supabase Transaction Pooler (Port 6543)"]
         Postgres["PostgreSQL Database (RLS Enforced, Zero Public Policies)"]
+        Storage["Private Storage Bucket ('reports' - 25MB limit)"]
     end
 
     UI -->|HTTP Requests| MW
@@ -62,6 +69,13 @@ graph TD
     SA --> QueryLayer
     QueryLayer -->|postgres.js driver| Pooler
     Pooler --> Postgres
+
+    %% Upload and Download flows
+    UI -->|1. Request Upload Ticket| SA
+    SA -->|Generate Signed Upload URL| Storage
+    Uploader -->|2. Direct PUT PDF| Storage
+    UI -->|3. Request Document| PDFRoute
+    PDFRoute -->|Verify Session & Mint Signed URL| Storage
 ```
 
 ---
@@ -72,9 +86,12 @@ graph TD
 | :--- | :--- | :--- |
 | **Application Framework** | **Next.js 16 (App Router)** | Hybrid SSR/RSC rendering model, zero-client-bundle data fetching, native streaming, Server Actions for mutations. |
 | **Language** | **TypeScript 5** | Strict end-to-end type safety spanning database schemas, Zod validation schemas, and UI components. |
-| **Styling & Design System** | **Tailwind CSS 4 + shadcn/ui** | Design-token-driven styling, accessible Base UI/Radix primitives, dark-themed institutional layout. |
+| **Styling & Design System** | **Tailwind CSS 4 + shadcn/ui** | Design-token-driven styling, accessible Base UI/Radix primitives, Lucide React icons. |
+| **Theming System** | **next-themes** | Client-side Light / Midnight Navy Dark / System theme switching with hydration safety and local storage persistence. |
+| **Typography** | **Plus Jakarta Sans + JetBrains Mono** | High-legibility geometric UI typography paired with developer/financial-grade monospace figures for tickers and percentage metrics. |
 | **Database** | **PostgreSQL (Supabase)** | Relational integrity (FK constraints), JSONB support for raw extractions, performant B-Tree indexes, transaction pooling. |
 | **Object-Relational Mapping (ORM)** | **Drizzle ORM + postgres.js** | Type-safe SQL builder with minimal runtime overhead, explicit query composition, seamless migration tooling. |
+| **Object Storage** | **Supabase Private Storage (`reports`)** | Encrypted, private bucket storage for Daily Mover PDF reports with server-signed upload and download tokens. |
 | **Data Validation** | **Zod** | Runtime contract enforcement for form submissions, Server Action payloads, and query parameter parsing. |
 | **Session Security** | **Web Crypto API (HMAC-SHA256)** | Runtime-agnostic cryptographic signing compatible with both Edge Middleware and Node.js Serverless runtimes. |
 | **Hosting & Compute** | **Vercel Serverless (Tokyo - `hnd1`)** | Co-located with Supabase Tokyo DB (`ap-northeast-1`) to minimize database query latency. |
@@ -91,19 +108,23 @@ graph TD
 - **Decision**: Direction (`up` / `down`, `↑` / `↓`, "Up" / "Down") is never stored as an independent column in the database; it is computed deterministically from `move_pct`.
 - **Rationale**: Prevents data corruption where an explicit string field could contradict the numeric move percentage. Validation strictly forbids `0%` moves (as non-movers).
 
-### 5.3 Server-Side SQL Filtering & URL State
+### 5.3 Direct-to-Storage PDF Upload Pipeline
+- **Decision**: PDF files upload directly from the browser to Supabase Storage via signed upload tickets minted by `createReportUploadUrl()`, rather than streaming through Next.js Server Actions.
+- **Rationale**: Vercel caps request bodies at 4.5 MB and Next.js caps Server Action bodies at 1 MB by default. Routine 5–20 MB research reports would fail in serverless production. Direct upload avoids serverless execution limits and prevents memory exhaustion.
+
+### 5.4 Time-Limited Private PDF Delivery (`/api/reports/[id]`)
+- **Decision**: The `reports` storage bucket is strictly private (zero public access). All downloads route through `/api/reports/[id]`, which authenticates the user session and issues a **60-second signed download URL**.
+- **Rationale**: Ensures report storage keys cannot be accessed anonymously and links shared outside authorized sessions expire immediately.
+
+### 5.5 Server-Side SQL Filtering & URL State
 - **Decision**: Full-text search, catalyst filtering, direction filtering, date ranges, and sorting execute directly in PostgreSQL queries. Filter state resides entirely in the URL query string (`?q=&catalyst=&from=&to=&sort=&dir=`).
-- **Rationale**: 
-  - Guarantees sub-millisecond query execution even as the archive grows to tens of thousands of records.
-  - Ensures all filtered states and specific company views are shareable, bookmarkable, and compatible with browser forward/back navigation.
+- **Rationale**: Guarantees sub-millisecond query execution and deep-linkable shareability.
 
-### 5.4 Lookup Table for Catalysts
-- **Decision**: Catalysts use a fixed lookup table (`catalysts`) with slugs and display labels rather than free-text strings.
-- **Rationale**: Prevents categorization drift and fragmented filter facets (e.g., "Earnings Result" vs "FY26 Results").
-
-### 5.5 Forward-Compatible Extraction Schema
-- **Decision**: The `daily_movers` table contains `extraction` (`jsonb`) and `report_storage_path` (`text`) fields.
-- **Rationale**: Reserves structured storage for automated PDF ingestion pipelines and LLM extraction outputs without requiring future schema migrations.
+### 5.6 Standardized Institutional Theme Architecture
+- **Decision**: Implementation of a dual theme system:
+  - **Dark Mode**: Rich **Midnight Navy Blue** (`oklch(0.13 0.032 255)`) palette with subtle luminous borders and glowing green/red directional indicators.
+  - **Light Mode**: Crisp slate-tinted canvas (`oklch(0.985 0.008 245)`) with high-contrast surfaces.
+- **Rationale**: Enhances readability during extended research sessions and caters to diverse analyst workspace environments.
 
 ---
 
@@ -123,6 +144,7 @@ sequenceDiagram
     participant MW as Edge Middleware
     participant Layout as (app)/layout.tsx
     participant Action as Server Action (saveMover)
+    participant Storage as Supabase Storage
     participant DB as Postgres (Drizzle)
 
     User->>MW: HTTP GET /daily-movers (Cookie: vitti_session)
@@ -151,12 +173,8 @@ sequenceDiagram
 | **Layer 1: Edge Middleware** | HMAC token verification + `@vitti.capital` domain check | Blocks unauthorized traffic at edge; redirects to `/login`. |
 | **Layer 2: Server Layout** | Server-side `getSessionUser()` verification | Redundant fail-safe preventing data leaks if middleware is misconfigured. |
 | **Layer 3: Mutation Chokepoint** | `assertCanWrite()` / `requireAdmin()` in Server Actions | Cryptographic and database-backed verification that caller is in `admin_emails`. |
-| **Layer 4: Database Layer (RLS)** | Row-Level Security enabled on all tables with **zero public policies** | Complete lockdown against public Supabase anon key requests. Drizzle connects as table owner to bypass RLS safely. |
-
-### 6.3 Security Hardening & Credential Protection
-- **Credential Redaction**: `lib/db-error.ts` scrubs database connection strings, passwords, and host credentials from runtime error logs and user-facing UI screens.
-- **Open Redirect Protection**: `safeNextPath()` validates post-login redirect targets against origin boundaries to eliminate malicious redirects.
-- **Fail-Closed Permissions**: Database outages default user privileges to `viewer` to prevent unauthorized write escalation during degraded service.
+| **Layer 4: Storage Security** | Private Supabase bucket + 60s signed URLs | Prevents unauthenticated access to uploaded research PDFs. |
+| **Layer 5: Database Layer (RLS)** | Row-Level Security enabled on all tables with **zero public policies** | Complete lockdown against public Supabase anon key requests. Drizzle connects as table owner to bypass RLS safely. |
 
 ---
 
@@ -172,21 +190,25 @@ graph LR
     subgraph Supabase["Supabase Cloud (AWS ap-northeast-1)"]
         SupabasePooler["PgBouncer / Supavisor Transaction Pooler (Port 6543)"]
         PostgresInstance["PostgreSQL 15+ Engine"]
+        StorageEngine["Supabase Storage Service ('reports' bucket)"]
     end
 
     NextEdge --> NextServerless
     NextServerless -->|Transaction Mode| SupabasePooler
     SupabasePooler --> PostgresInstance
+    NextServerless -->|Admin Service Role Signing| StorageEngine
 ```
 
-### 7.1 Serverless Connection Management
+### 7.1 Serverless Connection Management & Environment Variables
 - **Local Dev vs Serverless**: `src/db/index.ts` dynamically configures connection pooling:
   - **Local Development**: Connection pool size of `10` to facilitate rapid parallel queries.
   - **Production Serverless (`process.env.VERCEL`)**: Connection pool pinned to `1` per lambda to prevent connection exhaustion against Supabase pooler.
-- **Transaction Mode Pooler**: Configured with `prepare: false` for compatibility with Supabase's transaction pooler (port 6543).
-
-### 7.2 Geographic Co-location
-- `vercel.json` pins serverless function execution to `hnd1` (Tokyo), co-located with Supabase's AWS Tokyo region (`ap-northeast-1`), keeping round-trip latency under 15ms.
+- **Environment Variables**:
+  - `DATABASE_URL`: Pooler URI (port 6543, username `postgres.<ref>`).
+  - `AUTH_SECRET`: 32-byte cryptographic hex string.
+  - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL for direct client storage PUT.
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key for client upload authentication.
+  - `SUPABASE_SERVICE_ROLE_KEY`: Server-only key used exclusively to mint signed upload/download tokens.
 
 ---
 
@@ -194,21 +216,29 @@ graph LR
 
 1. **Daily Movers Table View (`/daily-movers`)**:
    - Paginated, sortable, and multi-filter table displaying research dates, tickers, company names, catalysts, price movements, move types, and covering analysts.
-   - Summary statistics cards showing total movers saved, companies covered, and matching filter results.
+   - Financial directional move chips (`ArrowUpRight` / `ArrowDownRight`) with emerald gain and rose decline tints.
+   - **Documents Column**: Clickable `Report` and `ASX` action buttons per row, with greyed-out visual states when unattached.
+   - Summary KPI cards showing total published research, covered companies, and filtered counts with micro-gradients and icons.
    - Interactive dialog for creating and editing research entries (admins only).
-2. **Company Research Archive (`/companies`)**:
-   - Comprehensive directory of all covered listed entities with mover counts and latest coverage timestamps.
-3. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
-   - Chronological research timeline ("What did we say last time?") highlighting the latest key takeaway and historical catalysts.
-   - External links to Daily Mover source reports and official ASX announcements.
-4. **Authentication & Session Management (`/login`, `/auth/signout`)**:
+2. **Report PDF Upload & Direct Delivery**:
+   - Drag & drop PDF uploader with progress tracking and direct browser-to-storage upload.
+   - Protected download endpoint (`/api/reports/[id]`) with 60-second signed URLs.
+3. **Company Research Directory (`/companies`)**:
+   - Comprehensive directory of all covered listed entities with sector tags, mover counts, and latest coverage timestamps.
+4. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
+   - "Most Recent Investment Takeaway" hero card with highlight banner and quote icon.
+   - Vertical research history timeline connecting chronological notes with directional status nodes.
+   - Action links to Daily Mover source reports and official ASX announcements.
+5. **Theme Customization (`ThemeToggle`)**:
+   - Seamless switching between Light mode, Midnight Navy Dark mode, and System preference.
+6. **Authentication & Session Management (`/login`, `/auth/signout`)**:
    - Single-step email authentication with secure session cookie distribution and audit trail logging in `app_users`.
 
 ---
 
 ## 9. Future Roadmap & Extensibility
 
-- **Automated PDF Upload & LLM Extraction**: Direct PDF upload to Supabase Storage with automated extraction populating `daily_movers` and `extraction` JSONB.
+- **Automated LLM Extraction Pipeline**: Background workers parsing uploaded PDFs from Supabase Storage, running structured prompts, and populating `extraction` JSONB for automated diffing.
 - **UI Company Management**: Interface for adding and updating company ticker and sector metadata without database seeding.
 - **Admin Management Portal**: UI for granting/revoking write permissions in `admin_emails`.
 - **Magic Link / MFA Verification**: Transition from domain allowlist identification to cryptographic email verification for public internet exposure.
