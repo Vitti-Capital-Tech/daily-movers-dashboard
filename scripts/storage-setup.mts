@@ -74,5 +74,3 @@ if (found) {
     `Created private bucket "${REPORTS_BUCKET}" (max ${formatBytes(MAX_REPORT_BYTES)}, PDF only).`,
   );
 }
-
-process.exit(0);

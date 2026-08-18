@@ -127,13 +127,19 @@ deliberately. All data access is meant to go through Drizzle server-side.
 > and sign-in currently accepts any `@vitti.capital` address on trust. Add a
 > verification step, or gate the deployment, before it goes live.
 
-**Environment variables** (Vercel → Settings → Environment Variables). Only two
-are needed — the Supabase keys aren't referenced any more:
+**Environment variables** (Vercel → Settings → Environment Variables):
 
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | The pooler URI, port 6543, username `postgres.<ref>` |
 | `AUTH_SECRET` | A **fresh** 32-byte hex string, not the local one |
+| `NEXT_PUBLIC_SUPABASE_URL` | Needed again since report upload landed — the browser uploads direct to Storage |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same. Public by design; safe because RLS has no policies |
+| `SUPABASE_SERVICE_ROLE_KEY` | Signs upload and download URLs. **Server-side only** — never `NEXT_PUBLIC_*` |
+
+> Paste values **without** surrounding quotes. Vercel stores them verbatim, so
+> `"postgres://…"` becomes a different string and fails to parse. Env vars are
+> read at build time — **redeploy after adding one.**
 
 Generate a separate production secret so a leaked dev value can't mint
 production sessions:
