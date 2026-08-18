@@ -16,9 +16,11 @@ comes up again you can immediately see what we said last time.
 | UI | Tailwind 4 + shadcn/ui (Base UI primitives) + Lucide Icons |
 | Theming | next-themes (Light / Dark / System mode toggle) |
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
+| AI Extraction | Anthropic Claude 3.5 Sonnet (`@anthropic-ai/sdk`) |
 | Database | Postgres (Supabase) |
 | Auth | HMAC-SHA256 Signed Sessions (@vitti.capital domain allowlist) |
 | Data access | Drizzle ORM + postgres.js |
+| Storage | Supabase Private Storage (`reports` bucket) |
 | Validation | Zod |
 
 ## Setup
@@ -191,15 +193,20 @@ it isn't covered by the server-rendered checks).
 
 ```
 src/
+  actions/
+    movers.ts            Server Actions for create, update, and delete
+    reports.ts           Server Action for signed upload ticket generation
+    extract.ts           Server Action for AI PDF extraction & auto-resolution
   app/
     (app)/
       daily-movers/      table view + Server Actions (create/update/delete)
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
+    api/reports/[id]/    protected 60s signed URL PDF download redirect
     login/               passwordless email identification screen
     auth/signout/        POST sign-out route handler
   components/
-    daily-movers/        filter bar, table, form dialog, row actions, combobox, pagination
+    daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper
     theme-toggle.tsx     Light / Dark / System theme switcher
@@ -209,8 +216,11 @@ src/
     schema.ts            tables, indexes, relations, enums
     seed.ts              catalysts, analysts, companies, sample movers
   lib/
+    ai/
+      anthropic.ts       Claude 3.5 Sonnet PDF tool extraction client
     movers.ts            types + constants shared with client components
     queries.ts           server-only data access layer
+    storage.ts           Supabase storage path builders and byte validation
     validation.ts        Zod schema for form mutations
     session.ts           Web Crypto HMAC-SHA256 session token manager
     auth.ts              RBAC role lookup and permission assertions

@@ -1,6 +1,5 @@
 "use client";
 
-import { createClient } from "@supabase/supabase-js";
 import { FileText, Loader2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -10,7 +9,7 @@ import {
   formatBytes,
   isPdf,
   MAX_REPORT_BYTES,
-  REPORTS_BUCKET,
+  uploadDirectToStorage,
 } from "@/lib/storage";
 
 type Status =
@@ -76,28 +75,9 @@ export function ReportUpload({
       return;
     }
 
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anon) {
-      setStatus({
-        kind: "error",
-        message:
-          "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are missing from the environment.",
-      });
-      return;
-    }
-
-    // The signed token is the authorisation here, not the anon key.
-    const supabase = createClient(url, anon);
-    const { error } = await supabase.storage
-      .from(REPORTS_BUCKET)
-      .uploadToSignedUrl(ticket.path, ticket.token, file, {
-        contentType: "application/pdf",
-      });
-
-    if (error) {
-      console.error("uploadToSignedUrl failed", error);
-      setStatus({ kind: "error", message: `Upload failed: ${error.message}` });
+    const uploadRes = await uploadDirectToStorage(ticket.path, ticket.token, file);
+    if (!uploadRes.ok) {
+      setStatus({ kind: "error", message: `Upload failed: ${uploadRes.error}` });
       return;
     }
 

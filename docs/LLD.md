@@ -19,6 +19,7 @@ daily-movers-dashboard/
 │   └── storage-setup.mts        # Private Supabase Storage bucket initialization
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
+│   │   ├── extract.ts           # extractReportAction (Claude PDF AI extraction)
 │   │   ├── movers.ts            # saveMover, deleteMover
 │   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
 │   ├── app/                     # Next.js App Router routes & pages
@@ -45,7 +46,7 @@ daily-movers-dashboard/
 │   │   ├── daily-movers/        # Domain-specific components
 │   │   │   ├── company-combobox.tsx
 │   │   │   ├── filter-bar.tsx
-│   │   │   ├── mover-dialog.tsx
+│   │   │   ├── mover-dialog.tsx # Add/Edit modal with Claude AI Auto-Fill dropzone
 │   │   │   ├── mover-row-actions.tsx
 │   │   │   ├── movers-table.tsx # Table with directional chips & Documents column
 │   │   │   ├── pagination.tsx
@@ -62,6 +63,8 @@ daily-movers-dashboard/
 │   │   ├── schema.ts            # Drizzle ORM table & relation schemas
 │   │   └── seed.ts              # Idempotent database seed script
 │   ├── lib/                     # Utilities, helpers & business logic
+│   │   ├── ai/                  # AI & LLM extraction modules
+│   │   │   └── anthropic.ts     # Claude 3.5 Sonnet document tool extraction client
 │   │   ├── auth-config.ts       # Domain & path matching (edge safe)
 │   │   ├── auth.ts              # RBAC & session verification (server-only)
 │   │   ├── db-error.ts          # Postgres error code parser & credential scrubbing
@@ -69,7 +72,7 @@ daily-movers-dashboard/
 │   │   ├── movers.ts            # Shared runtime types, reportState helpers & pagination constants
 │   │   ├── queries.ts           # Drizzle SQL query builder (server-only)
 │   │   ├── session.ts           # Web Crypto HMAC-SHA256 token manager
-│   │   ├── storage.ts           # Storage path sanitization & bucket limits
+│   │   ├── storage.ts           # Storage path sanitization, upload helper & limits
 │   │   ├── supabase/admin.ts    # Service-role Supabase admin client
 │   │   ├── use-query-params.ts  # Client hook for URL searchParams synchronization
 │   │   ├── utils.ts             # clsx & tailwind-merge helper
@@ -323,6 +326,16 @@ classDiagram
 2. Validates PDF mime type and file size ($\le 25$ MB).
 3. Builds sanitized path via `buildReportPath()`.
 4. Mints signed upload token via Supabase Storage admin client.
+
+### 7.3 `extractReportAction(formData: FormData)`
+1. Verifies admin permissions via `requireAdmin()`.
+2. Validates uploaded PDF file bytes ($\le 25$ MB).
+3. Invokes `extractMoverFromPdfBuffer()` using Anthropic Claude 3.5 Sonnet with tool calling (`save_daily_mover_research`).
+4. **Auto-Entities Resolution**:
+   - Queries `companies` by ticker; if not found, automatically inserts the company into `companies` and returns the newly minted entity ID.
+   - Maps extracted catalyst slug against `catalysts` table to resolve `catalystId`.
+   - Maps or auto-creates authoring analyst in `analysts` table to resolve `analystId`.
+5. Returns typed `ExtractionResponse` to immediately populate client state in `MoverDialog`.
 
 ---
 

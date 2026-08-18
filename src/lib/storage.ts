@@ -1,3 +1,5 @@
+import { createClient } from "@supabase/supabase-js";
+
 /**
  * Report PDF storage constants and path rules.
  *
@@ -70,4 +72,35 @@ export function isPdf(file: { type: string; name: string }): boolean {
     (ALLOWED_REPORT_TYPES as readonly string[]).includes(file.type) ||
     /\.pdf$/i.test(file.name)
   );
+}
+
+/**
+ * Uploads a file directly to Supabase storage using a signed upload URL token.
+ */
+export async function uploadDirectToStorage(
+  path: string,
+  token: string,
+  file: File,
+): Promise<{ ok: boolean; error?: string }> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    return {
+      ok: false,
+      error: "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are missing from environment.",
+    };
+  }
+
+  const supabase = createClient(url, anon);
+  const { error } = await supabase.storage
+    .from(REPORTS_BUCKET)
+    .uploadToSignedUrl(path, token, file, {
+      contentType: "application/pdf",
+    });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
 }
