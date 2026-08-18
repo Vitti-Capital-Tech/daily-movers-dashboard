@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
 import { FilterBar } from "@/components/daily-movers/filter-bar";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
@@ -5,7 +7,7 @@ import { MoversTable } from "@/components/daily-movers/movers-table";
 import { Pagination } from "@/components/daily-movers/pagination";
 import { Card, CardContent } from "@/components/ui/card";
 import { isDbConfigured } from "@/db";
-import { requireSessionUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-error";
 import {
   DEFAULT_PER_PAGE,
@@ -85,7 +87,11 @@ export default async function DailyMoversPage({
     );
   }
 
-  const user = await requireSessionUser();
+  // Redirect rather than throw: an unhandled NotAuthenticatedError here would
+  // surface as an opaque 500 instead of sending them to sign in.
+  const user = await getSessionUser();
+  if (!user) redirect("/login?next=%2Fdaily-movers");
+
   const filters = parseFilters(params);
 
   let result: Awaited<ReturnType<typeof listDailyMovers>>;

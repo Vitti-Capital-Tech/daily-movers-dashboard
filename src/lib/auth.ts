@@ -19,17 +19,38 @@ export type SessionUser = {
  * Role is looked up from `admin_emails` on every request rather than copied onto
  * a user row, so revoking write access takes effect immediately and there is no
  * second copy to fall out of sync.
+ *
+ * Degrades to `viewer` if the database can't be reached. That's deliberate on
+ * two counts: it fails closed on permissions, and it keeps a database outage
+ * from throwing inside the *authentication* path — which would 500 the whole
+ * page instead of letting the data layer render its own diagnostic.
  */
 export async function roleFor(email: string): Promise<UserRole> {
-  const db = getDb();
-  const [row] = await db
-    .select({ email: adminEmails.email })
-    .from(adminEmails)
-    .where(eq(adminEmails.email, email.trim().toLowerCase()));
-  return row ? "admin" : "viewer";
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ email: adminEmails.email })
+      .from(adminEmails)
+      .where(eq(adminEmails.email, email.trim().toLowerCase()));
+    return row ? "admin" : "viewer";
+  } catch (error) {
+    console.error(
+      "roleFor: could not reach the database, defaulting to viewer",
+      error,
+    );
+    return "viewer";
+  }
 }
 
-/** The signed-in user, or null. Fails closed on every unexpected input. */
+/**
+ * The signed-in user, or null.
+ *
+ * Returns null ONLY for a missing, forged, expired or out-of-domain cookie —
+ * never because of a database problem. If a database failure returned null, the
+ * layout would redirect to /login, the middleware would see a still-valid cookie
+ * and bounce back, and the user would sit in a redirect loop instead of seeing
+ * the real error.
+ */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const email = await readSessionToken(store.get(SESSION_COOKIE)?.value);
