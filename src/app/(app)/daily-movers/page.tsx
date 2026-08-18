@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { FileText, Building2, Layers, Sparkles } from "lucide-react";
 
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
 import { FilterBar } from "@/components/daily-movers/filter-bar";
@@ -19,8 +20,6 @@ import {
 } from "@/lib/movers";
 import { getFormOptions, getSummary, listDailyMovers } from "@/lib/queries";
 
-// Every render depends on searchParams + live data, so there's nothing to
-// prerender at build time.
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -87,8 +86,6 @@ export default async function DailyMoversPage({
     );
   }
 
-  // Redirect rather than throw: an unhandled NotAuthenticatedError here would
-  // surface as an opaque 500 instead of sending them to sign in.
   const user = await getSessionUser();
   if (!user) redirect("/login?next=%2Fdaily-movers");
 
@@ -115,20 +112,31 @@ export default async function DailyMoversPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/40 pb-5">
         <PageHeading />
-        {/* Hidden for viewers as a courtesy — `assertCanWrite()` in the Server
-            Action is what actually enforces it. */}
         {user.canWrite ? <MoverDialog options={options} mode="create" /> : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryCard label="Daily Movers saved" value={summary.totalMovers} />
         <SummaryCard
-          label="Companies covered"
-          value={summary.companiesCovered}
+          label="Research Published"
+          value={summary.totalMovers}
+          icon={<FileText className="size-4 text-sky-500" />}
+          gradient="from-sky-500/10 via-transparent to-transparent"
         />
-        <SummaryCard label="Showing" value={result.total} suffix="results" />
+        <SummaryCard
+          label="Companies Covered"
+          value={summary.companiesCovered}
+          icon={<Building2 className="size-4 text-emerald-500" />}
+          gradient="from-emerald-500/10 via-transparent to-transparent"
+        />
+        <SummaryCard
+          label="Filtered Results"
+          value={result.total}
+          suffix="entries"
+          icon={<Layers className="size-4 text-purple-500" />}
+          gradient="from-purple-500/10 via-transparent to-transparent"
+        />
       </div>
 
       <FilterBar catalysts={options.catalysts} />
@@ -154,9 +162,17 @@ export default async function DailyMoversPage({
 function PageHeading() {
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Daily Movers</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          Daily Movers
+        </h1>
+        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary border border-primary/20">
+          <Sparkles className="size-3" />
+          Live Archive
+        </span>
+      </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Search, filter and review every Daily Mover we&apos;ve published.
+        Search, filter and analyze historical share price catalyst intelligence.
       </p>
     </div>
   );
@@ -166,21 +182,32 @@ function SummaryCard({
   label,
   value,
   suffix,
+  icon,
+  gradient,
 }: {
   label: string;
   value: number;
   suffix?: string;
+  icon: React.ReactNode;
+  gradient?: string;
 }) {
   return (
-    <Card>
-      <CardContent className="py-4">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          {label}
+    <Card className={`relative overflow-hidden border-border/60 bg-gradient-to-br ${gradient} backdrop-blur-xs transition-all hover:border-border`}>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
+          <div className="flex size-8 items-center justify-center rounded-md bg-background/80 shadow-xs border border-border/40">
+            {icon}
+          </div>
         </div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {value}
+        <div className="mt-3 flex items-baseline gap-2">
+          <span className="text-3xl font-bold tracking-tight text-foreground tabular-nums">
+            {value}
+          </span>
           {suffix ? (
-            <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+            <span className="text-xs font-medium text-muted-foreground">
               {suffix}
             </span>
           ) : null}

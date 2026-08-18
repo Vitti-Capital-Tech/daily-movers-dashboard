@@ -1,5 +1,6 @@
 "use client";
 
+import { LogOut, User as UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,53 +36,57 @@ export function UserMenu({
             variant="ghost"
             className={
               compact
-                ? "size-8 rounded-full p-0 text-xs"
-                : "h-auto w-full justify-start gap-2 px-2 py-2"
+                ? "size-8 rounded-full p-0 text-xs border border-border/60"
+                : "h-auto w-full justify-start gap-2.5 rounded-lg border border-border/50 bg-background/40 px-2.5 py-2 hover:bg-accent/80 transition-colors"
             }
             aria-label="Account menu"
           />
         }
       >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-bold">
           {initials(user.email)}
         </span>
         {!compact ? (
-          <span className="min-w-0 text-left">
-            <span className="block truncate text-xs">{user.email}</span>
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-xs font-medium text-foreground">
+              {user.email}
+            </span>
             <span className="block text-[10px] text-muted-foreground">
-              {user.role === "admin" ? "Can edit" : "View only"}
+              {user.role === "admin" ? "Author / Analyst" : "Research Consumer"}
             </span>
           </span>
         ) : null}
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="w-56">
-        {/* Base UI requires GroupLabel to sit inside a Group — using
-            DropdownMenuLabel bare throws MenuGroupContext is missing. */}
+      <DropdownMenuContent align="end" className="w-60 text-xs">
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="font-normal">
-            <span className="block truncate text-xs">{user.email}</span>
-            <span className="block text-[10px] text-muted-foreground">
+          <DropdownMenuLabel className="font-normal p-2.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex size-6 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                <UserIcon className="size-3" />
+              </div>
+              <span className="font-semibold text-foreground truncate">
+                {user.email}
+              </span>
+            </div>
+            <span className="block text-[11px] text-muted-foreground">
               {user.role === "admin"
-                ? "Admin — can add, edit and delete"
-                : "Viewer — read-only"}
+                ? "Admin — Full write & delete permissions"
+                : "Viewer — Read-only research access"}
             </span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* A form POST, not a link: signing out is a state change.
-            Menu.Item defaults to nativeButton=false, so it must be told the
-            rendered element really is a <button> — otherwise Base UI adds
-            non-native a11y attributes on top of native ones. (Triggers already
-            default to true, which is why only this one needed it.) */}
         <form action="/auth/signout" method="post">
           <DropdownMenuItem
             nativeButton
+            className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
             render={
-              <button type="submit" className="w-full cursor-default text-left" />
+              <button type="submit" className="w-full cursor-pointer flex items-center gap-2 text-left" />
             }
           >
-            Sign out
+            <LogOut className="size-3.5" />
+            <span>Sign out</span>
           </DropdownMenuItem>
         </form>
       </DropdownMenuContent>

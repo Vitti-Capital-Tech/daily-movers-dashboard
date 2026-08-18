@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowUpRight, ArrowDownRight, FileSearch } from "lucide-react";
 
 import { MoverRowActions } from "@/components/daily-movers/mover-row-actions";
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +14,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  arrowOf,
   directionOf,
   formatMoveDate,
   formatPct,
-  upDownLabel,
 } from "@/lib/format";
 import type { FormOptions, MoverRow, SortDir, SortKey } from "@/lib/movers";
 import { useQueryParams } from "@/lib/use-query-params";
@@ -39,123 +38,148 @@ export function MoversTable({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 px-6 py-16 text-center">
-        <p className="text-sm font-medium">No Daily Movers match those filters</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Clear the filters, or add a Daily Mover to get started.
+      <div className="rounded-xl border border-border/70 bg-card/40 px-6 py-16 text-center backdrop-blur-xs">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted/60 text-muted-foreground mb-3">
+          <FileSearch className="size-6" />
+        </div>
+        <p className="text-base font-semibold text-foreground">No Daily Movers found</p>
+        <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
+          No research records match the selected filters. Try clearing your search or date range criteria.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <SortableHead column="date" sort={sort} dir={dir}>
-              Date
-            </SortableHead>
-            <SortableHead column="ticker" sort={sort} dir={dir}>
-              Ticker
-            </SortableHead>
-            <SortableHead column="company" sort={sort} dir={dir}>
-              Company
-            </SortableHead>
-            <TableHead>Catalyst</TableHead>
-            <TableHead>Move</TableHead>
-            <TableHead className="text-center">Direction</TableHead>
-            <SortableHead column="move" sort={sort} dir={dir} align="right">
-              % Move
-            </SortableHead>
-            <TableHead>Move Type</TableHead>
-            <TableHead>Analyst</TableHead>
-            {canWrite ? <TableHead className="w-10" /> : null}
-          </TableRow>
-        </TableHeader>
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card/50 shadow-xs backdrop-blur-xs">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader className="bg-muted/40 border-b border-border/60">
+            <TableRow className="hover:bg-transparent">
+              <SortableHead column="date" sort={sort} dir={dir}>
+                Date
+              </SortableHead>
+              <SortableHead column="ticker" sort={sort} dir={dir}>
+                Ticker
+              </SortableHead>
+              <SortableHead column="company" sort={sort} dir={dir}>
+                Company Name
+              </SortableHead>
+              <TableHead className="font-semibold text-xs">Catalyst</TableHead>
+              <SortableHead column="move" sort={sort} dir={dir} align="right">
+                % Move
+              </SortableHead>
+              <TableHead className="font-semibold text-xs">Pricing Type</TableHead>
+              <TableHead className="font-semibold text-xs">Covering Analyst</TableHead>
+              {canWrite ? <TableHead className="w-10" /> : null}
+            </TableRow>
+          </TableHeader>
 
-        <TableBody>
-          {rows.map((row) => {
-            const down = directionOf(row.movePct) === "down";
-            const tone = down ? "text-red-400" : "text-emerald-400";
+          <TableBody className="divide-y divide-border/40">
+            {rows.map((row) => {
+              const down = directionOf(row.movePct) === "down";
 
-            return (
-              <TableRow key={row.id}>
-                <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {formatMoveDate(row.moveDate)}
-                </TableCell>
-
-                <TableCell>
-                  <Link
-                    href={`/companies/${row.ticker}`}
-                    className="font-mono text-xs font-semibold underline-offset-4 hover:underline"
-                    title={`Research history for ${row.ticker}`}
-                  >
-                    {row.ticker}
-                  </Link>
-                </TableCell>
-
-                <TableCell className="max-w-[240px]">
-                  <Link
-                    href={`/companies/${row.ticker}`}
-                    className="block truncate underline-offset-4 hover:underline"
-                    title={row.companyName}
-                  >
-                    {row.companyName}
-                  </Link>
-                </TableCell>
-
-                <TableCell>
-                  <Badge variant="secondary" className="font-normal">
-                    {row.catalystLabel}
-                  </Badge>
-                </TableCell>
-
-                <TableCell className={cn("font-medium", tone)}>
-                  {upDownLabel(row.movePct)}
-                </TableCell>
-
-                <TableCell className={cn("text-center text-base", tone)}>
-                  <span aria-hidden>{arrowOf(row.movePct)}</span>
-                  <span className="sr-only">{upDownLabel(row.movePct)}</span>
-                </TableCell>
-
-                <TableCell
-                  className={cn(
-                    "text-right font-medium tabular-nums whitespace-nowrap",
-                    tone,
-                  )}
+              return (
+                <TableRow
+                  key={row.id}
+                  className="group hover:bg-accent/40 transition-colors"
                 >
-                  {formatPct(row.movePct)}
-                </TableCell>
-
-                <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {MOVE_TYPE_LABELS[row.moveType]}
-                  {row.moveWindowLabel &&
-                  row.moveWindowLabel !== MOVE_TYPE_LABELS[row.moveType] ? (
-                    <span
-                      className="ml-1 text-xs"
-                      title="Wording used in the report"
-                    >
-                      ({row.moveWindowLabel})
-                    </span>
-                  ) : null}
-                </TableCell>
-
-                <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {row.analystName ?? "—"}
-                </TableCell>
-
-                {canWrite ? (
-                  <TableCell>
-                    <MoverRowActions row={row} options={options} />
+                  {/* Date Column */}
+                  <TableCell className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                    {formatMoveDate(row.moveDate)}
                   </TableCell>
-                ) : null}
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+
+                  {/* Ticker Column */}
+                  <TableCell>
+                    <Link
+                      href={`/companies/${row.ticker}`}
+                      className="inline-flex items-center rounded-md border border-border/80 bg-background/80 px-2 py-0.5 font-mono text-xs font-bold text-foreground hover:border-primary/60 hover:bg-primary/5 hover:text-primary transition-all shadow-2xs"
+                      title={`Open research timeline for ${row.ticker}`}
+                    >
+                      {row.ticker}
+                    </Link>
+                  </TableCell>
+
+                  {/* Company Column */}
+                  <TableCell className="max-w-[220px]">
+                    <Link
+                      href={`/companies/${row.ticker}`}
+                      className="block truncate text-xs font-semibold text-foreground hover:text-primary hover:underline underline-offset-4 transition-colors"
+                      title={row.companyName}
+                    >
+                      {row.companyName}
+                    </Link>
+                  </TableCell>
+
+                  {/* Catalyst Badge */}
+                  <TableCell>
+                    <Badge
+                      variant="secondary"
+                      className="font-normal text-[11px] bg-secondary/80 text-secondary-foreground border border-border/40 whitespace-nowrap"
+                    >
+                      {row.catalystLabel}
+                    </Badge>
+                  </TableCell>
+
+                  {/* % Move Column */}
+                  <TableCell className="text-right whitespace-nowrap">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold tabular-nums border",
+                        down
+                          ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25"
+                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
+                      )}
+                    >
+                      {down ? (
+                        <ArrowDownRight className="size-3.5" />
+                      ) : (
+                        <ArrowUpRight className="size-3.5" />
+                      )}
+                      <span>{formatPct(row.movePct)}</span>
+                    </span>
+                  </TableCell>
+
+                  {/* Move Type */}
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground/90">
+                      {MOVE_TYPE_LABELS[row.moveType]}
+                    </span>
+                    {row.moveWindowLabel &&
+                    row.moveWindowLabel !== MOVE_TYPE_LABELS[row.moveType] ? (
+                      <span
+                        className="ml-1 text-[11px] text-muted-foreground/80 italic"
+                        title="Verbatim report wording"
+                      >
+                        ({row.moveWindowLabel})
+                      </span>
+                    ) : null}
+                  </TableCell>
+
+                  {/* Analyst */}
+                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    {row.analystName ? (
+                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground/80">
+                        <span className="size-1.5 rounded-full bg-primary/40" />
+                        {row.analystName}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/60">—</span>
+                    )}
+                  </TableCell>
+
+                  {/* Row Actions */}
+                  {canWrite ? (
+                    <TableCell className="text-right">
+                      <MoverRowActions row={row} options={options} />
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -175,22 +199,26 @@ function SortableHead({
 }) {
   const { setParams } = useQueryParams();
   const active = sort === column;
-  // First click on a new column sorts descending — most recent / biggest first
-  // is nearly always what you want here.
   const nextDir = active && dir === "desc" ? "asc" : "desc";
 
   return (
-    <TableHead className={align === "right" ? "text-right" : undefined}>
+    <TableHead className={cn("text-xs font-semibold", align === "right" ? "text-right" : undefined)}>
       <button
         type="button"
         onClick={() => setParams({ sort: column, dir: nextDir })}
         className={cn(
-          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
-          active ? "text-foreground" : undefined,
+          "inline-flex items-center gap-1.5 py-1 transition-colors hover:text-foreground group cursor-pointer",
+          active ? "text-foreground font-bold" : "text-muted-foreground",
         )}
       >
-        {children}
-        <span aria-hidden className="text-[10px] leading-none">
+        <span>{children}</span>
+        <span
+          aria-hidden
+          className={cn(
+            "text-[10px] leading-none transition-transform",
+            active ? "text-primary opacity-100" : "opacity-40 group-hover:opacity-80",
+          )}
+        >
           {active ? (dir === "desc" ? "▼" : "▲") : "↕"}
         </span>
       </button>

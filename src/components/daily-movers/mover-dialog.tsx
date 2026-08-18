@@ -36,6 +36,8 @@ import {
   TAKEAWAY_MAX,
 } from "@/lib/validation";
 
+import { Plus } from "lucide-react";
+
 export function MoverDialog({
   options,
   mode,
@@ -59,7 +61,14 @@ export function MoverDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {mode === "create" ? (
-        <DialogTrigger render={<Button />}>+ Add Daily Mover</DialogTrigger>
+        <DialogTrigger
+          render={
+            <Button className="shadow-xs gap-1.5 font-semibold text-xs h-9 px-3.5" />
+          }
+        >
+          <Plus className="size-3.5" />
+          <span>Add Daily Mover</span>
+        </DialogTrigger>
       ) : null}
 
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
