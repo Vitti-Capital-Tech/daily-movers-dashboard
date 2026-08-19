@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq, ilike } from "drizzle-orm";
+import { ilike } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { analysts, catalysts, companies } from "@/db/schema";
@@ -102,21 +102,25 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Resolve Catalyst
-    let catalystId: number;
-    const [matchedCatalyst] = await db
-      .select({ id: catalysts.id })
-      .from(catalysts)
-      .where(eq(catalysts.slug, extracted.catalystSlug));
+    let catalystId: number = 1;
+    const allCatalysts = await db.select().from(catalysts);
+
+    const matchedCatalyst =
+      allCatalysts.find((c) => c.slug === extracted.catalystSlug) ||
+      allCatalysts.find(
+        (c) =>
+          c.slug.replace(/_/g, "") ===
+          extracted.catalystSlug.replace(/_/g, "").replace(/s$/, ""),
+      ) ||
+      allCatalysts.find((c) =>
+        c.label
+          .toLowerCase()
+          .includes(extracted.catalystSlug.toLowerCase().replace(/_/g, " ")),
+      ) ||
+      allCatalysts[0];
 
     if (matchedCatalyst) {
       catalystId = matchedCatalyst.id;
-    } else {
-      const [defaultCatalyst] = await db
-        .select({ id: catalysts.id })
-        .from(catalysts)
-        .orderBy(asc(catalysts.sortOrder))
-        .limit(1);
-      catalystId = defaultCatalyst ? defaultCatalyst.id : 1;
     }
 
     // 3. Resolve or Auto-Create Analyst

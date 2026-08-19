@@ -129,9 +129,6 @@ function MoverForm({
   const [moveType, setMoveType] = useState<"intraday" | "closing">(
     mover?.moveType ?? "intraday",
   );
-  const [moveWindowLabel, setMoveWindowLabel] = useState(
-    mover?.moveWindowLabel ?? "",
-  );
   const [catalystId, setCatalystId] = useState<number | null>(
     mover?.catalystId ?? null,
   );
@@ -224,7 +221,6 @@ function MoverForm({
       setMoveDate(data.moveDate);
       setMovePct(String(data.movePct));
       setMoveType(data.moveType);
-      setMoveWindowLabel(data.moveWindowLabel ?? "");
       setCatalystId(resolvedCatalystId);
       setReason(data.reasonForMove);
       setTakeaway(data.mainTakeaway);
@@ -391,7 +387,7 @@ function MoverForm({
           </div>
         </Row>
 
-        <Row label="Move type" error={errors.moveType}>
+        <Row label="Move Type" error={errors.moveType}>
           <Select
             name="moveType"
             value={moveType}
@@ -411,21 +407,6 @@ function MoverForm({
         </Row>
 
         <Row
-          label="Window wording"
-          error={errors.moveWindowLabel}
-          hint="Optional — as written in the report, e.g. “Morning Trade”"
-          className="sm:col-span-2"
-        >
-          <Input
-            name="moveWindowLabel"
-            value={moveWindowLabel}
-            onChange={(e) => setMoveWindowLabel(e.target.value)}
-            placeholder="Intraday"
-            className="text-xs"
-          />
-        </Row>
-
-        <Row
           label="Catalyst"
           error={errors.catalystId}
           className="sm:col-span-2"
@@ -438,8 +419,9 @@ function MoverForm({
             <SelectTrigger className="w-full text-xs">
               <SelectValue placeholder="Select a catalyst">
                 {catalystId != null
-                  ? options.catalysts.find((c) => c.id === catalystId)?.label ??
-                    "Select a catalyst"
+                  ? options.catalysts.find(
+                      (c) => Number(c.id) === Number(catalystId),
+                    )?.label ?? "Select a catalyst"
                   : "Select a catalyst"}
               </SelectValue>
             </SelectTrigger>
@@ -517,8 +499,9 @@ function MoverForm({
             <SelectTrigger className="w-full text-xs">
               <SelectValue placeholder="Select an analyst">
                 {analystId != null
-                  ? options.analysts.find((a) => a.id === analystId)?.name ??
-                    "Not specified"
+                  ? options.analysts.find(
+                      (a) => Number(a.id) === Number(analystId),
+                    )?.name ?? "Not specified"
                   : "Not specified"}
               </SelectValue>
             </SelectTrigger>

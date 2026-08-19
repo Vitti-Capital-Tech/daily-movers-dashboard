@@ -15,11 +15,12 @@ const MONOGRAM_PALETTES = [
 ];
 
 function getPalette(ticker: string) {
-  const code = (ticker || "ASX").charCodeAt(0) + (ticker || "ASX").charCodeAt((ticker?.length || 1) - 1);
+  const clean = (ticker || "ASX").trim().toUpperCase();
+  const code = clean.charCodeAt(0) + clean.charCodeAt(clean.length - 1);
   return MONOGRAM_PALETTES[code % MONOGRAM_PALETTES.length];
 }
 
-// Common ASX company domain mappings for higher logo resolution
+// Common ASX company domain mappings
 const KNOWN_DOMAINS: Record<string, string> = {
   JBH: "jbhifi.com.au",
   SPZ: "smartparking.com",
@@ -44,7 +45,28 @@ const KNOWN_DOMAINS: Record<string, string> = {
   WTC: "wisetechglobal.com",
   DRO: "droneshield.com",
   NXT: "nextdc.com",
+  BGA: "begagroup.com.au",
+  ZIP: "zip.co",
+  PLS: "pilbaraminerals.com.au",
 };
+
+/** Derives probable domain name from company name */
+function inferDomain(ticker: string, companyName?: string): string {
+  const cleanTicker = ticker.trim().toUpperCase();
+  if (KNOWN_DOMAINS[cleanTicker]) return KNOWN_DOMAINS[cleanTicker];
+
+  if (companyName) {
+    const simplified = companyName
+      .toLowerCase()
+      .replace(/\b(limited|ltd|group|corporation|corp|holdings|pty|inc|plc)\b/gi, "")
+      .replace(/[^a-z0-9]/g, "");
+    if (simplified.length >= 3) {
+      return `${simplified}.com`;
+    }
+  }
+
+  return `${cleanTicker.toLowerCase()}.com.au`;
+}
 
 export type CompanyLogoSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -62,16 +84,17 @@ export function CompanyLogo({
   className?: string;
 }) {
   const [sourceIndex, setSourceIndex] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
   const cleanTicker = (ticker || "").trim().toUpperCase();
-  const domain = KNOWN_DOMAINS[cleanTicker] || `${cleanTicker.toLowerCase()}.com.au`;
+  const domain = inferDomain(cleanTicker, name);
 
   // Candidate sources to try in order
   const sources = [
     explicitLogoUrl,
-    `https://s3-symbol-logo.tradingview.com/${cleanTicker.toLowerCase()}.svg`,
     `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`,
     `https://logo.clearbit.com/${domain}`,
+    `https://s3-symbol-logo.tradingview.com/${cleanTicker.toLowerCase()}.svg`,
   ].filter(Boolean) as string[];
 
   const currentSrc = sources[sourceIndex];
@@ -87,46 +110,47 @@ export function CompanyLogo({
 
   const currentSize = sizeClasses[size] || sizeClasses.md;
   const palette = getPalette(cleanTicker);
-
-  if (isFailed || !currentSrc) {
-    // Institutional Monogram Tile
-    const monogram = cleanTicker.slice(0, 2) || "CO";
-    return (
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-center font-mono font-bold border select-none transition-transform shadow-2xs",
-          palette.bg,
-          palette.text,
-          palette.border,
-          currentSize.box,
-          currentSize.font,
-          className,
-        )}
-        title={name || cleanTicker}
-      >
-        {monogram}
-      </div>
-    );
-  }
+  const monogram = cleanTicker.slice(0, 2) || "CO";
 
   return (
     <div
       className={cn(
-        "relative shrink-0 flex items-center justify-center overflow-hidden border border-border/60 bg-white dark:bg-card/90 shadow-2xs transition-all",
+        "relative shrink-0 flex items-center justify-center overflow-hidden border font-mono font-bold select-none shadow-2xs transition-all",
+        palette.bg,
+        palette.text,
+        palette.border,
         currentSize.box,
-        currentSize.iconPad,
+        currentSize.font,
         className,
       )}
       title={name || cleanTicker}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={currentSrc}
-        alt={`${cleanTicker} logo`}
-        loading="lazy"
-        className="size-full object-contain"
-        onError={() => setSourceIndex((prev) => prev + 1)}
-      />
+      {/* Base Monogram Tile: always renders immediately with zero blank flicker */}
+      <span>{monogram}</span>
+
+      {/* Branded Logo Overlay: fades in once successfully loaded */}
+      {!isFailed && currentSrc && (
+        <div
+          className={cn(
+            "absolute inset-0 flex items-center justify-center bg-white dark:bg-card transition-opacity duration-200",
+            currentSize.iconPad,
+            loaded ? "opacity-100" : "opacity-0 pointer-events-none",
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={currentSrc}
+            alt={`${cleanTicker} logo`}
+            loading="lazy"
+            className="size-full object-contain"
+            onLoad={() => setLoaded(true)}
+            onError={() => {
+              setLoaded(false);
+              setSourceIndex((prev) => prev + 1);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

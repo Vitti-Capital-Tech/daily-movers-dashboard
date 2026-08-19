@@ -235,7 +235,7 @@ graph LR
 3. **Company Research Directory (`/companies`)**:
    - Comprehensive directory of all covered listed entities with sector tags, mover counts, and latest coverage timestamps.
 4. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
-   - "Most Recent Investment Takeaway" hero card with highlight banner and quote icon.
+   - "Most Recent Research Takeaway" hero card with highlight banner and quote icon.
    - Vertical research history timeline connecting chronological notes with directional status nodes.
    - Action links to Daily Mover source reports and official ASX announcements.
 5. **Theme Customization (`ThemeToggle`)**:

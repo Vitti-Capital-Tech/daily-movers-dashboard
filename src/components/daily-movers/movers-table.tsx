@@ -83,7 +83,7 @@ export function MoversTable({
               <SortableHead column="move" sort={sort} dir={dir} align="right">
                 % Move
               </SortableHead>
-              <TableHead className="font-semibold text-xs">Pricing Type</TableHead>
+              <TableHead className="font-semibold text-xs">Move Type</TableHead>
               <TableHead className="font-semibold text-xs">Covering Analyst</TableHead>
               <TableHead className="font-semibold text-xs">Documents</TableHead>
               {canWrite ? <TableHead className="w-10" /> : null}
@@ -163,15 +163,6 @@ export function MoversTable({
                     <span className="font-medium text-foreground/90">
                       {MOVE_TYPE_LABELS[row.moveType]}
                     </span>
-                    {row.moveWindowLabel &&
-                    row.moveWindowLabel !== MOVE_TYPE_LABELS[row.moveType] ? (
-                      <span
-                        className="ml-1 text-[11px] text-muted-foreground/80 italic"
-                        title="Verbatim report wording"
-                      >
-                        ({row.moveWindowLabel})
-                      </span>
-                    ) : null}
                   </TableCell>
 
                   {/* Analyst */}

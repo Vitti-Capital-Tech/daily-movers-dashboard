@@ -101,7 +101,7 @@ export default async function ResearchHistoryPage({
                   <Sparkles className="size-3.5" />
                 </span>
                 <span className="text-xs font-bold uppercase tracking-wider text-primary">
-                  Most Recent Investment Takeaway
+                  Most Recent Research Takeaway
                 </span>
               </div>
               <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -187,12 +187,8 @@ function HistoryEntry({ row }: { row: MoverRow }) {
               {formatPct(row.movePct)}
             </span>
 
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground font-medium">
               {MOVE_TYPE_LABELS[row.moveType]}
-              {row.moveWindowLabel &&
-              row.moveWindowLabel !== MOVE_TYPE_LABELS[row.moveType]
-                ? ` (${row.moveWindowLabel})`
-                : ""}
             </span>
 
             <Badge variant="secondary" className="font-normal text-[11px]">

@@ -107,7 +107,7 @@ export function FilterBar({
         </Field>
 
         {/* Catalyst Dropdown */}
-        <Field label="Catalyst Event" icon={<Tag className="size-3" />}>
+        <Field label="Catalyst" icon={<Tag className="size-3" />}>
           <Select
             value={catalyst}
             onValueChange={(value) =>
