@@ -266,10 +266,10 @@ Nothing here is entered by hand. The return is **derived on read** from stored p
 
 | Layer | File | Responsibility |
 | :--- | :--- | :--- |
-| Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider`, `DailyClose`, `Quote`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. |
-| Yahoo adapter | `src/lib/market/yahoo.ts` | One chart request per ticker (`{TICKER}.AX`) returns both daily closes and the latest price. Bars are dated by shifting the timestamp by the exchange's `gmtoffset`. |
+| Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider` (`fetchQuotes` + `fetchCloses`), `DailyClose`, `Quote`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. Split in two because current prices are wanted for every company on a schedule and batch cheaply, while closes are only needed for the few companies missing history. |
+| Yahoo adapter | `src/lib/market/yahoo.ts` | Built on the `yahoo-finance2` package, which owns the cookie/crumb handshake `quote()` requires, response validation and retries. `fetchQuotes` batches up to 40 symbols per request; tickers the quote endpoint skips (suspended listings such as `OPT.AX`) fall back to the price in a chart response's metadata. Bars are dated by shifting the bar's opening instant by the exchange's `gmtoffset` -- a no-op under AEST, but required under daylight saving, where 10:00 local is 23:00 UTC the previous day. |
 | Provider selection | `src/lib/market/index.ts` | Single-line swap point for a licensed feed. |
-| Refresh service | `src/lib/market/refresh.ts` | Decides what's due (30 min TTL; 6 h backoff after a failure), backfills or tops up, bounded at 20 companies and 4 concurrent requests per run (both lifted for a forced run), coalesced by an in-flight promise keyed on mode. |
+| Refresh service | `src/lib/market/refresh.ts` | Two phases. **Quotes**: every due company in one batched request, then a single multi-row upsert (`excluded.*`) rather than one round trip each -- the database is in Tokyo, and sequential upserts dominated the runtime. **Closes**: only for companies actually missing history, capped at 20 per run with 4 concurrent requests (both lifted when forced). Staleness is a 30 min TTL with a 6 h backoff after a failure; concurrent callers are coalesced by an in-flight promise keyed on mode. |
 | Trigger route | `src/app/api/prices/refresh/route.ts` | `POST`. Unauthenticated for the automatic stale-only sweep (self-limiting via TTL + ceiling); `{ force: true }` requires `canWrite`, since one forced click is a request per covered company. Returns `{ due, refreshed, failed }`. |
 | Client trigger | `src/components/daily-movers/price-refresher.tsx` | Fires after paint, calls `router.refresh()` only when something changed. |
 | Manual control | `src/components/daily-movers/price-refresh-button.tsx` | Shows "Prices as of ..." (from `getPriceFreshness()`) to everyone, plus a force-refresh button for admins. Forced runs ignore the TTL and the per-run ceiling. |
@@ -281,7 +281,11 @@ Semantics:
 - **Post-Event Return** = anchor → current price. Null when either side is unknown, rendered as `—` with the reason on hover rather than as a misleading 0.0%.
 - Fixed-window returns (1W / 1M) were removed as unnecessary; `company_prices` is still required, since the anchor fallback reads the close on the move date.
 
-Refresh is pull-based with no cron: a page load asks, and the service decides whether anything is due. A run that hits its ceiling is resumed by the next request, since staleness is re-evaluated each time. Adding an older mover for an already-tracked company automatically triggers a full history backfill on the next refresh (`earliestStored > needed`).
+Refresh is pull-based with no cron: a page load asks, and the service decides whether anything is due. A run that hits its ceiling is resumed by the next request, since staleness is re-evaluated each time. Adding an older mover for an already-tracked company automatically triggers a history backfill on the next refresh.
+
+**History is considered complete once a close exists at or before the earliest move date** -- which is exactly what the anchor lookup needs -- not once it reaches the requested `move_date - 10 days`. The lead days widen the *request* so a move date after a long weekend still has a preceding close, but the first trading day Yahoo returns is usually a day or two later, so comparing against the requested date never matched: 16 companies re-fetched and re-upserted their entire history on every refresh (~700 wasted row writes each time, measured at 511 in one sweep). With the correct check a steady-state refresh writes 47 quote rows in one statement and ~0 price rows.
+
+The one remaining exception is a ticker whose history Yahoo cannot cover back to its move date at all (`OPT`, suspended since July): its anchor can never be satisfied, so it re-fetches ~23 bars per refresh. Bounding that properly needs a stored "history requested from" marker; it is left as a known, measured cost rather than hidden.
 
 ---
 

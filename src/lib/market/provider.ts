@@ -2,9 +2,14 @@
  * The shape the rest of the app knows about market data.
  *
  * Everything above this line deals in `DailyClose`/`Quote`, never in a
- * provider's response format, so swapping Yahoo for a licensed feed (or an
- * internal Vitti Hub endpoint) means writing one more module that satisfies
- * `MarketDataProvider` and changing the export in `./index`.
+ * provider's response format, so swapping feeds means writing one more module
+ * that satisfies `MarketDataProvider` and changing the export in `./index`.
+ *
+ * The split into two calls is deliberate and mirrors what the work actually is:
+ * current prices are wanted for every tracked company on a schedule and batch
+ * cheaply, while daily closes are only needed for the few companies missing
+ * history. Collapsing both into one per-ticker call (the earlier shape) meant
+ * one upstream request per company per refresh even when nothing needed history.
  */
 
 /** One trading day's close, dated in the exchange's own timezone. */
@@ -21,24 +26,29 @@ export type Quote = {
   asOf: Date;
 };
 
-export type PriceHistory = {
-  /** Null when the provider returned bars but no live price. */
-  quote: Quote | null;
-  /** Ascending by date, gaps (non-trading days, halts) simply absent. */
-  closes: DailyClose[];
-};
-
 export interface MarketDataProvider {
   /** Recorded on every row we store, so mixed-source data stays traceable. */
   readonly name: string;
 
   /**
-   * Daily closes from `from` (YYYY-MM-DD) to today, plus the latest price.
+   * Latest prices for many tickers, in as few upstream calls as the provider
+   * allows.
+   *
+   * Keyed by the ticker as passed in. A ticker the provider doesn't recognise is
+   * *absent from the map* rather than an error: one delisted holding must not
+   * fail the batch for everyone else. Throwing is reserved for a genuine
+   * transport failure, where nothing was learned about any ticker.
+   */
+  fetchQuotes(tickers: string[]): Promise<Map<string, Quote>>;
+
+  /**
+   * Daily closes from `from` (YYYY-MM-DD) to today, ascending, with gaps
+   * (weekends, halts) simply absent.
    *
    * Throws `UnknownSymbolError` when the ticker isn't recognised -- the caller
    * treats that differently from a network blip, since retrying won't help.
    */
-  fetchHistory(ticker: string, from: string): Promise<PriceHistory>;
+  fetchCloses(ticker: string, from: string): Promise<DailyClose[]>;
 }
 
 /** The ticker isn't on the exchange (delisted, renamed, or a typo). */

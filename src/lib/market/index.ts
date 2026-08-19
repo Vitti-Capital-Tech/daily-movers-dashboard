@@ -8,10 +8,5 @@ import type { MarketDataProvider } from "./provider";
  */
 export const marketData: MarketDataProvider = yahooProvider;
 
-export type {
-  DailyClose,
-  MarketDataProvider,
-  PriceHistory,
-  Quote,
-} from "./provider";
+export type { DailyClose, MarketDataProvider, Quote } from "./provider";
 export { UnknownSymbolError } from "./provider";

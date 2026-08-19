@@ -104,7 +104,7 @@ graph TD
 | **Theming System** | **next-themes** | Client-side Light / Midnight Navy Dark / System theme switching with hydration safety and local storage persistence. |
 | **Typography** | **Plus Jakarta Sans + JetBrains Mono** | High-legibility geometric UI typography paired with developer/financial-grade monospace figures for tickers and percentage metrics. |
 | **AI Extraction Engine** | **Anthropic Claude 3.5 Sonnet** | Native multimodal document parser extracting structured equity research metadata from raw PDF bytes. |
-| **Market Data** | **Yahoo Finance chart endpoint** | Keyless ASX daily closes and latest prices (`{TICKER}.AX`), one request per ticker. Isolated behind a `MarketDataProvider` interface so a licensed feed can replace it in a single line. |
+| **Market Data** | **`yahoo-finance2`** | Maintained client for Yahoo Finance: owns the cookie/crumb handshake, response validation and retries. Batch `quote()` prices every covered company in one request; `chart()` supplies daily closes. Isolated behind a `MarketDataProvider` interface so a licensed feed can replace it in a single line. |
 | **Database** | **PostgreSQL (Supabase)** | Relational integrity (FK constraints), JSONB support for raw extractions, performant B-Tree indexes, transaction pooling. |
 | **Object-Relational Mapping (ORM)** | **Drizzle ORM + postgres.js** | Type-safe SQL builder with minimal runtime overhead, explicit query composition, seamless migration tooling. |
 | **Object Storage** | **Supabase Private Storage (`reports`)** | Encrypted, private bucket storage for Daily Mover PDF reports with server-signed upload and download tokens. |
@@ -157,7 +157,8 @@ graph TD
 ### 5.8 Derived-on-Read Post-Event Return
 - **Decision**: Store prices (`company_prices` daily closes + `company_quotes` latest price); derive the Post-Event Return at query time. Nothing in the block is entered by hand.
 - **Semantics**: The return is measured from the **report price**, falling back to the ASX close on the move date when none was entered. It stays `NULL` when either price is unknown, so "we don't know" never renders as a flat 0.0%.
-- **Refresh Model**: Pull-based, no cron. A page load triggers `/api/prices/refresh` after paint; the service applies a 30-minute TTL, a 6-hour backoff for failed tickers, and a per-run ceiling, so runs are naturally resumable and repeated calls are free. Admins can bypass all three with the **Refresh prices** button, which is admin-gated because one click is a request per covered company against an external provider.
+- **Refresh Model**: Pull-based, no cron. A page load triggers `/api/prices/refresh` after paint; the service applies a 30-minute TTL, a 6-hour backoff for failed tickers, and a per-run ceiling, so runs are naturally resumable and repeated calls are free.
+- **Cost Shape**: One batched quote request prices all covered companies, written back in a single multi-row upsert; daily closes are fetched only for companies missing history. A steady-state refresh of 47 companies takes ~2.7s and writes 47 rows, against ~11s and ~500 rows for the earlier per-ticker design. Admins can bypass all three with the **Refresh prices** button, which is admin-gated because one click is a request per covered company against an external provider.
 - **Rationale**: Same reasoning as deriving direction from `move_pct` — two copies of a figure eventually disagree. A corrected or late close fixes every window at once, and no one has to return after a week to type a price in.
 
 ### 5.9 Recency-First Ordering Architecture

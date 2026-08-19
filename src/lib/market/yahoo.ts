@@ -1,161 +1,219 @@
+import YahooFinance from "yahoo-finance2";
+
 import {
   UnknownSymbolError,
   type DailyClose,
   type MarketDataProvider,
-  type PriceHistory,
   type Quote,
 } from "./provider";
 
 /**
- * Yahoo Finance chart endpoint.
+ * Yahoo Finance via the `yahoo-finance2` package.
  *
- * One request per ticker returns both the daily closes and the latest price, so
- * a company's whole performance row costs a single call. No key, no account,
- * roughly 20-minute delayed intraday -- fine for "what happened after we
- * covered it", and deliberately isolated behind `MarketDataProvider` because
- * it's an undocumented endpoint that Yahoo can change without notice.
+ * The package rather than hand-rolled requests because it owns the parts that
+ * are easy to get wrong and that Yahoo changes without notice: the cookie/crumb
+ * handshake `quote()` needs, response validation, and retries. It also exposes
+ * batch quotes, which is what lets a refresh of the whole board be one request
+ * instead of one per company.
+ *
+ * Still isolated behind `MarketDataProvider`, because this is an undocumented
+ * upstream either way.
  */
-
-const CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart";
-
-const REQUEST_TIMEOUT_MS = 12_000;
 
 /**
- * Yahoo serves an empty body to obviously-scripted clients. This is the same
- * User-Agent shape any browser sends; nothing is being disguised.
+ * Yahoo accepts far more symbols per quote call than we have companies, but
+ * chunking keeps one oversized URL from failing the whole sweep.
  */
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const QUOTE_CHUNK_SIZE = 40;
+
+/**
+ * Some listings are missing from the quote endpoint but still have chart data --
+ * OPT.AX, suspended since July, is one. For those we read the price out of the
+ * chart's metadata instead, one request each.
+ *
+ * Bounded so a broken quote endpoint degrades into a slow-but-working refresh
+ * rather than a stampede, and the shortfall is logged rather than hidden.
+ */
+const QUOTE_FALLBACK_LIMIT = 15;
+const QUOTE_FALLBACK_CONCURRENCY = 4;
+
+/** Enough history for the chart call to carry current metadata. */
+const FALLBACK_WINDOW_DAYS = 10;
+
+/** In-memory cookie jar by default; nothing is written to disk (Vercel is read-only). */
+const yahoo = new YahooFinance({
+  // A console nag about an unrelated user survey, not something we can act on.
+  suppressNotices: ["yahooSurvey"],
+});
 
 /** ASX listings are suffixed `.AX` on Yahoo: JBH -> JBH.AX. */
 function symbolFor(ticker: string): string {
   return `${ticker.trim().toUpperCase()}.AX`;
 }
 
-function unixSeconds(isoDate: string): number {
-  return Math.floor(Date.parse(`${isoDate}T00:00:00Z`) / 1000);
+function tickerFor(symbol: string | undefined): string | null {
+  if (!symbol) return null;
+  return symbol.toUpperCase().replace(/\.AX$/, "");
+}
+
+/** "No data found, symbol may be delisted" is Yahoo's answer for an unknown symbol. */
+function isUnknownSymbol(error: unknown): boolean {
+  return (
+    error instanceof Error && /no data found|may be delisted/i.test(error.message)
+  );
+}
+
+function isoDaysAgo(days: number): string {
+  const shifted = new Date();
+  shifted.setUTCDate(shifted.getUTCDate() - days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+function asDate(value: unknown): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value * 1000);
+  }
+  // A missing timestamp means "as of now" rather than "unknown": the price is
+  // current, Yahoo just didn't stamp it.
+  return new Date();
 }
 
 /**
- * Yahoo timestamps a daily bar at the session open in UTC. Shifting by the
- * exchange's own offset before reading the date parts is what keeps an ASX
- * session on the right calendar day -- a naive UTC read puts the morning of the
- * 18th in Sydney on the 17th.
+ * The exchange-local date of a daily bar.
+ *
+ * The package hands back the bar's opening instant, which for the ASX is 10:00
+ * local. Reading the UTC date off that directly happens to be correct while
+ * Sydney is on AEST (+10, so 10:00 local is exactly midnight UTC) and wrong by a
+ * day once daylight saving starts (+11 puts it at 23:00 UTC the previous day).
+ * Shifting by the exchange's own offset first is right in both.
  */
-function exchangeDate(timestampSeconds: number, gmtOffsetSeconds: number): string {
-  return new Date((timestampSeconds + gmtOffsetSeconds) * 1000)
+function exchangeDate(barOpen: Date, gmtOffsetSeconds: number): string {
+  return new Date(barOpen.getTime() + gmtOffsetSeconds * 1000)
     .toISOString()
     .slice(0, 10);
 }
 
-type ChartMeta = {
-  currency?: unknown;
-  gmtoffset?: unknown;
-  regularMarketPrice?: unknown;
-  regularMarketTime?: unknown;
-};
+/**
+ * Price from a chart request's metadata -- the fallback for tickers the quote
+ * endpoint skips. Returns null rather than throwing: the caller is already
+ * treating this ticker as "might not be priceable".
+ */
+async function quoteFromChart(ticker: string): Promise<Quote | null> {
+  try {
+    const chart = await yahoo.chart(symbolFor(ticker), {
+      period1: isoDaysAgo(FALLBACK_WINDOW_DAYS),
+      interval: "1d",
+    });
 
-function parseQuote(meta: ChartMeta): Quote | null {
-  const price = meta.regularMarketPrice;
-  if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+    const price = chart.meta?.regularMarketPrice;
+    if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+      return null;
+    }
+
+    return {
+      price,
+      currency:
+        typeof chart.meta.currency === "string" ? chart.meta.currency : null,
+      asOf: asDate(chart.meta.regularMarketTime),
+    };
+  } catch {
     return null;
   }
-
-  const marketTime = meta.regularMarketTime;
-  return {
-    price,
-    currency: typeof meta.currency === "string" ? meta.currency : null,
-    // A missing market time means "as of now" rather than "unknown": the price
-    // itself is current, Yahoo just didn't stamp it.
-    asOf:
-      typeof marketTime === "number" && Number.isFinite(marketTime)
-        ? new Date(marketTime * 1000)
-        : new Date(),
-  };
-}
-
-function parseCloses(
-  timestamps: unknown,
-  closes: unknown,
-  gmtOffset: number,
-): DailyClose[] {
-  if (!Array.isArray(timestamps) || !Array.isArray(closes)) return [];
-
-  // Keyed by date, last write wins: an in-progress bar can share a date with an
-  // earlier one, and a Map keeps the fresher value without the caller having to
-  // dedupe before it hits a composite primary key.
-  const byDate = new Map<string, number>();
-
-  for (let i = 0; i < timestamps.length; i += 1) {
-    const timestamp = timestamps[i];
-    const close = closes[i];
-
-    // Halted or pre-listing days come back as nulls in the parallel array.
-    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) continue;
-    if (typeof close !== "number" || !Number.isFinite(close) || close <= 0) continue;
-
-    byDate.set(exchangeDate(timestamp, gmtOffset), close);
-  }
-
-  return [...byDate].map(([date, close]) => ({ date, close }));
 }
 
 export const yahooProvider: MarketDataProvider = {
   name: "yahoo",
 
-  async fetchHistory(ticker: string, from: string): Promise<PriceHistory> {
-    const symbol = symbolFor(ticker);
-    const url = new URL(`${CHART_ENDPOINT}/${encodeURIComponent(symbol)}`);
-    url.searchParams.set("interval", "1d");
-    url.searchParams.set("period1", String(unixSeconds(from)));
-    url.searchParams.set("period2", String(Math.floor(Date.now() / 1000)));
+  async fetchQuotes(tickers: string[]): Promise<Map<string, Quote>> {
+    const found = new Map<string, Quote>();
+    if (tickers.length === 0) return found;
 
-    const response = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      cache: "no-store",
-    });
+    for (const batch of chunk(tickers, QUOTE_CHUNK_SIZE)) {
+      const result = await yahoo.quote(batch.map(symbolFor));
+      const rows = Array.isArray(result) ? result : [result];
 
-    // 404 is Yahoo's answer for "no such symbol"; it also 422s on some
-    // malformed symbols. Neither is worth retrying.
-    if (response.status === 404 || response.status === 422) {
-      throw new UnknownSymbolError(symbol);
-    }
-    if (!response.ok) {
-      throw new Error(`Yahoo returned ${response.status} for ${symbol}`);
-    }
+      for (const row of rows) {
+        const ticker = tickerFor(row?.symbol);
+        const price = row?.regularMarketPrice;
 
-    const payload = (await response.json()) as {
-      chart?: { result?: unknown; error?: { description?: unknown } | null };
-    };
+        // An unpriced row (halted, or a symbol Yahoo echoes without data) is
+        // left out, so the caller sees it as "no quote" rather than as zero.
+        if (!ticker) continue;
+        if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+          continue;
+        }
 
-    const result = payload.chart?.result;
-    if (!Array.isArray(result) || result.length === 0) {
-      const description = payload.chart?.error?.description;
-      throw typeof description === "string"
-        ? new Error(`Yahoo: ${description}`)
-        : new UnknownSymbolError(symbol);
+        found.set(ticker, {
+          price,
+          currency: typeof row.currency === "string" ? row.currency : null,
+          asOf: asDate(row.regularMarketTime),
+        });
+      }
     }
 
-    const first = result[0] as {
-      meta?: ChartMeta;
-      timestamp?: unknown;
-      indicators?: { quote?: Array<{ close?: unknown }> };
-    };
+    const missing = tickers.filter((ticker) => !found.has(ticker));
+    if (missing.length === 0) return found;
 
-    const meta = first.meta ?? {};
-    const gmtOffset =
-      typeof meta.gmtoffset === "number" && Number.isFinite(meta.gmtoffset)
-        ? meta.gmtoffset
-        : 0;
+    const attempts = missing.slice(0, QUOTE_FALLBACK_LIMIT);
+    if (missing.length > attempts.length) {
+      console.warn(
+        `quote endpoint skipped ${missing.length} tickers; falling back on chart for ${attempts.length} of them this run`,
+      );
+    }
 
-    return {
-      quote: parseQuote(meta),
-      closes: parseCloses(
-        first.timestamp,
-        first.indicators?.quote?.[0]?.close,
-        gmtOffset,
+    let next = 0;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(QUOTE_FALLBACK_CONCURRENCY, attempts.length) },
+        async function worker() {
+          while (next < attempts.length) {
+            const ticker = attempts[next++];
+            const quote = await quoteFromChart(ticker);
+            if (quote) found.set(ticker, quote);
+          }
+        },
       ),
-    };
+    );
+
+    return found;
+  },
+
+  async fetchCloses(ticker: string, from: string): Promise<DailyClose[]> {
+    const symbol = symbolFor(ticker);
+
+    // Translated in `.catch` rather than a try/block so the result type is still
+    // inferred from the call; annotating it by hand widens it to `unknown`.
+    const chart = await yahoo
+      .chart(symbol, { period1: from, interval: "1d" })
+      .catch((error: unknown) => {
+        if (isUnknownSymbol(error)) throw new UnknownSymbolError(symbol);
+        throw error;
+      });
+
+    const gmtOffset =
+      typeof chart.meta?.gmtoffset === "number" ? chart.meta.gmtoffset : 0;
+
+    // Keyed by date, last write wins: the in-progress bar can share a date with
+    // an earlier one, and a Map keeps the fresher value without the caller
+    // having to dedupe before it hits a composite primary key.
+    const byDate = new Map<string, number>();
+
+    for (const bar of chart.quotes) {
+      const close = bar?.close;
+      if (typeof close !== "number" || !Number.isFinite(close) || close <= 0) {
+        continue;
+      }
+      if (!(bar.date instanceof Date)) continue;
+      byDate.set(exchangeDate(bar.date, gmtOffset), close);
+    }
+
+    return [...byDate].map(([date, close]) => ({ date, close }));
   },
 };
