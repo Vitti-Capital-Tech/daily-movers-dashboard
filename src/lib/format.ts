@@ -55,6 +55,33 @@ export function formatPrice(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
+/**
+ * A return that may not be known yet. Distinct from `formatPct`, which takes a
+ * number and assumes there is one -- here "—" is a real answer, meaning either
+ * the window hasn't elapsed or we have no price for the ticker.
+ */
+export function formatReturn(value: number | null): string {
+  return value === null ? "—" : formatPct(value);
+}
+
+/**
+ * Quote timestamps are rendered in ASX time whoever is looking, because that's
+ * the session the price belongs to. The timezone is passed explicitly so the
+ * server and the browser produce the same string and hydration stays quiet.
+ */
+const QUOTE_TIME_FORMAT = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Australia/Sydney",
+});
+
+export function formatQuoteTime(value: Date | null): string | null {
+  if (!value || Number.isNaN(value.getTime())) return null;
+  return `${QUOTE_TIME_FORMAT.format(value)} AEST`;
+}
+
 export function todayIso(): string {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");

@@ -49,10 +49,17 @@ graph TD
 
     subgraph Server["Application Server Tier (Next.js App Router / Vercel Serverless)"]
         RSC["React Server Components (Layouts, Pages)"]
-        SA["Server Actions (saveMover, deleteMover, createReportUploadUrl, signIn)"]
+        SA["Server Actions (saveMover, deleteMover, updateMoverStatus, createReportUploadUrl, signIn)"]
         PDFRoute["Protected PDF Route (/api/reports/[id])"]
+        PriceRoute["Price Refresh Route (/api/prices/refresh)"]
+        LogoRoute["Logo Proxy Route (/api/logo/[ticker])"]
         AuthLayer["Auth & Session Verification (Web Crypto)"]
         QueryLayer["Data Access Layer (lib/queries.ts - server-only)"]
+    end
+
+    subgraph External["External Data Providers"]
+        Yahoo["Yahoo Finance Chart API (ASX, ~20 min delayed)"]
+        LogoCDN["Logo Sources (ticker-keyed + favicon)"]
     end
 
     subgraph Database["Data Tier (Supabase / AWS Tokyo)"]
@@ -76,6 +83,13 @@ graph TD
     Uploader -->|2. Direct PUT PDF| Storage
     UI -->|3. Request Document| PDFRoute
     PDFRoute -->|Verify Session & Mint Signed URL| Storage
+
+    %% Automatic price refresh (pull-based, no cron)
+    UI -->|After paint: POST refresh| PriceRoute
+    PriceRoute -->|Only if stale| Yahoo
+    PriceRoute -->|Upsert closes & quote| QueryLayer
+    UI -->|Logo per ticker| LogoRoute
+    LogoRoute --> LogoCDN
 ```
 
 ---
@@ -90,6 +104,7 @@ graph TD
 | **Theming System** | **next-themes** | Client-side Light / Midnight Navy Dark / System theme switching with hydration safety and local storage persistence. |
 | **Typography** | **Plus Jakarta Sans + JetBrains Mono** | High-legibility geometric UI typography paired with developer/financial-grade monospace figures for tickers and percentage metrics. |
 | **AI Extraction Engine** | **Anthropic Claude 3.5 Sonnet** | Native multimodal document parser extracting structured equity research metadata from raw PDF bytes. |
+| **Market Data** | **Yahoo Finance chart endpoint** | Keyless ASX daily closes and latest prices (`{TICKER}.AX`), one request per ticker. Isolated behind a `MarketDataProvider` interface so a licensed feed can replace it in a single line. |
 | **Database** | **PostgreSQL (Supabase)** | Relational integrity (FK constraints), JSONB support for raw extractions, performant B-Tree indexes, transaction pooling. |
 | **Object-Relational Mapping (ORM)** | **Drizzle ORM + postgres.js** | Type-safe SQL builder with minimal runtime overhead, explicit query composition, seamless migration tooling. |
 | **Object Storage** | **Supabase Private Storage (`reports`)** | Encrypted, private bucket storage for Daily Mover PDF reports with server-signed upload and download tokens. |
@@ -131,15 +146,21 @@ graph TD
   - **Light Mode**: Crisp slate-tinted canvas (`oklch(0.985 0.008 245)`) with high-contrast surfaces.
 - **Rationale**: Enhances readability during extended research sessions and caters to diverse analyst workspace environments.
 
-### 5.7 Multi-Tier Company Logos Architecture (`<CompanyLogo />`)
+### 5.7 Server-Resolved Company Logos (`<CompanyLogo />` + `/api/logo/[ticker]`)
 - **Decision**: A resilient, zero-broken-image brand logo pipeline combining:
   1. **Instant Monogram Base Layer**: Immediate render of a deterministic two-letter ticker tile on a vibrant background.
-  2. **Smart Corporate Domain Inference**: Automatic deduction of official domains (e.g. `smartparking.com` from `Smart Parking Limited`).
-  3. **High-Res Global CDNs**: Multi-tier image loading via Google Favicon API, Clearbit, and TradingView vector SVGs.
-  4. **Smooth Alpha Fade-In**: Branded vector logos smoothly overlay the monogram tile once network load succeeds.
-- **Rationale**: Delivers instant institutional polish without blank flickers, broken image placeholders, or manual asset upload burdens.
+  2. **Ticker-Keyed Resolution First**: The proxy resolves logos from the ticker itself, so a freshly uploaded mover gets a logo with nothing registered in advance — no hardcoded ticker-to-domain table to go stale.
+  3. **Name-Derived Domain Fallbacks**: Favicons for `{company}.com.au` / `{company}.com` when the ticker-keyed source misses. Ticker-derived domains are deliberately *not* tried: three-letter tickers collide with whoever owns them (`mac.com.au` served Apple's logo for Metals Acquisition), and a confidently wrong logo is worse than a monogram.
+  4. **Smooth Alpha Fade-In**: Branded logos overlay the monogram tile once loading succeeds.
+- **Rationale**: Resolving server-side lets the fallback chain see upstream status codes (a cross-origin `<img>` only reports "it failed"), collapses each ticker to one cacheable URL, and keeps third-party hosts from seeing the viewer.
 
-### 5.8 Recency-First Ordering Architecture
+### 5.8 Derived-on-Read Post-Event Returns
+- **Decision**: Store prices (`company_prices` daily closes + `company_quotes` latest price); derive Post-Event, 1W and 1M returns at query time. Only `status` is entered by hand.
+- **Window Semantics**: All three returns are measured from the **report price**, falling back to the ASX close on the move date when no report price was entered. A window return stays `NULL` until the window has actually elapsed, so a three-day-old mover cannot pass a three-day move off as a weekly one.
+- **Refresh Model**: Pull-based, no cron. A page load triggers `/api/prices/refresh` after paint; the service applies a 30-minute TTL, a 6-hour backoff for failed tickers, and a per-run ceiling, so runs are naturally resumable and repeated calls are free.
+- **Rationale**: Same reasoning as deriving direction from `move_pct` — two copies of a figure eventually disagree. A corrected or late close fixes every window at once, and no one has to return after a week to type a price in.
+
+### 5.9 Recency-First Ordering Architecture
 - **Decision**: Companies directory (`/companies`) and Daily Movers table (`/daily-movers`) order entities by `MAX(daily_movers.move_date) DESC NULLS LAST`.
 - **Rationale**: Ensures the most actively covered equities and latest research notes automatically surface to the top of the interface.
 
@@ -239,6 +260,8 @@ graph LR
    - Paginated, sortable, and multi-filter table displaying research dates, tickers, company names, catalysts, price movements, move types, and covering analysts.
    - Financial directional move chips (`ArrowUpRight` / `ArrowDownRight`) with emerald gain and rose decline tints.
    - **Documents Column**: Clickable `Report` and `ASX` action buttons per row, with greyed-out visual states when unattached.
+   - **Post-Event Performance Block**: Report Price, Current Price (~20 min delayed), and Post-Event / 1W / 1M returns, all refreshed automatically from market data. An inferred report price is marked with a dotted underline; a window that hasn't elapsed shows `—` with the reason on hover.
+   - **Review Status**: `New` / `Reviewed` / `Follow-Up` chip per row, changed in one click by admins and read-only for viewers.
    - Summary KPI cards showing total published research, covered companies, and filtered counts with micro-gradients and icons.
    - Interactive dialog for creating and editing research entries (admins only).
 2. **Report PDF Upload & Direct Delivery**:

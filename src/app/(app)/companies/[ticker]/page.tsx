@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { CompanyLogo } from "@/components/company-logo";
+import { PriceRefresher } from "@/components/daily-movers/price-refresher";
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,11 +24,21 @@ import {
   formatMoveDate,
   formatPct,
   formatPrice,
+  formatQuoteTime,
+  formatReturn,
 } from "@/lib/format";
-import { hasReport, reportHref, type MoverRow } from "@/lib/movers";
+import {
+  anchorIsInferred,
+  hasReport,
+  monthReturn,
+  postEventReturn,
+  reportHref,
+  weekReturn,
+  type MoverRow,
+} from "@/lib/movers";
 import { getResearchHistory } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { MOVE_TYPE_LABELS } from "@/lib/validation";
+import { MOVE_TYPE_LABELS, MOVER_STATUS_LABELS } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +143,9 @@ export default async function ResearchHistoryPage({
           ))}
         </div>
       </div>
+
+      {/* Same post-render top-up as the Daily Movers table. */}
+      <PriceRefresher />
     </div>
   );
 }
@@ -195,6 +209,10 @@ function HistoryEntry({ row }: { row: MoverRow }) {
               {row.catalystLabel}
             </Badge>
 
+            <Badge variant="outline" className="text-[11px] font-semibold">
+              {MOVER_STATUS_LABELS[row.status]}
+            </Badge>
+
             <span className="ml-auto text-xs text-muted-foreground font-medium">
               {row.analystName ? `Analyst: ${row.analystName}` : "Analyst not specified"}
             </span>
@@ -206,14 +224,29 @@ function HistoryEntry({ row }: { row: MoverRow }) {
           <Detail label="Reason for Move">{row.reasonForMove}</Detail>
           <Detail label="Main Takeaway">{row.mainTakeaway}</Detail>
 
-          {/* External Links & Pricing */}
+          {/* What happened after we covered it — same figures as the table */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border/50 bg-muted/25 px-3 py-2 text-xs">
+            <PriceStat
+              label="Report Price"
+              value={formatPrice(row.anchorPrice)}
+              note={
+                anchorIsInferred(row)
+                  ? `ASX close for ${formatMoveDate(row.moveDate)} — no report price entered`
+                  : undefined
+              }
+            />
+            <PriceStat
+              label="Current Price"
+              value={formatPrice(row.currentPrice)}
+              note={formatQuoteTime(row.currentPriceAt) ?? undefined}
+            />
+            <ReturnStat label="Post-Event" value={postEventReturn(row)} />
+            <ReturnStat label="1W" value={weekReturn(row)} />
+            <ReturnStat label="1M" value={monthReturn(row)} />
+          </div>
+
+          {/* External Links */}
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 text-xs border-t border-border/40">
-            <span className="text-muted-foreground">
-              Report Share Price:{" "}
-              <span className="font-bold text-foreground tabular-nums">
-                {formatPrice(row.reportPrice)}
-              </span>
-            </span>
 
             {/* Always via /api/reports/[id]: it checks the session, then signs a
                 60-second URL for the private bucket. Works for an uploaded PDF
@@ -249,6 +282,52 @@ function HistoryEntry({ row }: { row: MoverRow }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** A price with an optional provenance note on hover. */
+function PriceStat({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+}) {
+  return (
+    <span className="text-muted-foreground" title={note}>
+      {label}:{" "}
+      <span
+        className={cn(
+          "font-bold text-foreground tabular-nums",
+          note ? "underline decoration-dotted decoration-muted-foreground/50 underline-offset-2" : undefined,
+        )}
+      >
+        {value}
+      </span>
+    </span>
+  );
+}
+
+/** Null stays an em dash: the window may simply not have elapsed. */
+function ReturnStat({ label, value }: { label: string; value: number | null }) {
+  return (
+    <span className="text-muted-foreground">
+      {label}:{" "}
+      <span
+        className={cn(
+          "font-bold tabular-nums",
+          value === null
+            ? "text-muted-foreground/60"
+            : value < 0
+              ? "text-rose-600 dark:text-rose-400"
+              : "text-emerald-600 dark:text-emerald-400",
+        )}
+      >
+        {formatReturn(value)}
+      </span>
+    </span>
   );
 }
 

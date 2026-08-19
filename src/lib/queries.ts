@@ -3,7 +3,14 @@ import "server-only";
 import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { analysts, catalysts, companies, dailyMovers } from "@/db/schema";
+import {
+  analysts,
+  catalysts,
+  companies,
+  companyPrices,
+  companyQuotes,
+  dailyMovers,
+} from "@/db/schema";
 import {
   DEFAULT_PER_PAGE,
   type FormOptions,
@@ -12,6 +19,59 @@ import {
   type SortDir,
   type SortKey,
 } from "@/lib/movers";
+
+/**
+ * "Today" on the ASX. `company_prices.price_date` is an exchange-local date, so
+ * comparing it against the database server's `current_date` (UTC on Supabase)
+ * would open and close each return window ten hours early.
+ */
+const asxToday = sql`(now() at time zone 'Australia/Sydney')::date`;
+
+/**
+ * The price the post-event returns are measured from: the entered report price
+ * if there is one, otherwise the close on the move date. The fallback is what
+ * keeps the performance columns populated across the archive, since
+ * `report_price` was manual entry and is null on most historical rows.
+ *
+ * `<=` rather than `=`: a move date can land on a day with no close of its own
+ * (a halt, or a date recorded slightly off), and the previous close is the
+ * honest answer there.
+ */
+const anchorPriceSql = sql<number | null>`coalesce(
+  ${dailyMovers.reportPrice}::float8,
+  (
+    select p.close::float8
+    from ${companyPrices} p
+    where p.company_id = ${dailyMovers.companyId}
+      and p.price_date <= ${dailyMovers.moveDate}
+    order by p.price_date desc
+    limit 1
+  )
+)`;
+
+/**
+ * The close ending a return window that starts at the move date -- the last one
+ * on or before `move_date + interval`.
+ *
+ * Null until the window has actually elapsed. Without that guard, a mover
+ * published three days ago would report its three-day move as a 1W return,
+ * which reads as real rather than as not-yet-known.
+ */
+function windowCloseSql(interval: "7 days" | "1 month") {
+  const boundary = sql`(${dailyMovers.moveDate} + ${sql.raw(`interval '${interval}'`)})::date`;
+
+  return sql<number | null>`(
+    case when ${boundary} <= ${asxToday} then (
+      select p.close::float8
+      from ${companyPrices} p
+      where p.company_id = ${dailyMovers.companyId}
+        and p.price_date >= ${dailyMovers.moveDate}
+        and p.price_date <= ${boundary}
+      order by p.price_date desc
+      limit 1
+    ) end
+  )`;
+}
 
 const SELECTION = {
   id: dailyMovers.id,
@@ -32,6 +92,15 @@ const SELECTION = {
   asxAnnouncementUrl: dailyMovers.asxAnnouncementUrl,
   analystId: analysts.id,
   analystName: analysts.name,
+  status: dailyMovers.status,
+
+  // Performance side of the row. Prices, not returns: the percentages are
+  // derived in `movers.ts` from these, so there's one copy of each figure.
+  anchorPrice: anchorPriceSql,
+  currentPrice: companyQuotes.price,
+  currentPriceAt: companyQuotes.asOf,
+  price1w: windowCloseSql("7 days"),
+  price1m: windowCloseSql("1 month"),
 };
 
 /**
@@ -98,6 +167,7 @@ export async function listDailyMovers(filters: MoverFilters = {}): Promise<{
     .innerJoin(companies, eq(dailyMovers.companyId, companies.id))
     .innerJoin(catalysts, eq(dailyMovers.catalystId, catalysts.id))
     .leftJoin(analysts, eq(dailyMovers.analystId, analysts.id))
+    .leftJoin(companyQuotes, eq(companyQuotes.companyId, companies.id))
     .where(where)
     .orderBy(...buildOrderBy(filters.sort, filters.dir))
     .limit(perPage)
@@ -129,6 +199,7 @@ export async function getMoverById(id: number): Promise<MoverRow | null> {
     .innerJoin(companies, eq(dailyMovers.companyId, companies.id))
     .innerJoin(catalysts, eq(dailyMovers.catalystId, catalysts.id))
     .leftJoin(analysts, eq(dailyMovers.analystId, analysts.id))
+    .leftJoin(companyQuotes, eq(companyQuotes.companyId, companies.id))
     .where(eq(dailyMovers.id, id));
   return (row as MoverRow) ?? null;
 }
@@ -160,6 +231,7 @@ export async function getResearchHistory(ticker: string): Promise<{
     .innerJoin(companies, eq(dailyMovers.companyId, companies.id))
     .innerJoin(catalysts, eq(dailyMovers.catalystId, catalysts.id))
     .leftJoin(analysts, eq(dailyMovers.analystId, analysts.id))
+    .leftJoin(companyQuotes, eq(companyQuotes.companyId, companies.id))
     .where(eq(dailyMovers.companyId, company.id))
     .orderBy(desc(dailyMovers.moveDate), desc(dailyMovers.id));
 

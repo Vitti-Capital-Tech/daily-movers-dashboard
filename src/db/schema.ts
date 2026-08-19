@@ -8,6 +8,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -22,6 +23,17 @@ import {
 export const moveTypeEnum = pgEnum("move_type", ["intraday", "closing"]);
 
 export const userRoleEnum = pgEnum("user_role", ["admin", "viewer"]);
+
+/**
+ * Where a mover sits in our own review loop -- deliberately three states, not a
+ * workflow. `new` is the default on arrival, `reviewed` means someone has since
+ * looked at how the price played out, `follow_up` flags one worth returning to.
+ */
+export const moverStatusEnum = pgEnum("mover_status", [
+  "new",
+  "reviewed",
+  "follow_up",
+]);
 
 /**
  * Write-access allowlist, keyed by email. A table rather than a hardcoded list
@@ -145,12 +157,19 @@ export const dailyMovers = pgTable(
     reasonForMove: text("reason_for_move").notNull(),
     mainTakeaway: text("main_takeaway").notNull(),
 
-    /** Not present in the source PDFs -- manual entry, hence nullable. */
+    /**
+     * Not present in the source PDFs -- manual entry, hence nullable. When it
+     * is null the post-event returns fall back to the close on `move_date` from
+     * `company_prices`, so the performance columns still populate.
+     */
     reportPrice: numeric("report_price", {
       precision: 12,
       scale: 4,
       mode: "number",
     }),
+
+    /** Review state. Set by hand; everything price-related updates itself. */
+    status: moverStatusEnum("status").notNull().default("new"),
 
     /** Public/external link to the Daily Mover report, if one exists. */
     reportUrl: text("report_url"),
@@ -182,8 +201,92 @@ export const dailyMovers = pgTable(
   ],
 ).enableRLS();
 
-export const companiesRelations = relations(companies, ({ many }) => ({
+/**
+ * Daily closing prices, one row per company per trading day.
+ *
+ * Post-event returns are computed from this table on read rather than stored on
+ * the mover. A stored return is a number that was true on the day it was
+ * written; deriving it means a late or corrected close fixes every window at
+ * once, and the same reasoning as `move_pct` applies -- two copies of a figure
+ * eventually disagree.
+ *
+ * Closes are raw, not split/dividend-adjusted, so they stay comparable with a
+ * hand-entered `report_price` and with the live quote below. The tradeoff is
+ * that a share split needs a re-fetch of that company's history to stay sane.
+ */
+export const companyPrices = pgTable(
+  "company_prices",
+  {
+    companyId: integer("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    priceDate: date("price_date").notNull(),
+    close: numeric("close", { precision: 12, scale: 4, mode: "number" }).notNull(),
+    source: text("source").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Natural key: re-fetching a date overwrites it instead of duplicating it.
+    primaryKey({ columns: [t.companyId, t.priceDate] }),
+    // Window lookups read backwards from a date: ... and price_date <= ? desc
+    index("company_prices_company_date_idx").on(t.companyId, t.priceDate.desc()),
+  ],
+).enableRLS();
+
+/**
+ * Latest known price per company -- one row, overwritten in place, because only
+ * the current value is ever displayed.
+ *
+ * Separate from `companies` so volatile data doesn't churn the reference table,
+ * and it carries the refresh bookkeeping: `attempted_at` advances even when a
+ * fetch fails, which is what stops a delisted or misspelled ticker from being
+ * retried on every single page load.
+ */
+export const companyQuotes = pgTable("company_quotes", {
+  companyId: integer("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+
+  price: numeric("price", { precision: 12, scale: 4, mode: "number" }),
+  currency: text("currency"),
+
+  /** The provider's timestamp for `price`, not when we asked for it. */
+  asOf: timestamp("as_of", { withTimezone: true }),
+  source: text("source"),
+
+  /** Last refresh that actually returned a price. */
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+  /** Last attempt, successful or not. Staleness is measured from this. */
+  attemptedAt: timestamp("attempted_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  /** Why the last attempt failed; null after a success. */
+  error: text("error"),
+}).enableRLS();
+
+export const companiesRelations = relations(companies, ({ many, one }) => ({
   dailyMovers: many(dailyMovers),
+  prices: many(companyPrices),
+  quote: one(companyQuotes, {
+    fields: [companies.id],
+    references: [companyQuotes.companyId],
+  }),
+}));
+
+export const companyPricesRelations = relations(companyPrices, ({ one }) => ({
+  company: one(companies, {
+    fields: [companyPrices.companyId],
+    references: [companies.id],
+  }),
+}));
+
+export const companyQuotesRelations = relations(companyQuotes, ({ one }) => ({
+  company: one(companies, {
+    fields: [companyQuotes.companyId],
+    references: [companies.id],
+  }),
 }));
 
 export const catalystsRelations = relations(catalysts, ({ many }) => ({

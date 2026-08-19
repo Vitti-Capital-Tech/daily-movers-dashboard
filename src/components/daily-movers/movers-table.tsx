@@ -11,6 +11,7 @@ import {
 
 import { CompanyLogo } from "@/components/company-logo";
 import { MoverRowActions } from "@/components/daily-movers/mover-row-actions";
+import { StatusCell } from "@/components/daily-movers/status-cell";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -24,10 +25,17 @@ import {
   directionOf,
   formatMoveDate,
   formatPct,
+  formatPrice,
+  formatQuoteTime,
+  formatReturn,
 } from "@/lib/format";
 import {
+  anchorIsInferred,
   hasReport,
+  monthReturn,
+  postEventReturn,
   reportHref,
+  weekReturn,
   type FormOptions,
   type MoverRow,
   type SortDir,
@@ -84,6 +92,25 @@ export function MoversTable({
                 % Move
               </SortableHead>
               <TableHead className="font-semibold text-xs">Move Type</TableHead>
+
+              {/* Performance block: all three returns are measured from Report Price. */}
+              <TableHead className="font-semibold text-xs text-right whitespace-nowrap">
+                Report Price
+              </TableHead>
+              <TableHead className="font-semibold text-xs text-right whitespace-nowrap">
+                Current Price
+              </TableHead>
+              <TableHead className="font-semibold text-xs text-right whitespace-nowrap">
+                Post-Event Return
+              </TableHead>
+              <TableHead className="font-semibold text-xs text-right whitespace-nowrap">
+                1W Return
+              </TableHead>
+              <TableHead className="font-semibold text-xs text-right whitespace-nowrap">
+                1M Return
+              </TableHead>
+
+              <TableHead className="font-semibold text-xs">Status</TableHead>
               <TableHead className="font-semibold text-xs">Covering Analyst</TableHead>
               <TableHead className="font-semibold text-xs">Documents</TableHead>
               {canWrite ? <TableHead className="w-10" /> : null}
@@ -93,6 +120,7 @@ export function MoversTable({
           <TableBody className="divide-y divide-border/40">
             {rows.map((row) => {
               const down = directionOf(row.movePct) === "down";
+              const quoteTime = formatQuoteTime(row.currentPriceAt);
 
               return (
                 <TableRow
@@ -165,6 +193,75 @@ export function MoversTable({
                     </span>
                   </TableCell>
 
+                  {/* Report Price — the anchor every return below is measured from */}
+                  <TableCell className="text-right whitespace-nowrap text-xs tabular-nums">
+                    {row.anchorPrice === null ? (
+                      <span
+                        className="text-muted-foreground/60"
+                        title={`No price data for ${row.ticker} yet`}
+                      >
+                        —
+                      </span>
+                    ) : anchorIsInferred(row) ? (
+                      <span
+                        className="font-medium text-foreground/70 underline decoration-dotted decoration-muted-foreground/50 underline-offset-2"
+                        title={`No report price was entered — using the ASX close for ${formatMoveDate(row.moveDate)}`}
+                      >
+                        {formatPrice(row.anchorPrice)}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-foreground">
+                        {formatPrice(row.anchorPrice)}
+                      </span>
+                    )}
+                  </TableCell>
+
+                  {/* Current Price — refreshed from market data, never typed in */}
+                  <TableCell className="text-right whitespace-nowrap text-xs tabular-nums">
+                    <span
+                      className={
+                        row.currentPrice === null
+                          ? "text-muted-foreground/60"
+                          : "font-semibold text-foreground"
+                      }
+                      title={
+                        quoteTime
+                          ? `Last price ${quoteTime}, ~20 min delayed`
+                          : "Waiting on the next price refresh"
+                      }
+                    >
+                      {formatPrice(row.currentPrice)}
+                    </span>
+                  </TableCell>
+
+                  <ReturnCell
+                    value={postEventReturn(row)}
+                    pendingReason={
+                      row.anchorPrice === null
+                        ? `No price data for ${row.ticker} yet`
+                        : "Waiting on the next price refresh"
+                    }
+                    emphasis
+                  />
+                  <ReturnCell
+                    value={weekReturn(row)}
+                    pendingReason={windowPendingReason(row, "week")}
+                  />
+                  <ReturnCell
+                    value={monthReturn(row)}
+                    pendingReason={windowPendingReason(row, "month")}
+                  />
+
+                  {/* Status — the one column here that is set by hand */}
+                  <TableCell>
+                    <StatusCell
+                      moverId={row.id}
+                      status={row.status}
+                      canWrite={canWrite}
+                      label={`${row.ticker} on ${formatMoveDate(row.moveDate)}`}
+                    />
+                  </TableCell>
+
                   {/* Analyst */}
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {row.analystName ? (
@@ -213,6 +310,65 @@ export function MoversTable({
         </Table>
       </div>
     </div>
+  );
+}
+
+/**
+ * Why a window return is blank: the window hasn't finished, or we have no price
+ * for the ticker. Worth distinguishing — the first resolves itself with time,
+ * the second means the ticker needs looking at.
+ */
+function windowPendingReason(row: MoverRow, window: "week" | "month"): string {
+  if (row.anchorPrice === null) return `No price data for ${row.ticker} yet`;
+
+  const elapsed = window === "week" ? row.price1w !== null : row.price1m !== null;
+  if (elapsed) return "Waiting on the next price refresh";
+
+  return window === "week"
+    ? `The week after ${formatMoveDate(row.moveDate)} hasn't finished yet`
+    : `The month after ${formatMoveDate(row.moveDate)} hasn't finished yet`;
+}
+
+/**
+ * One return, coloured by sign. `null` renders as an em dash with the reason on
+ * hover rather than as 0.0%, which would read as "flat" — a claim we can't make
+ * about a window that hasn't happened.
+ */
+function ReturnCell({
+  value,
+  pendingReason,
+  emphasis = false,
+}: {
+  value: number | null;
+  pendingReason: string;
+  /** Post-Event is the headline figure of the group, so it carries more weight. */
+  emphasis?: boolean;
+}) {
+  if (value === null) {
+    return (
+      <TableCell className="text-right whitespace-nowrap text-xs tabular-nums">
+        <span className="text-muted-foreground/60" title={pendingReason}>
+          —
+        </span>
+      </TableCell>
+    );
+  }
+
+  const down = value < 0;
+
+  return (
+    <TableCell className="text-right whitespace-nowrap text-xs tabular-nums">
+      <span
+        className={cn(
+          emphasis ? "font-bold" : "font-semibold",
+          down
+            ? "text-rose-600 dark:text-rose-400"
+            : "text-emerald-600 dark:text-emerald-400",
+        )}
+      >
+        {formatReturn(value)}
+      </span>
+    </TableCell>
   );
 }
 

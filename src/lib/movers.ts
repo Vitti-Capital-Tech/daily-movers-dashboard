@@ -7,6 +7,8 @@
  * component needs at runtime belongs here.
  */
 
+import type { MoverStatus } from "@/lib/validation";
+
 export const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 export const DEFAULT_PER_PAGE = 25;
 
@@ -47,7 +49,65 @@ export type MoverRow = {
   asxAnnouncementUrl: string | null;
   analystId: number | null;
   analystName: string | null;
+
+  status: MoverStatus;
+
+  /**
+   * What the returns below are measured from: `reportPrice` when it was entered,
+   * otherwise the close on the move date. Null only when we have no price data
+   * for the company at all.
+   */
+  anchorPrice: number | null;
+  /** Latest price from the market-data provider, ~20 minutes delayed. */
+  currentPrice: number | null;
+  /** When that price was current upstream — not when we fetched it. */
+  currentPriceAt: Date | null;
+  /** Close a week after the move date; null until that week has passed. */
+  price1w: number | null;
+  /** Close a month after the move date; null until that month has passed. */
+  price1m: number | null;
 };
+
+/**
+ * Percentage change between two prices, or null when either side is unknown.
+ *
+ * Every return on the row goes through here, so "we don't know yet" (a window
+ * that hasn't elapsed, a ticker with no price data) stays distinguishable from
+ * a genuine 0.0% and can be rendered as such.
+ */
+export function pctChange(from: number | null, to: number | null): number | null {
+  if (from === null || to === null) return null;
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0) return null;
+  return ((to - from) / from) * 100;
+}
+
+type PerformanceFields = Pick<
+  MoverRow,
+  "anchorPrice" | "currentPrice" | "price1w" | "price1m" | "reportPrice"
+>;
+
+/** Report price (or move-date close) to the latest price. */
+export function postEventReturn(row: PerformanceFields): number | null {
+  return pctChange(row.anchorPrice, row.currentPrice);
+}
+
+/** Measured from the same anchor as the post-event return, not week-on-week. */
+export function weekReturn(row: PerformanceFields): number | null {
+  return pctChange(row.anchorPrice, row.price1w);
+}
+
+export function monthReturn(row: PerformanceFields): number | null {
+  return pctChange(row.anchorPrice, row.price1m);
+}
+
+/**
+ * True when the anchor is a close we looked up rather than a price someone
+ * entered. The table marks these, so a return is never mistaken for being
+ * measured from the figure printed in the report.
+ */
+export function anchorIsInferred(row: PerformanceFields): boolean {
+  return row.reportPrice === null && row.anchorPrice !== null;
+}
 
 /** True when there's a PDF to open — uploaded file or external link. */
 export function hasReport(row: {

@@ -5,6 +5,7 @@ import { FilterBar } from "@/components/daily-movers/filter-bar";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
 import { MoversTable } from "@/components/daily-movers/movers-table";
 import { Pagination } from "@/components/daily-movers/pagination";
+import { PriceRefresher } from "@/components/daily-movers/price-refresher";
 import { Card, CardContent } from "@/components/ui/card";
 import { isDbConfigured } from "@/db";
 import { getSessionUser } from "@/lib/auth";
@@ -153,6 +154,9 @@ export default async function DailyMoversPage({
         perPage={result.perPage}
         total={result.total}
       />
+
+      {/* Tops up Current Price and the return windows after this render. */}
+      <PriceRefresher />
     </div>
   );
 }
