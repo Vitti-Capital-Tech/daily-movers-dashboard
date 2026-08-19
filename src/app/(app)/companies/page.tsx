@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, FileText } from "lucide-react";
 
+import { CompanyLogo } from "@/components/company-logo";
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
 import {
   Table,
@@ -71,12 +72,15 @@ export default async function CompaniesPage() {
                     className="group hover:bg-accent/40 transition-colors"
                   >
                     <TableCell>
-                      <Link
-                        href={`/companies/${company.ticker}`}
-                        className="inline-flex items-center rounded-md border border-border/80 bg-background/80 px-2 py-0.5 font-mono text-xs font-bold text-foreground hover:border-primary/60 hover:text-primary transition-all shadow-2xs"
-                      >
-                        {company.ticker}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <CompanyLogo ticker={company.ticker} name={company.name} size="sm" />
+                        <Link
+                          href={`/companies/${company.ticker}`}
+                          className="inline-flex items-center rounded-md border border-border/80 bg-background/80 px-2 py-0.5 font-mono text-xs font-bold text-foreground hover:border-primary/60 hover:text-primary transition-all shadow-2xs"
+                        >
+                          {company.ticker}
+                        </Link>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Link

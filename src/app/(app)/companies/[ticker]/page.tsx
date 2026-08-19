@@ -11,6 +11,7 @@ import {
   Quote,
 } from "lucide-react";
 
+import { CompanyLogo } from "@/components/company-logo";
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -64,25 +65,30 @@ export default async function ResearchHistoryPage({
           <span>Back to Daily Movers</span>
         </Link>
 
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            {company.name}
-          </h1>
-          <Badge variant="outline" className="font-mono text-xs font-bold px-2 py-0.5 border-border/80 bg-muted/40">
-            {company.ticker}
-          </Badge>
-          {company.sector ? (
-            <Badge variant="secondary" className="text-xs font-normal">
-              {company.sector}
-            </Badge>
-          ) : null}
-        </div>
+        <div className="flex items-start gap-4">
+          <CompanyLogo ticker={company.ticker} name={company.name} size="lg" className="mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-2.5">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                {company.name}
+              </h1>
+              <Badge variant="outline" className="font-mono text-xs font-bold px-2 py-0.5 border-border/80 bg-muted/40">
+                {company.ticker}
+              </Badge>
+              {company.sector ? (
+                <Badge variant="secondary" className="text-xs font-normal">
+                  {company.sector}
+                </Badge>
+              ) : null}
+            </div>
 
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          {rows.length === 0
-            ? "No Daily Movers saved for this company yet."
-            : `Chronological archive of ${rows.length} research note${rows.length === 1 ? "" : "s"} — newest first.`}
-        </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {rows.length === 0
+                ? "No Daily Movers saved for this company yet."
+                : `Chronological archive of ${rows.length} research note${rows.length === 1 ? "" : "s"} — newest first.`}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Hero Card: Latest Takeaway */}

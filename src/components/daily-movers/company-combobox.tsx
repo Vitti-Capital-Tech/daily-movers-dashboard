@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { CompanyLogo } from "@/components/company-logo";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -49,12 +50,13 @@ export function CompanyCombobox({
         }
       >
         {selected ? (
-          <span className="truncate">
+          <span className="flex items-center gap-2 truncate">
+            <CompanyLogo ticker={selected.ticker} name={selected.name} size="xs" />
             <span className="font-mono text-xs font-semibold">
               {selected.ticker}
             </span>
-            <span className="mx-1.5 text-muted-foreground">·</span>
-            {selected.name}
+            <span className="text-muted-foreground">·</span>
+            <span className="truncate">{selected.name}</span>
           </span>
         ) : (
           <span className="text-muted-foreground">Select a company…</span>
@@ -97,20 +99,22 @@ export function CompanyCombobox({
                     onChange(company.id === value ? null : company.id);
                     setOpen(false);
                   }}
+                  className="flex items-center gap-2 py-2"
                 >
                   <span
                     className={cn(
-                      "mr-2 w-3 text-xs",
+                      "w-3 text-xs shrink-0",
                       company.id === value ? "opacity-100" : "opacity-0",
                     )}
                     aria-hidden
                   >
                     ✓
                   </span>
-                  <span className="font-mono text-xs font-semibold">
+                  <CompanyLogo ticker={company.ticker} name={company.name} size="xs" />
+                  <span className="font-mono text-xs font-bold">
                     {company.ticker}
                   </span>
-                  <span className="ml-2 truncate text-muted-foreground">
+                  <span className="truncate text-xs text-muted-foreground">
                     {company.name}
                   </span>
                 </CommandItem>

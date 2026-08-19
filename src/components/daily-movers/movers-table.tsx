@@ -9,6 +9,7 @@ import {
   FileText,
 } from "lucide-react";
 
+import { CompanyLogo } from "@/components/company-logo";
 import { MoverRowActions } from "@/components/daily-movers/mover-row-actions";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -103,15 +104,18 @@ export function MoversTable({
                     {formatMoveDate(row.moveDate)}
                   </TableCell>
 
-                  {/* Ticker Column */}
+                  {/* Ticker Column with Logo */}
                   <TableCell>
-                    <Link
-                      href={`/companies/${row.ticker}`}
-                      className="inline-flex items-center rounded-md border border-border/80 bg-background/80 px-2 py-0.5 font-mono text-xs font-bold text-foreground hover:border-primary/60 hover:bg-primary/5 hover:text-primary transition-all shadow-2xs"
-                      title={`Open research timeline for ${row.ticker}`}
-                    >
-                      {row.ticker}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <CompanyLogo ticker={row.ticker} name={row.companyName} size="sm" />
+                      <Link
+                        href={`/companies/${row.ticker}`}
+                        className="inline-flex items-center rounded-md border border-border/80 bg-background/80 px-2 py-0.5 font-mono text-xs font-bold text-foreground hover:border-primary/60 hover:bg-primary/5 hover:text-primary transition-all shadow-2xs"
+                        title={`Open research timeline for ${row.ticker}`}
+                      >
+                        {row.ticker}
+                      </Link>
+                    </div>
                   </TableCell>
 
                   {/* Company Column */}
