@@ -394,7 +394,7 @@ function MoverForm({
             onValueChange={(val) => setMoveType(val as "intraday" | "closing")}
           >
             <SelectTrigger className="w-full text-xs">
-              <SelectValue />
+              <SelectValue>{MOVE_TYPE_LABELS[moveType]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {MOVE_TYPES.map((type) => (
@@ -432,7 +432,12 @@ function MoverForm({
             onValueChange={(val) => setCatalystId(Number(val))}
           >
             <SelectTrigger className="w-full text-xs">
-              <SelectValue placeholder="Select a catalyst" />
+              <SelectValue placeholder="Select a catalyst">
+                {catalystId != null
+                  ? options.catalysts.find((c) => c.id === catalystId)?.label ??
+                    "Select a catalyst"
+                  : "Select a catalyst"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {options.catalysts.map((catalyst) => (
@@ -506,7 +511,12 @@ function MoverForm({
             }
           >
             <SelectTrigger className="w-full text-xs">
-              <SelectValue placeholder="Select an analyst" />
+              <SelectValue placeholder="Select an analyst">
+                {analystId != null
+                  ? options.analysts.find((a) => a.id === analystId)?.name ??
+                    "Not specified"
+                  : "Not specified"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_SELECTION} className="text-xs">Not specified</SelectItem>

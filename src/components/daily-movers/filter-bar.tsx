@@ -115,7 +115,12 @@ export function FilterBar({
             }
           >
             <SelectTrigger className="w-full bg-background/70 text-xs">
-              <SelectValue placeholder="All catalysts" />
+              <SelectValue placeholder="All catalysts">
+                {catalyst === ALL
+                  ? "All catalysts"
+                  : catalysts.find((c) => String(c.id) === catalyst)?.label ??
+                    "All catalysts"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL} className="text-xs">
@@ -139,7 +144,13 @@ export function FilterBar({
             }
           >
             <SelectTrigger className="w-full bg-background/70 text-xs">
-              <SelectValue placeholder="All directions" />
+              <SelectValue placeholder="All directions">
+                {direction === "up"
+                  ? "↑ Upward (Gains)"
+                  : direction === "down"
+                    ? "↓ Downward (Declines)"
+                    : "All directions"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL} className="text-xs">
