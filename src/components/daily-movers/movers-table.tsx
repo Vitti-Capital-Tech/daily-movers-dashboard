@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   ArrowDownRight,
-  ExternalLink,
   FileSearch,
   FileText,
 } from "lucide-react";
@@ -246,7 +245,7 @@ export function MoversTable({
                     )}
                   </TableCell>
 
-                  {/* Documents — one click to the PDF or the announcement */}
+                  {/* Documents — one click to the report PDF */}
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <DocLink
@@ -256,15 +255,6 @@ export function MoversTable({
                       >
                         <FileText className="size-3.5" />
                         <span>Report</span>
-                      </DocLink>
-
-                      <DocLink
-                        href={row.asxAnnouncementUrl}
-                        label="Original ASX announcement"
-                        missingLabel="No announcement link"
-                      >
-                        <ExternalLink className="size-3.5" />
-                        <span>ASX</span>
                       </DocLink>
                     </div>
                   </TableCell>
@@ -372,8 +362,8 @@ function SortableHead({
 
 /**
  * One document link. Renders as a disabled-looking chip when absent, so it's
- * visible at a glance which rows still need a report or announcement attached
- * rather than the column silently collapsing.
+ * visible at a glance which rows still need a report attached rather than the
+ * column silently collapsing.
  */
 function DocLink({
   href,

@@ -25,17 +25,6 @@ export const moveTypeEnum = pgEnum("move_type", ["intraday", "closing"]);
 export const userRoleEnum = pgEnum("user_role", ["admin", "viewer"]);
 
 /**
- * Where a mover sits in our own review loop -- deliberately three states, not a
- * workflow. `new` is the default on arrival, `reviewed` means someone has since
- * looked at how the price played out, `follow_up` flags one worth returning to.
- */
-export const moverStatusEnum = pgEnum("mover_status", [
-  "new",
-  "reviewed",
-  "follow_up",
-]);
-
-/**
  * Write-access allowlist, keyed by email. A table rather than a hardcoded list
  * in the trigger so granting write access is one INSERT, with no code change
  * or deploy.
@@ -81,8 +70,10 @@ export const companies = pgTable(
       .defaultNow(),
   },
   (t) => [
+    // No index on `name`: the only query against it is `ILIKE '%term%'`, which a
+    // btree cannot serve, and pg_stat confirmed zero scans. A trigram GIN index
+    // would work if the company count ever reaches the thousands.
     uniqueIndex("companies_ticker_key").on(t.ticker),
-    index("companies_name_idx").on(t.name),
   ],
 ).enableRLS();
 
@@ -168,19 +159,12 @@ export const dailyMovers = pgTable(
       mode: "number",
     }),
 
-    /**
-     * Review state. Retained in the database but no longer surfaced anywhere --
-     * the Status column was removed from the table as unnecessary. Kept rather
-     * than dropped so no data-destroying migration is needed to reverse that
-     * decision; delete the column and the `mover_status` enum if it's settled.
-     */
-    status: moverStatusEnum("status").notNull().default("new"),
 
     /** Public/external link to the Daily Mover report, if one exists. */
     reportUrl: text("report_url"),
     /** Path within the storage bucket for an uploaded PDF. */
     reportStoragePath: text("report_storage_path"),
-    asxAnnouncementUrl: text("asx_announcement_url"),
+
 
     /**
      * Raw structured output from PDF extraction, kept verbatim alongside the
@@ -233,10 +217,16 @@ export const companyPrices = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // Natural key: re-fetching a date overwrites it instead of duplicating it.
+    /**
+     * Natural key: re-fetching a date overwrites it instead of duplicating it.
+     *
+     * This is also the only index the table needs. The anchor lookup
+     * (`company_id = ? and price_date <= ? order by price_date desc limit 1`)
+     * is served by scanning this one backwards -- a separate DESC index was
+     * tried and the planner ignored it, while still paying to maintain it on
+     * every refresh.
+     */
     primaryKey({ columns: [t.companyId, t.priceDate] }),
-    // Window lookups read backwards from a date: ... and price_date <= ? desc
-    index("company_prices_company_date_idx").on(t.companyId, t.priceDate.desc()),
   ],
 ).enableRLS();
 

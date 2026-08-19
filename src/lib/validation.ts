@@ -57,7 +57,6 @@ export const moverInputSchema = z.object({
   reportUrl: optionalUrl,
   /** Storage key produced by the upload widget, not a user-typed value. */
   reportStoragePath: z.union([z.string().max(300), z.null()]),
-  asxAnnouncementUrl: optionalUrl,
 });
 
 export type MoverInput = z.infer<typeof moverInputSchema>;
@@ -104,7 +103,6 @@ export function parseMoverForm(formData: FormData): ParseResult {
     reportPrice: orNull(formData.get("reportPrice")),
     reportUrl: orNull(formData.get("reportUrl")),
     reportStoragePath: orNull(formData.get("reportStoragePath")),
-    asxAnnouncementUrl: orNull(formData.get("asxAnnouncementUrl")),
   };
 
   const parsed = moverInputSchema.safeParse(raw);

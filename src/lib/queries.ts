@@ -58,7 +58,6 @@ const SELECTION = {
   reportPrice: dailyMovers.reportPrice,
   reportUrl: dailyMovers.reportUrl,
   reportStoragePath: dailyMovers.reportStoragePath,
-  asxAnnouncementUrl: dailyMovers.asxAnnouncementUrl,
   analystId: analysts.id,
   analystName: analysts.name,
 

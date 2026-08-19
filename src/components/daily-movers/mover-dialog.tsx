@@ -145,9 +145,6 @@ function MoverForm({
     mover?.reportStoragePath ?? null,
   );
   const [reportUrl, setReportUrl] = useState(mover?.reportUrl ?? "");
-  const [asxAnnouncementUrl, setAsxAnnouncementUrl] = useState(
-    mover?.asxAnnouncementUrl ?? "",
-  );
 
   // Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
@@ -226,7 +223,6 @@ function MoverForm({
       setTakeaway(data.mainTakeaway);
       if (data.reportPrice != null) setReportPrice(String(data.reportPrice));
       if (resolvedAnalystId != null) setAnalystId(resolvedAnalystId);
-      if (data.asxAnnouncementUrl) setAsxAnnouncementUrl(data.asxAnnouncementUrl);
 
       // Upload the PDF to Supabase Storage in the background
       try {
@@ -544,21 +540,6 @@ function MoverForm({
           />
         </Row>
 
-        <Row
-          label="ASX announcement link"
-          error={errors.asxAnnouncementUrl}
-          hint="Optional — manual, the PDFs don't include it"
-          className="sm:col-span-2"
-        >
-          <Input
-            type="url"
-            name="asxAnnouncementUrl"
-            value={asxAnnouncementUrl}
-            onChange={(e) => setAsxAnnouncementUrl(e.target.value)}
-            placeholder="https://www.asx.com.au/…"
-            className="text-xs"
-          />
-        </Row>
       </div>
 
       <DialogFooter>

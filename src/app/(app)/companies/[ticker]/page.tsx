@@ -256,20 +256,6 @@ function HistoryEntry({ row }: { row: MoverRow }) {
             ) : (
               <span className="text-muted-foreground/60">No PDF attached</span>
             )}
-
-            {row.asxAnnouncementUrl ? (
-              <a
-                href={row.asxAnnouncementUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline underline-offset-4"
-              >
-                <span>Open ASX Announcement</span>
-                <ExternalLink className="size-3" />
-              </a>
-            ) : (
-              <span className="text-muted-foreground/60">No announcement link</span>
-            )}
           </div>
         </CardContent>
       </Card>

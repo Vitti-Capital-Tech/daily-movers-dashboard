@@ -225,7 +225,7 @@ erDiagram
 | `status` | `mover_status` enum | NOT NULL, Default `new` (`new` \| `reviewed` \| `follow_up`) | **Vestigial.** The Status column was removed from the UI; the column is retained so reversing that needs no destructive migration. Nothing reads or writes it. |
 | `report_url` | `text` | Nullable | External link to research PDF/document. |
 | `report_storage_path`| `text` | Nullable | Relative object key in private `reports` bucket. |
-| `asx_announcement_url`| `text` | Nullable | External link to company ASX announcement. |
+| `asx_announcement_url`| `text` | Nullable | **Vestigial.** The ASX announcement link was removed from the UI, the Add/Edit form and the PDF extraction; the column is retained so reversing that needs no destructive migration. It was null on every row at removal. |
 | `extraction` | `jsonb` | Nullable | Verbatim raw LLM/OCR structured JSON output. |
 | `created_by` | `text` | Nullable | Email address of the creator. |
 | `created_at` | `timestamptz` | NOT NULL, Default `now()` | Record creation timestamp. |
@@ -393,7 +393,7 @@ classDiagram
 #### `listDailyMovers(filters: MoverFilters)`
 - **Purpose**: Retrieves paginated, sorted, and filtered research rows for the main table.
 - **Joins**: `daily_movers` $\bowtie$ `companies` $\bowtie$ `catalysts` $\leftouterjoin$ `analysts`.
-- **Selection**: Returns full row metadata including `reportStoragePath`, `reportUrl`, and `asxAnnouncementUrl`.
+- **Selection**: Returns full row metadata including `reportStoragePath` and `reportUrl`, plus the derived performance prices.
 - **Filter Clauses (`buildWhere`)**:
   - `q`: Matches `ilike(companies.name, %q%)` $\lor$ `ilike(companies.ticker, %q%)` $\lor$ `ilike(catalysts.label, %q%)`.
   - `from` / `to`: Date bounds against `daily_movers.move_date`.
@@ -406,7 +406,7 @@ classDiagram
 
 ### 7.1 `saveMover(_prev: MoverFormState, formData: FormData)`
 1. **Authorization Gate**: Executes `assertCanWrite()` $\rightarrow$ `requireAdmin()`.
-2. **Schema Validation**: Calls `parseMoverForm(formData)` validating `reportStoragePath`, `reportUrl`, and `asxAnnouncementUrl`.
+2. **Schema Validation**: Calls `parseMoverForm(formData)` validating `reportStoragePath` and `reportUrl`.
 3. **Execution**: Performs `UPDATE` (if ID present) or `INSERT`.
 4. **Cache Invalidation**: Triggers cache revalidation across `/daily-movers`, `/companies`, and `/companies/[ticker]`.
 

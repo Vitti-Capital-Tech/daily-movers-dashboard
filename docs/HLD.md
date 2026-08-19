@@ -272,7 +272,7 @@ graph LR
 4. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
    - "Most Recent Research Takeaway" hero card with highlight banner and quote icon.
    - Vertical research history timeline connecting chronological notes with directional status nodes.
-   - Action links to Daily Mover source reports and official ASX announcements.
+   - Action links to Daily Mover source reports.
 5. **Theme Customization (`ThemeToggle`)**:
    - Seamless switching between Light mode, Midnight Navy Dark mode, and System preference.
 6. **Authentication & Session Management (`/login`, `/auth/signout`)**:

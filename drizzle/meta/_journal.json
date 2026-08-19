@@ -22,6 +22,13 @@
       "when": 1787123086866,
       "tag": "0002_post_event_returns",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787125347803,
+      "tag": "0003_drop_unused_columns_indexes",
+      "breakpoints": true
     }
   ]
 }

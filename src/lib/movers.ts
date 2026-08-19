@@ -44,7 +44,6 @@ export type MoverRow = {
   reportPrice: number | null;
   reportUrl: string | null;
   reportStoragePath: string | null;
-  asxAnnouncementUrl: string | null;
   analystId: number | null;
   analystName: string | null;
 

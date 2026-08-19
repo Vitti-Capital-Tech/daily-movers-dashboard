@@ -16,7 +16,6 @@ export type ExtractedMoverData = {
   mainTakeaway: string;
   reportPrice: number | null;
   analystName: string | null;
-  asxAnnouncementUrl: string | null;
 };
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
@@ -98,10 +97,6 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
         type: "string",
         description:
           "Name of the research analyst author if listed (e.g. 'Prasham Doshi'), otherwise null.",
-      },
-      asxAnnouncementUrl: {
-        type: "string",
-        description: "Official ASX announcement URL if printed in report, otherwise null.",
       },
     },
     required: [
@@ -224,9 +219,6 @@ Key rules:
       mainTakeaway: String(raw.mainTakeaway ?? "").trim(),
       reportPrice: raw.reportPrice != null ? Number(raw.reportPrice) : null,
       analystName: raw.analystName ? String(raw.analystName).trim() : null,
-      asxAnnouncementUrl: raw.asxAnnouncementUrl
-        ? String(raw.asxAnnouncementUrl).trim()
-        : null,
     };
   } catch (error) {
     if (error instanceof Anthropic.APIError) {

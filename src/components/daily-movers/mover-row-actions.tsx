@@ -67,19 +67,6 @@ export function MoverRowActions({
               Open report
             </DropdownMenuItem>
           ) : null}
-          {row.asxAnnouncementUrl ? (
-            <DropdownMenuItem
-              render={
-                <a
-                  href={row.asxAnnouncementUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                />
-              }
-            >
-              Open announcement
-            </DropdownMenuItem>
-          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"

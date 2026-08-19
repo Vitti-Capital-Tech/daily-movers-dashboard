@@ -116,7 +116,6 @@ async function main() {
       mainTakeaway:
         "Strong business and balance sheet — record FY26 sales of $11.06b, underlying NPAT of $489.9m and a 337c dividend. But JB Hi-Fi Australia has gone from +6.0% sales growth in Q1 FY26 to -0.5% in July FY27. FY27 depends on whether promotional periods can bring sales back into growth without too much margin pressure.",
       reportPrice: null,
-      asxAnnouncementUrl: null,
     },
     {
       companyId: await companyId("SPZ"),
@@ -132,7 +131,6 @@ async function main() {
       mainTakeaway:
         "Record FY26 across revenue, earnings, cash flow and sites, plus a $5m buy-back. SPZ enters FY27 with a larger US business and continued site growth. The key question is whether underlying growth can offset a lower UK debt-recovery benefit, falling from ~$7.0m in FY26 to ~$5.0m in FY27.",
       reportPrice: null,
-      asxAnnouncementUrl: null,
     },
   ];
 
