@@ -328,15 +328,15 @@ classDiagram
 3. Builds sanitized path via `buildReportPath()`.
 4. Mints signed upload token via Supabase Storage admin client.
 
-### 7.3 `extractReportAction(formData: FormData)`
-1. Verifies admin permissions via `requireAdmin()`.
+### 7.3 `POST /api/extract` Route Handler (`src/app/api/extract/route.ts`)
+1. Authenticates session caller with `requireAdmin()` (enforces admin privilege).
 2. Validates uploaded PDF file bytes ($\le 25$ MB).
 3. Invokes `extractMoverFromPdfBuffer()` using Anthropic Claude 3.5 Sonnet with tool calling (`save_daily_mover_research`).
 4. **Auto-Entities Resolution**:
    - Queries `companies` by ticker; if not found, automatically inserts the company into `companies` and returns the newly minted entity ID.
-   - Maps extracted catalyst slug against `catalysts` table to resolve `catalystId`.
+   - Maps extracted catalyst slug with multi-strategy fuzzy matching against `catalysts` table to resolve `catalystId`.
    - Maps or auto-creates authoring analyst in `analysts` table to resolve `analystId`.
-5. Returns typed `ExtractionResponse` to immediately populate client state in `MoverDialog`.
+5. Returns typed JSON `ExtractionResponse` to immediately populate client state in `MoverDialog`.
 
 ### 7.4 `unlockAdmin(_prev, formData: FormData)`
 1. Extracts `passcode` from submission.
@@ -355,7 +355,8 @@ classDiagram
 graph TD
     subgraph Layout["(app)/layout.tsx"]
         Shell["AppShell (Responsive Sidebar / Header / Mobile Navigation)"]
-        UserMenu["UserMenu (Email, Role Badge, Sign-Out)"]
+        UserMenu["UserMenu (Role Badge, Admin Lock / Exit)"]
+        Unlock["AdminUnlockDialog (Passcode Input Modal)"]
         Toggle["ThemeToggle (Light / Dark / System Dropdown)"]
     end
 
@@ -364,11 +365,13 @@ graph TD
         Filter["FilterBar (Search, Date Bounds, Catalyst, Direction, Active Count)"]
         Table["MoversTable (Sortable Headers, Directional Move Chips, Documents Column)"]
         Dialog["MoverDialog (Add/Edit Modal with ReportUpload)"]
+        Logo["CompanyLogo (Multi-Tier CDN & Monogram Fallback)"]
         RowActions["MoverRowActions (Edit / Delete / Download Triggers)"]
         Pager["Pagination (Previous, Next, Per-Page Selector)"]
     end
 
     Shell --> UserMenu
+    Shell --> Unlock
     Shell --> Toggle
     Shell --> DailyMoversPage
     DailyMoversPage --> Summary
@@ -376,6 +379,7 @@ graph TD
     DailyMoversPage --> Table
     DailyMoversPage --> Dialog
     DailyMoversPage --> Pager
+    Table --> Logo
     Table --> RowActions
 ```
 
@@ -386,12 +390,14 @@ graph TD
 | `ThemeProvider` | Client | Wraps application with `next-themes` provider supporting `attribute="class"`, `defaultTheme="dark"`, `enableSystem`. |
 | `ThemeToggle` | Client | Interactive mode selector (Light / Midnight Dark / System) using `useSyncExternalStore` for hydration-safe rendering. |
 | `AppShell` | Server | Renders institutional navigation sidebar, branding with live pulse indicator, mobile header, and main container. |
-| `UserMenu` | Client | Renders user avatar circle, role status pill (Admin vs Viewer), and sign-out form POST trigger. |
+| `UserMenu` | Client | Renders user avatar circle, role status pill (Admin vs Viewer), and admin lock/exit trigger. |
+| `AdminUnlockDialog` | Client | Modal dialog allowing authorized editors to unlock write permissions with the secret admin passcode. |
+| `CompanyLogo` | Client | Multi-source company logo renderer combining instant monogram base layer, domain inference, and Google/Clearbit/TradingView CDNs. |
 | `FilterBar` | Client | Binds search inputs, date pickers, catalyst dropdowns, and direction selectors to URL query parameters with active filter counts and reset. |
-| `MoversTable` | Client | Renders tabular daily mover records with directional move chips, monospace ticker badges, and **Documents column** (`Report` and `ASX` action buttons). |
+| `MoversTable` | Client | Renders tabular daily mover records with company logos, directional move chips, monospace ticker badges, and **Documents column**. |
 | `ReportUpload` | Client | Direct browser-to-storage PDF upload component with drag & drop, file progress, and client validation. |
-| `MoverDialog` | Client | Modal dialog handling research record creation and editing, integrating `ReportUpload` with server actions. |
-| `CompanyCombobox` | Client | Accessible searchable combobox for selecting companies by ticker and company name. |
+| `MoverDialog` | Client | Modal dialog handling research record creation and editing, integrating Claude AI Auto-Fill and `ReportUpload`. |
+| `CompanyCombobox` | Client | Accessible searchable combobox with company logos for selecting companies by ticker and company name. |
 | `MoverRowActions` | Client | Contextual dropdown menu for editing, deleting, and downloading research records. |
 | `Pagination` | Client | Controls current page offset, page size selector (10, 25, 50, 100), and result count display. |
 

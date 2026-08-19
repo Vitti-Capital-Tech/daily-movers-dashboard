@@ -131,6 +131,18 @@ graph TD
   - **Light Mode**: Crisp slate-tinted canvas (`oklch(0.985 0.008 245)`) with high-contrast surfaces.
 - **Rationale**: Enhances readability during extended research sessions and caters to diverse analyst workspace environments.
 
+### 5.7 Multi-Tier Company Logos Architecture (`<CompanyLogo />`)
+- **Decision**: A resilient, zero-broken-image brand logo pipeline combining:
+  1. **Instant Monogram Base Layer**: Immediate render of a deterministic two-letter ticker tile on a vibrant background.
+  2. **Smart Corporate Domain Inference**: Automatic deduction of official domains (e.g. `smartparking.com` from `Smart Parking Limited`).
+  3. **High-Res Global CDNs**: Multi-tier image loading via Google Favicon API, Clearbit, and TradingView vector SVGs.
+  4. **Smooth Alpha Fade-In**: Branded vector logos smoothly overlay the monogram tile once network load succeeds.
+- **Rationale**: Delivers instant institutional polish without blank flickers, broken image placeholders, or manual asset upload burdens.
+
+### 5.8 Recency-First Ordering Architecture
+- **Decision**: Companies directory (`/companies`) and Daily Movers table (`/daily-movers`) order entities by `MAX(daily_movers.move_date) DESC NULLS LAST`.
+- **Rationale**: Ensures the most actively covered equities and latest research notes automatically surface to the top of the interface.
+
 ---
 
 ## 6. Authentication, Authorization & Security Architecture

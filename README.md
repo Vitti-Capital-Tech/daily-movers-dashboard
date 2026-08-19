@@ -69,36 +69,15 @@ account password.
 | `npm run db:seed` | Idempotent seed |
 | `npm run db:studio` | Drizzle Studio |
 
-## Auth
+## Auth & Access Control
 
-**Sign-in is by email address alone.** Type an `@vitti.capital` address and
-you're in. No password, no emailed link, no verification.
+The dashboard implements a **Public View-Only by Default** model with **Passcode-based Admin Elevation**:
 
-> ### Read this before deploying
->
-> This is **identification, not authentication**. Nothing proves the person owns
-> the address they typed. Anyone who can reach the login page and knows a
-> colleague's address gets that person's access — including admin write access
-> to the research archive.
->
-> It is fine behind a VPN, on localhost, or on a URL only staff can reach. It is
-> not fine on a public URL. The fix, when wanted, is to add a verification step
-> back into `signIn()` in `src/app/login/actions.ts`; everything else —
-> sessions, roles, middleware, RLS — stays as it is.
-
-**Sessions** are an HMAC-SHA256-signed cookie (`vitti_session`), signed with
-`AUTH_SECRET`. The signature stops a visitor editing their own cookie to become
-an admin; it can't stop them typing someone else's address at the login screen.
-Rotating `AUTH_SECRET` signs everyone out. 30-day expiry.
-
-**Roles:** `admin` if the address is in `admin_emails`, otherwise `viewer`.
-Looked up on every request rather than stored on a user row, so there is no
-second copy to fall out of sync and revoking takes effect immediately:
-
-```sql
-INSERT INTO admin_emails (email, note) VALUES ('someone@vitti.capital', 'why');
-DELETE FROM admin_emails WHERE email = 'someone@vitti.capital';   -- revoke
-```
+1. **Public View-Only (Default)**: Anyone visiting the site lands directly on the **Daily Movers Dashboard** in read-only mode (`role: "viewer"`). All team members and analysts can search, filter, view company timelines, and open PDF reports without logging in.
+2. **Admin Elevation (Write Access)**: The 2 authorized research editors can unlock full write/edit permissions by clicking **"Admin Unlock"** in the sidebar and entering the `ADMIN_PASSCODE` (stored in `.env.local` / Vercel).
+3. **Signed Sessions**: Once unlocked, a stateless HMAC-SHA256 cookie (`vitti_admin`) is minted with `AUTH_SECRET` (valid for 30 days). Multiple editors can be unlocked simultaneously across different devices.
+4. **Instant Lock**: Editors can click **"Exit Admin Mode"** from the user menu anytime to return to View-Only mode.
+5. **Backend Mutation Chokepoint**: All database writes (`saveMover`, `deleteMover`, `extractReportAction`, `/api/extract`) strictly enforce `requireAdmin()` on the server side.
 
 `app_users` records who has signed in. It's audit only — role is never read from
 it.
@@ -203,11 +182,13 @@ src/
       daily-movers/      table view + Server Actions (create/update/delete)
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
+    api/extract/         multipart PDF research extraction route handler
     api/reports/[id]/    protected 60s signed URL PDF download redirect
     login/               passwordless identification screen
     auth/signout/        POST sign-out route handler
   components/
     admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
+    company-logo.tsx     multi-source CDN company logo with institutional monogram fallback
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper
