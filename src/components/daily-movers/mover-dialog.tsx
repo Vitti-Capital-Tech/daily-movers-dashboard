@@ -4,7 +4,6 @@ import { useActionState, useEffect, useRef, useState, type ReactNode } from "rea
 import { toast } from "sonner";
 import { Plus, Sparkles, UploadCloud, Loader2, CheckCircle2, FileText } from "lucide-react";
 
-import { extractReportAction } from "@/actions/extract";
 import { saveMover, type MoverFormState } from "@/actions/movers";
 import { createReportUploadUrl } from "@/actions/reports";
 import { CompanyCombobox } from "@/components/daily-movers/company-combobox";
@@ -185,10 +184,15 @@ function MoverForm({
       const formData = new FormData();
       formData.append("file", file);
 
-      const result = await extractReportAction(formData);
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        body: formData,
+      });
 
-      if (!result.ok) {
-        toast.error(result.message, { id: toastId });
+      const result = await res.json();
+
+      if (!res.ok || !result.ok) {
+        toast.error(result.message || "Failed to extract data from PDF.", { id: toastId });
         setIsExtracting(false);
         return;
       }

@@ -119,12 +119,12 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
 
 function getAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  if (!apiKey || !apiKey.trim()) {
     throw new Error(
-      "ANTHROPIC_API_KEY is missing. Add your API key to .env.local to enable automated PDF extraction.",
+      "ANTHROPIC_API_KEY is missing. Please add your Anthropic API key to .env.local to enable automated PDF extraction.",
     );
   }
-  return new Anthropic({ apiKey });
+  return new Anthropic({ apiKey: apiKey.trim() });
 }
 
 export async function extractMoverFromPdfBuffer(
@@ -133,7 +133,7 @@ export async function extractMoverFromPdfBuffer(
   const anthropic = getAnthropicClient();
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
-  // Step 1: Attempt highly token-efficient text extraction first
+  // Step 1: Attempt token-efficient text extraction
   let extractedPdfText = "";
   try {
     const uint8Array = new Uint8Array(pdfBuffer);
@@ -142,7 +142,6 @@ export async function extractMoverFromPdfBuffer(
     if (Array.isArray(parsed.text)) {
       extractedPdfText = parsed.text
         .map((pageText, idx) => `=== PAGE ${idx + 1} ===\n${pageText.trim()}`)
-        // Filter out boilerplate disclaimer pages to save additional tokens
         .filter((page) => !/Disclaimer:/i.test(page))
         .join("\n\n");
     } else if (typeof parsed.text === "string") {
@@ -160,10 +159,8 @@ export async function extractMoverFromPdfBuffer(
     | Anthropic.MessageParam["content"];
 
   if (isTextExtracted) {
-    // Ultra-compact text payload (~1,000 tokens instead of ~16,000 visual tokens)
     userMessageContent = `Here is the extracted text of the Vitti Capital Daily Mover research report:\n\n${extractedPdfText}\n\nExtract all structured research metadata using the save_daily_mover_research tool.`;
   } else {
-    // Fallback to visual document processing for image-only/scanned PDFs
     const base64Data = pdfBuffer.toString("base64");
     userMessageContent = [
       {
@@ -181,53 +178,67 @@ export async function extractMoverFromPdfBuffer(
     ];
   }
 
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 2000,
-    temperature: 0,
-    system: `You are an expert equity research analyst assistant for Vitti Capital.
+  try {
+    const response = await anthropic.messages.create({
+      model,
+      max_tokens: 2000,
+      temperature: 0,
+      system: `You are an expert equity research analyst assistant for Vitti Capital.
 Your job is to accurately extract structured metadata from Vitti Capital 'Daily Mover' research reports.
 
-Key rules to follow:
+Key rules:
 1. TICKER: Extract the ASX ticker without exchange suffixes (e.g. 'JBH', not 'JBH.AX').
 2. SIGN OF MOVE (%): The source reports print magnitudes like '~11.5%' while the direction is in the headline text ('Shares Fall as Much as...'). If the headline indicates a fall/drop/decline, movePct MUST be NEGATIVE (e.g. -11.5). If it indicates a rise/surge/gain, movePct MUST be POSITIVE (e.g. 20.6).
 3. CATALYST: Categorize the primary price-moving catalyst into the closest matching slug. For example, if FY26 earnings results were released but the sell-off was triggered by a weak July trading update, select 'trading_update'. If a buyback or dividend was the main news, select 'capital_management'.
 4. TAKEAWAY: Synthesize the key forward-looking takeaway so when an analyst reviews this company in the future, they know exactly what Vitti Capital concluded.`,
-    messages: [
-      {
-        role: "user",
-        content: userMessageContent,
-      },
-    ],
-    tools: [EXTRACTION_TOOL],
-    tool_choice: { type: "tool", name: "save_daily_mover_research" },
-  });
+      messages: [
+        {
+          role: "user",
+          content: userMessageContent,
+        },
+      ],
+      tools: [EXTRACTION_TOOL],
+      tool_choice: { type: "tool", name: "save_daily_mover_research" },
+    });
 
-  const toolUse = response.content.find(
-    (c) => c.type === "tool_use" && c.name === "save_daily_mover_research",
-  );
+    const toolUse = response.content.find(
+      (c) => c.type === "tool_use" && c.name === "save_daily_mover_research",
+    );
 
-  if (!toolUse || toolUse.type !== "tool_use") {
-    throw new Error("Claude did not return structured extraction data.");
+    if (!toolUse || toolUse.type !== "tool_use") {
+      throw new Error("Claude did not return structured extraction data.");
+    }
+
+    const raw = toolUse.input as Record<string, unknown>;
+
+    return {
+      ticker: String(raw.ticker ?? "").trim().toUpperCase(),
+      companyName: String(raw.companyName ?? "").trim(),
+      sector: raw.sector ? String(raw.sector).trim() : null,
+      moveDate: String(raw.moveDate ?? "").trim(),
+      movePct: Number(raw.movePct),
+      moveType: raw.moveType === "closing" ? "closing" : "intraday",
+      moveWindowLabel: raw.moveWindowLabel ? String(raw.moveWindowLabel).trim() : null,
+      catalystSlug: String(raw.catalystSlug ?? "other"),
+      reasonForMove: String(raw.reasonForMove ?? "").trim(),
+      mainTakeaway: String(raw.mainTakeaway ?? "").trim(),
+      reportPrice: raw.reportPrice != null ? Number(raw.reportPrice) : null,
+      analystName: raw.analystName ? String(raw.analystName).trim() : null,
+      asxAnnouncementUrl: raw.asxAnnouncementUrl
+        ? String(raw.asxAnnouncementUrl).trim()
+        : null,
+    };
+  } catch (error) {
+    if (error instanceof Anthropic.APIError) {
+      console.error("Anthropic API Error:", error.status, error.message);
+      if (error.status === 401) {
+        throw new Error("Invalid ANTHROPIC_API_KEY. Please verify your API key in .env.local.");
+      }
+      if (error.status === 429) {
+        throw new Error("Anthropic API rate limit exceeded or credit balance exhausted.");
+      }
+      throw new Error(`Claude API Error: ${error.message}`);
+    }
+    throw error;
   }
-
-  const raw = toolUse.input as Record<string, unknown>;
-
-  return {
-    ticker: String(raw.ticker ?? "").trim().toUpperCase(),
-    companyName: String(raw.companyName ?? "").trim(),
-    sector: raw.sector ? String(raw.sector).trim() : null,
-    moveDate: String(raw.moveDate ?? "").trim(),
-    movePct: Number(raw.movePct),
-    moveType: raw.moveType === "closing" ? "closing" : "intraday",
-    moveWindowLabel: raw.moveWindowLabel ? String(raw.moveWindowLabel).trim() : null,
-    catalystSlug: String(raw.catalystSlug ?? "other"),
-    reasonForMove: String(raw.reasonForMove ?? "").trim(),
-    mainTakeaway: String(raw.mainTakeaway ?? "").trim(),
-    reportPrice: raw.reportPrice != null ? Number(raw.reportPrice) : null,
-    analystName: raw.analystName ? String(raw.analystName).trim() : null,
-    asxAnnouncementUrl: raw.asxAnnouncementUrl
-      ? String(raw.asxAnnouncementUrl).trim()
-      : null,
-  };
 }

@@ -22,10 +22,6 @@ type Status =
  * Uploads the PDF from the browser directly to Supabase Storage using a
  * server-issued signed URL, then puts the resulting storage key into a hidden
  * input for the form to save.
- *
- * Direct-to-storage rather than through the Server Action because Vercel caps
- * request bodies at 4.5 MB and Next caps Server Action bodies at 1 MB by
- * default — a routine 5 MB report would pass locally and fail in production.
  */
 export function ReportUpload({
   ticker,
@@ -37,8 +33,10 @@ export function ReportUpload({
   existingPath: string | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [path, setPath] = useState<string | null>(existingPath);
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+
+  const activePath = uploadedPath !== null ? uploadedPath : existingPath;
 
   async function handleFile(file: File) {
     if (!isPdf(file)) {
@@ -81,21 +79,27 @@ export function ReportUpload({
       return;
     }
 
-    setPath(ticket.path);
+    setUploadedPath(ticket.path);
     setStatus({ kind: "done", fileName: file.name });
+  }
+
+  function handleClear() {
+    setUploadedPath("");
+    setStatus({ kind: "idle" });
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   const fileLabel =
     status.kind === "done"
       ? status.fileName
-      : path
-        ? (path.split("/").pop() ?? path)
+      : activePath
+        ? (activePath.split("/").pop() ?? activePath)
         : null;
 
   return (
     <div className="space-y-2">
       {/* What the form actually saves. */}
-      <input type="hidden" name="reportStoragePath" value={path ?? ""} />
+      <input type="hidden" name="reportStoragePath" value={activePath ?? ""} />
 
       <input
         ref={inputRef}
@@ -104,66 +108,80 @@ export function ReportUpload({
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
-          if (file) void handleFile(file);
-          // Reset so re-picking the same file fires onChange again.
-          event.target.value = "";
+          if (file) handleFile(file);
         }}
       />
 
-      {fileLabel ? (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
-          <FileText className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-xs" title={fileLabel}>
-            {fileLabel}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label="Remove attached report"
-            onClick={() => {
-              setPath(null);
-              setStatus({ kind: "idle" });
-            }}
-          >
-            <X className="size-3.5" />
-          </Button>
+      {activePath ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-muted/40 p-3 text-xs">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <FileText className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">
+                {fileLabel}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Attached to Daily Mover
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => inputRef.current?.click()}
+            >
+              Replace
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 size-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={handleClear}
+              title="Remove file"
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
         </div>
       ) : (
-        <Button
+        <button
           type="button"
-          variant="outline"
-          className="w-full justify-start font-normal"
-          disabled={status.kind === "uploading"}
           onClick={() => inputRef.current?.click()}
+          disabled={status.kind === "uploading"}
+          className="flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border/80 bg-background/50 p-6 text-center hover:border-primary/60 hover:bg-muted/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {status.kind === "uploading" ? (
-            <>
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Uploading…
-            </>
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="size-6 animate-spin text-primary" />
+              <p className="text-xs font-medium text-foreground">
+                Uploading PDF to Supabase Storage…
+              </p>
+            </div>
           ) : (
-            <>
-              <Upload className="mr-2 size-4" />
-              Attach Daily Mover PDF
-            </>
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Upload className="size-4" />
+              </div>
+              <p className="text-xs font-medium text-foreground">
+                Click to upload research PDF
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                PDF up to {formatBytes(MAX_REPORT_BYTES)}
+              </p>
+            </div>
           )}
-        </Button>
+        </button>
       )}
 
-      {status.kind === "error" ? (
+      {status.kind === "error" && (
         <p className="text-xs text-destructive">{status.message}</p>
-      ) : (
-        <p className="text-[11px] text-muted-foreground">
-          PDF, up to {formatBytes(MAX_REPORT_BYTES)}. Only signed-in staff can
-          open it.
-        </p>
       )}
-
-      {/* Removing the attachment here doesn't delete the object from storage;
-          the row simply stops pointing at it. Deliberate — an accidental
-          removal shouldn't destroy the only copy of a published report. */}
     </div>
   );
 }
