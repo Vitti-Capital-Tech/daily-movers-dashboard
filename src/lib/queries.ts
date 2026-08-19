@@ -180,7 +180,10 @@ export async function listCompaniesWithCounts() {
     .from(companies)
     .leftJoin(dailyMovers, eq(dailyMovers.companyId, companies.id))
     .groupBy(companies.id, companies.ticker, companies.name, companies.sector)
-    .orderBy(asc(companies.ticker));
+    .orderBy(
+      sql`max(${dailyMovers.moveDate}) DESC NULLS LAST`,
+      asc(companies.ticker),
+    );
 }
 
 /** Lookups for the Add/Edit form. */
