@@ -49,7 +49,7 @@ graph TD
 
     subgraph Server["Application Server Tier (Next.js App Router / Vercel Serverless)"]
         RSC["React Server Components (Layouts, Pages)"]
-        SA["Server Actions (saveMover, deleteMover, updateMoverStatus, createReportUploadUrl, signIn)"]
+        SA["Server Actions (saveMover, deleteMover, createReportUploadUrl, signIn)"]
         PDFRoute["Protected PDF Route (/api/reports/[id])"]
         PriceRoute["Price Refresh Route (/api/prices/refresh)"]
         LogoRoute["Logo Proxy Route (/api/logo/[ticker])"]
@@ -154,10 +154,10 @@ graph TD
   4. **Smooth Alpha Fade-In**: Branded logos overlay the monogram tile once loading succeeds.
 - **Rationale**: Resolving server-side lets the fallback chain see upstream status codes (a cross-origin `<img>` only reports "it failed"), collapses each ticker to one cacheable URL, and keeps third-party hosts from seeing the viewer.
 
-### 5.8 Derived-on-Read Post-Event Returns
-- **Decision**: Store prices (`company_prices` daily closes + `company_quotes` latest price); derive Post-Event, 1W and 1M returns at query time. Only `status` is entered by hand.
-- **Window Semantics**: All three returns are measured from the **report price**, falling back to the ASX close on the move date when no report price was entered. A window return stays `NULL` until the window has actually elapsed, so a three-day-old mover cannot pass a three-day move off as a weekly one.
-- **Refresh Model**: Pull-based, no cron. A page load triggers `/api/prices/refresh` after paint; the service applies a 30-minute TTL, a 6-hour backoff for failed tickers, and a per-run ceiling, so runs are naturally resumable and repeated calls are free.
+### 5.8 Derived-on-Read Post-Event Return
+- **Decision**: Store prices (`company_prices` daily closes + `company_quotes` latest price); derive the Post-Event Return at query time. Nothing in the block is entered by hand.
+- **Semantics**: The return is measured from the **report price**, falling back to the ASX close on the move date when none was entered. It stays `NULL` when either price is unknown, so "we don't know" never renders as a flat 0.0%.
+- **Refresh Model**: Pull-based, no cron. A page load triggers `/api/prices/refresh` after paint; the service applies a 30-minute TTL, a 6-hour backoff for failed tickers, and a per-run ceiling, so runs are naturally resumable and repeated calls are free. Admins can bypass all three with the **Refresh prices** button, which is admin-gated because one click is a request per covered company against an external provider.
 - **Rationale**: Same reasoning as deriving direction from `move_pct` — two copies of a figure eventually disagree. A corrected or late close fixes every window at once, and no one has to return after a week to type a price in.
 
 ### 5.9 Recency-First Ordering Architecture
@@ -260,8 +260,8 @@ graph LR
    - Paginated, sortable, and multi-filter table displaying research dates, tickers, company names, catalysts, price movements, move types, and covering analysts.
    - Financial directional move chips (`ArrowUpRight` / `ArrowDownRight`) with emerald gain and rose decline tints.
    - **Documents Column**: Clickable `Report` and `ASX` action buttons per row, with greyed-out visual states when unattached.
-   - **Post-Event Performance Block**: Report Price, Current Price (~20 min delayed), and Post-Event / 1W / 1M returns, all refreshed automatically from market data. An inferred report price is marked with a dotted underline; a window that hasn't elapsed shows `—` with the reason on hover.
-   - **Review Status**: `New` / `Reviewed` / `Follow-Up` chip per row, changed in one click by admins and read-only for viewers.
+   - **Post-Event Performance Block**: Report Price, Current Price (~20 min delayed) and Post-Event Return, refreshed automatically from market data. An inferred report price is marked with a dotted underline; an unknown return shows `—` with the reason on hover.
+   - **Price Freshness Control**: A "Prices as of ..." stamp above the table for every viewer, plus an admin-only **Refresh prices** button that fetches every tracked ticker immediately instead of waiting for the automatic sweep.
    - Summary KPI cards showing total published research, covered companies, and filtered counts with micro-gradients and icons.
    - Interactive dialog for creating and editing research entries (admins only).
 2. **Report PDF Upload & Direct Delivery**:

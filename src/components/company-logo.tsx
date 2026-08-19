@@ -66,6 +66,34 @@ export function CompanyLogo({
   const currentSrc = sources[sourceIndex];
   const isFailed = sourceIndex >= sources.length;
 
+  function markLoaded() {
+    setState((prev) => (prev.loaded ? prev : { ...prev, loaded: true }));
+  }
+
+  function tryNextSource() {
+    setState((prev) => ({ ...prev, index: prev.index + 1, loaded: false }));
+  }
+
+  /**
+   * The fix for logos that stayed hidden until you navigated away and back.
+   *
+   * On a server-rendered page the browser starts these requests while parsing
+   * the HTML, so an image can finish *before* React hydrates and attaches
+   * `onLoad`. That event is then never delivered: the image sits in the DOM fully
+   * decoded behind an `opacity-0` wrapper, and only a client-side navigation --
+   * which re-creates the element with handlers already in place -- reveals it.
+   *
+   * A ref callback runs during commit, so it can ask the DOM what actually
+   * happened instead of waiting for an event that has already been missed.
+   * `complete` covers both outcomes; `naturalWidth` is what separates them, since
+   * a failed image is also "complete".
+   */
+  function settleIfAlreadyDone(node: HTMLImageElement | null) {
+    if (!node || !node.complete) return;
+    if (node.naturalWidth > 0) markLoaded();
+    else tryNextSource();
+  }
+
   const sizeClasses: Record<CompanyLogoSize, { box: string; font: string; iconPad: string }> = {
     xs: { box: "size-5 rounded-md", font: "text-[9px]", iconPad: "p-0.5" },
     sm: { box: "size-6 rounded-md", font: "text-[10px]", iconPad: "p-0.5" },
@@ -105,14 +133,12 @@ export function CompanyLogo({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            ref={settleIfAlreadyDone}
             src={currentSrc}
             alt={`${cleanTicker} logo`}
-            loading="lazy"
             className="size-full object-contain"
-            onLoad={() => setState((prev) => ({ ...prev, loaded: true }))}
-            onError={() =>
-              setState((prev) => ({ ...prev, index: prev.index + 1, loaded: false }))
-            }
+            onLoad={markLoaded}
+            onError={tryNextSource}
           />
         </div>
       )}

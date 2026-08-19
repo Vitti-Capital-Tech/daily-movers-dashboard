@@ -21,14 +21,7 @@ import {
 } from "@/lib/movers";
 
 /**
- * "Today" on the ASX. `company_prices.price_date` is an exchange-local date, so
- * comparing it against the database server's `current_date` (UTC on Supabase)
- * would open and close each return window ten hours early.
- */
-const asxToday = sql`(now() at time zone 'Australia/Sydney')::date`;
-
-/**
- * The price the post-event returns are measured from: the entered report price
+ * The price the post-event return is measured from: the entered report price
  * if there is one, otherwise the close on the move date. The fallback is what
  * keeps the performance columns populated across the archive, since
  * `report_price` was manual entry and is null on most historical rows.
@@ -49,30 +42,6 @@ const anchorPriceSql = sql<number | null>`coalesce(
   )
 )`;
 
-/**
- * The close ending a return window that starts at the move date -- the last one
- * on or before `move_date + interval`.
- *
- * Null until the window has actually elapsed. Without that guard, a mover
- * published three days ago would report its three-day move as a 1W return,
- * which reads as real rather than as not-yet-known.
- */
-function windowCloseSql(interval: "7 days" | "1 month") {
-  const boundary = sql`(${dailyMovers.moveDate} + ${sql.raw(`interval '${interval}'`)})::date`;
-
-  return sql<number | null>`(
-    case when ${boundary} <= ${asxToday} then (
-      select p.close::float8
-      from ${companyPrices} p
-      where p.company_id = ${dailyMovers.companyId}
-        and p.price_date >= ${dailyMovers.moveDate}
-        and p.price_date <= ${boundary}
-      order by p.price_date desc
-      limit 1
-    ) end
-  )`;
-}
-
 const SELECTION = {
   id: dailyMovers.id,
   moveDate: dailyMovers.moveDate,
@@ -92,15 +61,12 @@ const SELECTION = {
   asxAnnouncementUrl: dailyMovers.asxAnnouncementUrl,
   analystId: analysts.id,
   analystName: analysts.name,
-  status: dailyMovers.status,
 
-  // Performance side of the row. Prices, not returns: the percentages are
-  // derived in `movers.ts` from these, so there's one copy of each figure.
+  // Performance side of the row. Prices, not a return: the percentage is derived
+  // in `movers.ts` from these, so there's one copy of each figure.
   anchorPrice: anchorPriceSql,
   currentPrice: companyQuotes.price,
   currentPriceAt: companyQuotes.asOf,
-  price1w: windowCloseSql("7 days"),
-  price1m: windowCloseSql("1 month"),
 };
 
 /**
@@ -281,6 +247,49 @@ export async function getFormOptions(): Promise<FormOptions> {
     companies: companyRows,
     catalysts: catalystRows,
     analysts: analystRows,
+  };
+}
+
+/**
+ * How current the price data is, for the "as of" stamp above the table.
+ *
+ * Reads `refreshed_at` (last success) rather than `attempted_at`, because the
+ * stamp answers "how old are these numbers", not "when did we last try".
+ */
+export async function getPriceFreshness(): Promise<{
+  lastRefreshedAt: Date | null;
+  tracked: number;
+  priced: number;
+  failing: number;
+}> {
+  const db = getDb();
+  const [row] = await db
+    .select({
+      /**
+       * Epoch milliseconds rather than the timestamp itself. Drizzle only maps
+       * column references to `Date`; a raw aggregate like `max(...)` comes back
+       * as the driver's own representation, so asking for a number and building
+       * the `Date` here avoids depending on how a timestamp happens to be
+       * serialised.
+       */
+      lastRefreshedMs: sql<
+        number | null
+      >`(extract(epoch from max(${companyQuotes.refreshedAt})) * 1000)::float8`,
+      tracked: count(),
+      priced: sql<number>`count(${companyQuotes.price})::int`,
+      failing: sql<number>`count(${companyQuotes.error})::int`,
+    })
+    .from(companyQuotes);
+
+  if (!row) return { lastRefreshedAt: null, tracked: 0, priced: 0, failing: 0 };
+
+  const { lastRefreshedMs, ...counts } = row;
+  return {
+    ...counts,
+    lastRefreshedAt:
+      typeof lastRefreshedMs === "number" && Number.isFinite(lastRefreshedMs)
+        ? new Date(lastRefreshedMs)
+        : null,
   };
 }
 

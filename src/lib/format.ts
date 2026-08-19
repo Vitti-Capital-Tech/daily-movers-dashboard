@@ -77,8 +77,14 @@ const QUOTE_TIME_FORMAT = new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Sydney",
 });
 
+/**
+ * `instanceof` rather than a truthiness check: a timestamp that arrives as a
+ * string (a raw SQL aggregate, or a value that crossed a serialisation boundary)
+ * would otherwise throw inside `.getTime()` and take the whole page down over a
+ * missing tooltip. An unformattable value is worth "unknown", not a 500.
+ */
 export function formatQuoteTime(value: Date | null): string | null {
-  if (!value || Number.isNaN(value.getTime())) return null;
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
   return `${QUOTE_TIME_FORMAT.format(value)} AEST`;
 }
 

@@ -7,8 +7,6 @@
  * component needs at runtime belongs here.
  */
 
-import type { MoverStatus } from "@/lib/validation";
-
 export const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 export const DEFAULT_PER_PAGE = 25;
 
@@ -50,8 +48,6 @@ export type MoverRow = {
   analystId: number | null;
   analystName: string | null;
 
-  status: MoverStatus;
-
   /**
    * What the returns below are measured from: `reportPrice` when it was entered,
    * otherwise the close on the move date. Null only when we have no price data
@@ -60,20 +56,16 @@ export type MoverRow = {
   anchorPrice: number | null;
   /** Latest price from the market-data provider, ~20 minutes delayed. */
   currentPrice: number | null;
-  /** When that price was current upstream — not when we fetched it. */
+  /** When that price was current upstream, not when we fetched it. */
   currentPriceAt: Date | null;
-  /** Close a week after the move date; null until that week has passed. */
-  price1w: number | null;
-  /** Close a month after the move date; null until that month has passed. */
-  price1m: number | null;
 };
 
 /**
  * Percentage change between two prices, or null when either side is unknown.
  *
- * Every return on the row goes through here, so "we don't know yet" (a window
- * that hasn't elapsed, a ticker with no price data) stays distinguishable from
- * a genuine 0.0% and can be rendered as such.
+ * The return goes through here so "we don't know yet" (a ticker with no price
+ * data, or a quote not fetched yet) stays distinguishable from a genuine 0.0%
+ * and can be rendered as such.
  */
 export function pctChange(from: number | null, to: number | null): number | null {
   if (from === null || to === null) return null;
@@ -83,21 +75,12 @@ export function pctChange(from: number | null, to: number | null): number | null
 
 type PerformanceFields = Pick<
   MoverRow,
-  "anchorPrice" | "currentPrice" | "price1w" | "price1m" | "reportPrice"
+  "anchorPrice" | "currentPrice" | "reportPrice"
 >;
 
 /** Report price (or move-date close) to the latest price. */
 export function postEventReturn(row: PerformanceFields): number | null {
   return pctChange(row.anchorPrice, row.currentPrice);
-}
-
-/** Measured from the same anchor as the post-event return, not week-on-week. */
-export function weekReturn(row: PerformanceFields): number | null {
-  return pctChange(row.anchorPrice, row.price1w);
-}
-
-export function monthReturn(row: PerformanceFields): number | null {
-  return pctChange(row.anchorPrice, row.price1m);
 }
 
 /**

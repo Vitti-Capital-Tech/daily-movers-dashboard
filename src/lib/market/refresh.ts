@@ -89,6 +89,15 @@ function isDue(candidate: Candidate, now: number): boolean {
   return age > (candidate.hasError ? FAILURE_BACKOFF_MS : QUOTE_TTL_MS);
 }
 
+export type RefreshOptions = {
+  /**
+   * Refresh every tracked company regardless of TTL or failure backoff, and
+   * ignore the per-run ceiling. This is what the manual button does: someone
+   * asking for prices *now* should get all of them, not a fifth of them.
+   */
+  force?: boolean;
+};
+
 /**
  * The whole history for a company we have nothing (or not enough) for,
  * otherwise just the recent tail. Cheap enough either way, but a company
@@ -259,21 +268,34 @@ async function runPool(queue: Candidate[]): Promise<number> {
  * Coalesces concurrent callers. Several tabs opening at once (or React running
  * an effect twice in development) would otherwise each start a full sweep and
  * fight over the same rows.
+ *
+ * Keyed by mode: a forced run must not be answered by an automatic sweep that
+ * happens to be in flight, since that sweep skips everything inside its TTL and
+ * the person who clicked would be told "up to date" about prices it never
+ * fetched. Two forced clicks *do* share one run.
  */
-let inFlight: Promise<RefreshSummary> | null = null;
+const inFlight = new Map<"auto" | "force", Promise<RefreshSummary>>();
 
-export function refreshStalePrices(): Promise<RefreshSummary> {
-  inFlight ??= sweep().finally(() => {
-    inFlight = null;
-  });
-  return inFlight;
+export function refreshStalePrices(
+  options: RefreshOptions = {},
+): Promise<RefreshSummary> {
+  const key = options.force ? "force" : "auto";
+
+  let run = inFlight.get(key);
+  if (!run) {
+    run = sweep(options).finally(() => inFlight.delete(key));
+    inFlight.set(key, run);
+  }
+  return run;
 }
 
-async function sweep(): Promise<RefreshSummary> {
+async function sweep(options: RefreshOptions): Promise<RefreshSummary> {
   const candidates = await findCandidates();
   const now = Date.now();
 
-  const due = candidates.filter((candidate) => isDue(candidate, now));
+  const due = options.force
+    ? candidates
+    : candidates.filter((candidate) => isDue(candidate, now));
   if (due.length === 0) return NOTHING_TO_DO;
 
   // Oldest attempt first, so a run that hits the ceiling still makes progress
@@ -284,7 +306,7 @@ async function sweep(): Promise<RefreshSummary> {
     return left - right;
   });
 
-  const queue = due.slice(0, MAX_COMPANIES_PER_RUN);
+  const queue = options.force ? due : due.slice(0, MAX_COMPANIES_PER_RUN);
   const refreshed = await runPool(queue);
 
   return { due: due.length, refreshed, failed: queue.length - refreshed };

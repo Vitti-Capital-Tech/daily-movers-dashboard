@@ -5,6 +5,7 @@ import { FilterBar } from "@/components/daily-movers/filter-bar";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
 import { MoversTable } from "@/components/daily-movers/movers-table";
 import { Pagination } from "@/components/daily-movers/pagination";
+import { PriceRefreshButton } from "@/components/daily-movers/price-refresh-button";
 import { PriceRefresher } from "@/components/daily-movers/price-refresher";
 import { Card, CardContent } from "@/components/ui/card";
 import { isDbConfigured } from "@/db";
@@ -18,7 +19,12 @@ import {
   type SortDir,
   type SortKey,
 } from "@/lib/movers";
-import { getFormOptions, getSummary, listDailyMovers } from "@/lib/queries";
+import {
+  getFormOptions,
+  getPriceFreshness,
+  getSummary,
+  listDailyMovers,
+} from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -93,12 +99,14 @@ export default async function DailyMoversPage({
   let result: Awaited<ReturnType<typeof listDailyMovers>>;
   let options: Awaited<ReturnType<typeof getFormOptions>>;
   let summary: Awaited<ReturnType<typeof getSummary>>;
+  let freshness: Awaited<ReturnType<typeof getPriceFreshness>>;
 
   try {
-    [result, options, summary] = await Promise.all([
+    [result, options, summary, freshness] = await Promise.all([
       listDailyMovers(filters),
       getFormOptions(),
       getSummary(),
+      getPriceFreshness(),
     ]);
   } catch (error) {
     return (
@@ -138,7 +146,15 @@ export default async function DailyMoversPage({
         />
       </div>
 
-      <FilterBar catalysts={options.catalysts} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FilterBar catalysts={options.catalysts} />
+        <PriceRefreshButton
+          lastRefreshedAt={freshness.lastRefreshedAt}
+          priced={freshness.priced}
+          failing={freshness.failing}
+          canWrite={user.canWrite}
+        />
+      </div>
 
       <MoversTable
         rows={result.rows}

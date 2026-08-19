@@ -15,6 +15,13 @@
       "when": 1787047719008,
       "tag": "0001_military_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787123086866,
+      "tag": "0002_post_event_returns",
+      "breakpoints": true
     }
   ]
 }

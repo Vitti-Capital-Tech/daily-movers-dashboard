@@ -11,11 +11,7 @@ import {
   requireAdmin,
   type SessionUser,
 } from "@/lib/auth";
-import {
-  MOVER_STATUS_LABELS,
-  moverStatusSchema,
-  parseMoverForm,
-} from "@/lib/validation";
+import { parseMoverForm } from "@/lib/validation";
 
 export type MoverFormState = {
   ok: boolean;
@@ -120,59 +116,6 @@ export async function saveMover(
           ? error.message
           : "Could not save. Check the server logs.",
     };
-  }
-}
-
-/**
- * Moves one row between New / Reviewed / Follow-Up.
- *
- * Its own action rather than part of `saveMover` because it's a one-click change
- * from the table, and it deliberately touches nothing else -- the edit form
- * doesn't carry `status`, so a concurrent edit can't quietly reset it.
- */
-export async function updateMoverStatus(
-  _prev: MoverFormState,
-  formData: FormData,
-): Promise<MoverFormState> {
-  try {
-    await assertCanWrite();
-  } catch (error) {
-    const message = authMessage(error);
-    if (message) return { ok: false, message };
-    throw error;
-  }
-
-  const rawId = formData.get("id");
-  const id = typeof rawId === "string" ? Number(rawId) : NaN;
-  if (!Number.isInteger(id) || id <= 0) {
-    return { ok: false, message: "Invalid record id." };
-  }
-
-  const status = moverStatusSchema.safeParse(formData.get("status"));
-  if (!status.success) {
-    return { ok: false, message: "Unknown status." };
-  }
-
-  const db = getDb();
-  try {
-    const updated = await db
-      .update(dailyMovers)
-      .set({ status: status.data, updatedAt: new Date() })
-      .where(eq(dailyMovers.id, id))
-      .returning({ companyId: dailyMovers.companyId });
-
-    if (updated.length === 0) {
-      return { ok: false, message: "That Daily Mover no longer exists." };
-    }
-
-    await revalidateFor(updated[0].companyId);
-    return {
-      ok: true,
-      message: `Marked ${MOVER_STATUS_LABELS[status.data]}.`,
-    };
-  } catch (error) {
-    console.error("updateMoverStatus failed", error);
-    return { ok: false, message: "Could not update the status." };
   }
 }
 

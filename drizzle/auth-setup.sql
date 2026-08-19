@@ -3,6 +3,14 @@
 --
 -- Apply with:  npm run db:auth
 -- Safe to re-run.
+--
+-- CAUTION: this file changes the schema outside the numbered migrations, so
+-- `drizzle/meta` cannot see it. Dropping `profiles` and creating `app_users`
+-- here once left the snapshot describing a database that no longer existed, and
+-- `drizzle-kit generate` then crashed trying to diff a table it thought had been
+-- renamed. The 0001 snapshot has since been corrected by hand to match.
+-- If you add DDL below, mirror it in src/db/schema.ts and keep the newest
+-- snapshot in step, or generate breaks again.
 
 -- Write-access allowlist. Everyone else on the domain is read-only.
 -- Granting access is one INSERT; revoking is one DELETE. Role is read from this

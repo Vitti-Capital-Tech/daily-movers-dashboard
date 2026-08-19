@@ -30,15 +30,13 @@ import {
 import {
   anchorIsInferred,
   hasReport,
-  monthReturn,
   postEventReturn,
   reportHref,
-  weekReturn,
   type MoverRow,
 } from "@/lib/movers";
 import { getResearchHistory } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { MOVE_TYPE_LABELS, MOVER_STATUS_LABELS } from "@/lib/validation";
+import { MOVE_TYPE_LABELS } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -209,10 +207,6 @@ function HistoryEntry({ row }: { row: MoverRow }) {
               {row.catalystLabel}
             </Badge>
 
-            <Badge variant="outline" className="text-[11px] font-semibold">
-              {MOVER_STATUS_LABELS[row.status]}
-            </Badge>
-
             <span className="ml-auto text-xs text-muted-foreground font-medium">
               {row.analystName ? `Analyst: ${row.analystName}` : "Analyst not specified"}
             </span>
@@ -241,8 +235,6 @@ function HistoryEntry({ row }: { row: MoverRow }) {
               note={formatQuoteTime(row.currentPriceAt) ?? undefined}
             />
             <ReturnStat label="Post-Event" value={postEventReturn(row)} />
-            <ReturnStat label="1W" value={weekReturn(row)} />
-            <ReturnStat label="1M" value={monthReturn(row)} />
           </div>
 
           {/* External Links */}

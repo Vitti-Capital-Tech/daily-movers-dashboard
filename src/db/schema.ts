@@ -168,7 +168,12 @@ export const dailyMovers = pgTable(
       mode: "number",
     }),
 
-    /** Review state. Set by hand; everything price-related updates itself. */
+    /**
+     * Review state. Retained in the database but no longer surfaced anywhere --
+     * the Status column was removed from the table as unnecessary. Kept rather
+     * than dropped so no data-destroying migration is needed to reverse that
+     * decision; delete the column and the `mover_status` enum if it's settled.
+     */
     status: moverStatusEnum("status").notNull().default("new"),
 
     /** Public/external link to the Daily Mover report, if one exists. */

@@ -7,19 +7,6 @@ export const MOVE_TYPE_LABELS: Record<(typeof MOVE_TYPES)[number], string> = {
   closing: "Closing",
 };
 
-/** Review states, in the order they're offered. Mirrors the `mover_status` enum. */
-export const MOVER_STATUSES = ["new", "reviewed", "follow_up"] as const;
-
-export type MoverStatus = (typeof MOVER_STATUSES)[number];
-
-export const MOVER_STATUS_LABELS: Record<MoverStatus, string> = {
-  new: "New",
-  reviewed: "Reviewed",
-  follow_up: "Follow-Up",
-};
-
-export const moverStatusSchema = z.enum(MOVER_STATUSES);
-
 /** Matches the character counters shown on the form. */
 export const REASON_MAX = 1000;
 export const TAKEAWAY_MAX = 1000;

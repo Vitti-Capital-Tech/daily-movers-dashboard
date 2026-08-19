@@ -21,7 +21,7 @@ daily-movers-dashboard/
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
 │   │   ├── extract.ts           # extractReportAction (Claude PDF AI extraction)
-│   │   ├── movers.ts            # saveMover, deleteMover, updateMoverStatus
+│   │   ├── movers.ts            # saveMover, deleteMover
 │   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
 │   ├── app/                     # Next.js App Router routes & pages
 │   │   ├── (app)/               # Protected application layout group
@@ -34,7 +34,7 @@ daily-movers-dashboard/
 │   │   ├── api/                 # API route handlers
 │   │   │   ├── logo/[ticker]/    # Server-resolved company logo proxy (cached)
 │   │   │   │   └── route.ts
-│   │   │   ├── prices/refresh/   # POST: tops up stale prices, returns a summary
+│   │   │   ├── prices/refresh/   # POST: stale top-up, or {force:true} for admins
 │   │   │   │   └── route.ts
 │   │   │   └── reports/[id]/    # Protected 60-second signed PDF redirect handler
 │   │   │       └── route.ts
@@ -55,9 +55,9 @@ daily-movers-dashboard/
 │   │   │   ├── mover-row-actions.tsx
 │   │   │   ├── movers-table.tsx # Table with directional chips, performance columns & Documents
 │   │   │   ├── pagination.tsx
+│   │   │   ├── price-refresh-button.tsx # "As of" stamp + admin force-refresh
 │   │   │   ├── price-refresher.tsx # Post-paint stale-price top-up trigger
-│   │   │   ├── report-upload.tsx# Direct browser-to-storage PDF uploader
-│   │   │   └── status-cell.tsx  # New / Reviewed / Follow-Up chip & admin dropdown
+│   │   │   └── report-upload.tsx# Direct browser-to-storage PDF uploader
 │   │   ├── ui/                  # shadcn/ui Base UI & Radix primitives
 │   │   ├── app-shell.tsx        # Navigation sidebar, branding & mobile header
 │   │   ├── db-not-configured.tsx# Fallback diagnostic alerts
@@ -222,7 +222,7 @@ erDiagram
 | `reason_for_move` | `text` | NOT NULL (Max 1000 chars) | Detailed catalyst analysis. |
 | `main_takeaway` | `text` | NOT NULL (Max 1000 chars) | Core investment conclusion for future reference. |
 | `report_price` | `numeric(12,4)` | Nullable | Share price recorded at time of report publication. When null, post-event returns fall back to the `company_prices` close on `move_date`. |
-| `status` | `mover_status` enum | NOT NULL, Default `new` (`new` \| `reviewed` \| `follow_up`) | Internal review state. The only manually-maintained field in the performance block. |
+| `status` | `mover_status` enum | NOT NULL, Default `new` (`new` \| `reviewed` \| `follow_up`) | **Vestigial.** The Status column was removed from the UI; the column is retained so reversing that needs no destructive migration. Nothing reads or writes it. |
 | `report_url` | `text` | Nullable | External link to research PDF/document. |
 | `report_storage_path`| `text` | Nullable | Relative object key in private `reports` bucket. |
 | `asx_announcement_url`| `text` | Nullable | External link to company ASX announcement. |
@@ -232,7 +232,7 @@ erDiagram
 | `updated_at` | `timestamptz` | NOT NULL, Default `now()` | Last modification timestamp. |
 
 #### 5. `company_prices`
-Daily closes backing the post-event return windows. Raw (unadjusted) closes, so they stay comparable with a hand-entered `report_price` and with the live quote.
+Daily closes, read for the anchor price when a mover has no `report_price`. Raw (unadjusted) closes, so they stay comparable with a hand-entered `report_price` and with the live quote.
 
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
@@ -262,24 +262,24 @@ One row per company holding the latest price, overwritten in place, plus the ref
 
 ## 3.3 Post-Event Return Pipeline
 
-Everything except `status` updates itself. Returns are **derived on read** from stored prices rather than stored as numbers — the same reasoning as `move_pct` driving direction, so a corrected close fixes every window at once.
+Nothing here is entered by hand. The return is **derived on read** from stored prices rather than stored as a number — the same reasoning as `move_pct` driving direction, so a corrected close fixes every window at once.
 
 | Layer | File | Responsibility |
 | :--- | :--- | :--- |
 | Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider`, `DailyClose`, `Quote`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. |
 | Yahoo adapter | `src/lib/market/yahoo.ts` | One chart request per ticker (`{TICKER}.AX`) returns both daily closes and the latest price. Bars are dated by shifting the timestamp by the exchange's `gmtoffset`. |
 | Provider selection | `src/lib/market/index.ts` | Single-line swap point for a licensed feed. |
-| Refresh service | `src/lib/market/refresh.ts` | Decides what's due (30 min TTL; 6 h backoff after a failure), backfills or tops up, bounded at 20 companies and 4 concurrent requests per run, coalesced by an in-flight promise. |
-| Trigger route | `src/app/api/prices/refresh/route.ts` | `POST`, unauthenticated, self-limiting. Returns `{ due, refreshed, failed }`. |
+| Refresh service | `src/lib/market/refresh.ts` | Decides what's due (30 min TTL; 6 h backoff after a failure), backfills or tops up, bounded at 20 companies and 4 concurrent requests per run (both lifted for a forced run), coalesced by an in-flight promise keyed on mode. |
+| Trigger route | `src/app/api/prices/refresh/route.ts` | `POST`. Unauthenticated for the automatic stale-only sweep (self-limiting via TTL + ceiling); `{ force: true }` requires `canWrite`, since one forced click is a request per covered company. Returns `{ due, refreshed, failed }`. |
 | Client trigger | `src/components/daily-movers/price-refresher.tsx` | Fires after paint, calls `router.refresh()` only when something changed. |
-| Derivation | `src/lib/queries.ts`, `src/lib/movers.ts` | SQL returns the four prices (anchor, current, 1W, 1M); `pctChange` turns them into returns. |
+| Manual control | `src/components/daily-movers/price-refresh-button.tsx` | Shows "Prices as of ..." (from `getPriceFreshness()`) to everyone, plus a force-refresh button for admins. Forced runs ignore the TTL and the per-run ceiling. |
+| Derivation | `src/lib/queries.ts`, `src/lib/movers.ts` | SQL returns the anchor and current prices; `pctChange` turns them into the return. |
 
-Window semantics:
+Semantics:
 
-- **Anchor** = `report_price`, else the last close on or before `move_date`. An inferred anchor is marked in the UI with a dotted underline.
-- **Post-Event Return** = anchor → current price.
-- **1W / 1M Return** = anchor → last close on or before `move_date + 7 days` / `+ 1 month`. **Null until the window has elapsed**, so a three-day-old mover shows `—` rather than passing a three-day move off as a weekly one.
-- "Today" is `(now() at time zone 'Australia/Sydney')::date`, because `price_date` is an exchange-local date.
+- **Anchor** = `report_price`, else the last close on or before `move_date`. `<=` rather than `=` because a move date can land on a day with no close of its own. An inferred anchor is marked in the UI with a dotted underline.
+- **Post-Event Return** = anchor → current price. Null when either side is unknown, rendered as `—` with the reason on hover rather than as a misleading 0.0%.
+- Fixed-window returns (1W / 1M) were removed as unnecessary; `company_prices` is still required, since the anchor fallback reads the close on the move date.
 
 Refresh is pull-based with no cron: a page load asks, and the service decides whether anything is due. A run that hits its ceiling is resumed by the next request, since staleness is re-evaluated each time. Adding an older mover for an already-tracked company automatically triggers a full history backfill on the next refresh (`earliestStored > needed`).
 
@@ -383,6 +383,7 @@ classDiagram
         +getResearchHistory(ticker: string) Promise~ResearchHistoryResult | null~
         +listCompaniesWithCounts() Promise~CompanyCountRow[]~
         +getFormOptions() Promise~FormOptions~
+        +getPriceFreshness() Promise~PriceFreshness~
         +getSummary() Promise~SummaryResult~
     }
 ```
@@ -409,19 +410,13 @@ classDiagram
 3. **Execution**: Performs `UPDATE` (if ID present) or `INSERT`.
 4. **Cache Invalidation**: Triggers cache revalidation across `/daily-movers`, `/companies`, and `/companies/[ticker]`.
 
-### 7.2 `updateMoverStatus(_prev: MoverFormState, formData: FormData)`
-1. **Authorization Gate**: Executes `assertCanWrite()` $\rightarrow$ `requireAdmin()`.
-2. **Validation**: `moverStatusSchema` (Zod enum) parses the submitted status; the id must be a positive integer.
-3. **Execution**: Updates `status` and `updated_at` only — deliberately narrow, so it can't disturb a concurrent edit. Kept out of `saveMover` because the edit form carries no `status` field.
-4. **Cache Invalidation**: Same three paths as `saveMover`.
-
-### 7.3 `createReportUploadUrl(input)`
+### 7.2 `createReportUploadUrl(input)`
 1. Verifies admin permissions via `requireAdmin()`.
 2. Validates PDF mime type and file size ($\le 25$ MB).
 3. Builds sanitized path via `buildReportPath()`.
 4. Mints signed upload token via Supabase Storage admin client.
 
-### 7.4 `POST /api/extract` Route Handler (`src/app/api/extract/route.ts`)
+### 7.3 `POST /api/extract` Route Handler (`src/app/api/extract/route.ts`)
 1. Authenticates session caller with `requireAdmin()` (enforces admin privilege).
 2. Validates uploaded PDF file bytes ($\le 25$ MB).
 3. Invokes `extractMoverFromPdfBuffer()` using Anthropic Claude 3.5 Sonnet with tool calling (`save_daily_mover_research`).
@@ -431,12 +426,12 @@ classDiagram
    - Maps or auto-creates authoring analyst in `analysts` table to resolve `analystId`.
 5. Returns typed JSON `ExtractionResponse` to immediately populate client state in `MoverDialog`.
 
-### 7.5 `unlockAdmin(_prev, formData: FormData)`
+### 7.4 `unlockAdmin(_prev, formData: FormData)`
 1. Extracts `passcode` from submission.
 2. Validates against `process.env.ADMIN_PASSCODE` in constant time via `verifyAdminPasscode()`.
 3. Issues HMAC-SHA256 signed `vitti_admin` session token cookie and triggers cache revalidation.
 
-### 7.6 `lockAdmin()`
+### 7.5 `lockAdmin()`
 1. Clears `vitti_admin` and `vitti_session` cookies.
 2. Revalidates dashboard cache, instantly returning user to View-Only mode.
 
@@ -459,8 +454,8 @@ graph TD
         Table["MoversTable (Sortable Headers, Directional Move Chips, Documents Column)"]
         Dialog["MoverDialog (Add/Edit Modal with ReportUpload)"]
         Logo["CompanyLogo (Proxy-Resolved Logo & Monogram Fallback)"]
-        Status["StatusCell (New / Reviewed / Follow-Up)"]
         Refresher["PriceRefresher (Post-Paint Price Top-Up)"]
+        RefreshBtn["PriceRefreshButton (As-Of Stamp & Admin Force Refresh)"]
         RowActions["MoverRowActions (Edit / Delete / Download Triggers)"]
         Pager["Pagination (Previous, Next, Per-Page Selector)"]
     end
@@ -476,8 +471,8 @@ graph TD
     DailyMoversPage --> Pager
     Table --> Logo
     Table --> RowActions
-    Table --> Status
     DailyMoversPage --> Refresher
+    DailyMoversPage --> RefreshBtn
 ```
 
 ### 8.1 Component Specifications
@@ -491,9 +486,9 @@ graph TD
 | `AdminUnlockDialog` | Client | Modal dialog allowing authorized editors to unlock write permissions with the secret admin passcode. |
 | `CompanyLogo` | Client | Monogram base layer with a branded logo faded in over it, resolved through the `/api/logo/[ticker]` proxy (ticker-keyed upstream first, name-derived domain favicons as fallback). |
 | `FilterBar` | Client | Binds search inputs, date pickers, catalyst dropdowns, and direction selectors to URL query parameters with active filter counts and reset. |
-| `MoversTable` | Client | Renders tabular daily mover records with company logos, directional move chips, monospace ticker badges, the **performance block** (Report / Current price, Post-Event / 1W / 1M returns), **Status**, and **Documents column**. |
-| `StatusCell` | Client | Review-state chip. A dropdown backed by `updateMoverStatus` for admins, a read-only badge for viewers. |
+| `MoversTable` | Client | Renders tabular daily mover records with company logos, directional move chips, monospace ticker badges, the **performance block** (Report Price, Current Price, Post-Event Return), and the **Documents column**. |
 | `PriceRefresher` | Client | Renders nothing; asks `/api/prices/refresh` for a top-up after paint and calls `router.refresh()` only if prices changed. |
+| `PriceRefreshButton` | Client | "Prices as of ..." stamp for all viewers, with a force-refresh button and failing-ticker count for admins. |
 | `ReportUpload` | Client | Direct browser-to-storage PDF upload component with drag & drop, file progress, and client validation. |
 | `MoverDialog` | Client | Modal dialog handling research record creation and editing, integrating Claude AI Auto-Fill and `ReportUpload`. |
 | `CompanyCombobox` | Client | Accessible searchable combobox with company logos for selecting companies by ticker and company name. |
