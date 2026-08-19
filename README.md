@@ -18,7 +18,7 @@ comes up again you can immediately see what we said last time.
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
 | AI Extraction | Anthropic Claude 3.5 Sonnet (`@anthropic-ai/sdk`) |
 | Database | Postgres (Supabase) |
-| Auth | HMAC-SHA256 Signed Sessions (@vitti.capital domain allowlist) |
+| Auth & Permissions | Public View-Only by default + Passcode Admin Elevation (HMAC-SHA256) |
 | Data access | Drizzle ORM + postgres.js |
 | Storage | Supabase Private Storage (`reports` bucket) |
 | Validation | Zod |
@@ -194,6 +194,7 @@ it isn't covered by the server-rendered checks).
 ```
 src/
   actions/
+    admin-auth.ts        Server Actions for passcode unlocking and locking admin mode
     movers.ts            Server Actions for create, update, and delete
     reports.ts           Server Action for signed upload ticket generation
     extract.ts           Server Action for AI PDF extraction & auto-resolution
@@ -203,9 +204,10 @@ src/
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
     api/reports/[id]/    protected 60s signed URL PDF download redirect
-    login/               passwordless email identification screen
+    login/               passwordless identification screen
     auth/signout/        POST sign-out route handler
   components/
+    admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { TrendingUp, Building2, Activity, ShieldCheck, Eye } from "lucide-react";
+import { TrendingUp, Building2, Activity, ShieldCheck, Eye, KeyRound } from "lucide-react";
 
 import { NavLink } from "@/components/nav-link";
 import { UserMenu } from "@/components/user-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AdminUnlockDialog } from "@/components/admin-unlock-dialog";
 import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/auth";
 
@@ -68,7 +69,7 @@ export function AppShell({
                   className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-medium px-2 py-0.5"
                 >
                   <ShieldCheck className="size-3 mr-1" />
-                  Admin
+                  Admin Mode
                 </Badge>
               ) : (
                 <Badge
@@ -76,10 +77,12 @@ export function AppShell({
                   className="bg-muted text-muted-foreground border-border text-[10px] font-medium px-2 py-0.5"
                 >
                   <Eye className="size-3 mr-1" />
-                  Read-only
+                  View Only
                 </Badge>
               )}
             </div>
+
+            {!user.canWrite && <AdminUnlockDialog />}
           </div>
 
           <div className="space-y-2">
@@ -110,6 +113,19 @@ export function AppShell({
           </nav>
 
           <div className="flex items-center gap-2">
+            {!user.canWrite && (
+              <AdminUnlockDialog
+                trigger={
+                  <button
+                    type="button"
+                    aria-label="Unlock Admin"
+                    className="flex size-8 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  >
+                    <KeyRound className="size-3.5" />
+                  </button>
+                }
+              />
+            )}
             <ThemeToggle compact />
             <UserMenu user={user} compact />
           </div>

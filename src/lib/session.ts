@@ -1,21 +1,15 @@
 /**
- * Signed session cookie — no Supabase Auth, no emailed links.
+ * Signed session cookie and admin token management.
  *
- * The cookie proves only that *this server* issued it. It does NOT prove the
- * person owns the email address inside it: sign-in accepts any allowlisted
- * address without verification. The signature stops a visitor from editing
- * their own cookie to become an admin; it cannot stop someone from typing a
- * colleague's address at the login screen. See README → Auth.
- *
- * Uses Web Crypto so the same code runs in middleware (edge runtime) and in
- * Node server components. `node:crypto` is not available on the edge.
+ * Uses Web Crypto API so the same code runs in Edge Middleware and in Node.js server components.
  */
 
 export const SESSION_COOKIE = "vitti_session";
+export const ADMIN_COOKIE = "vitti_admin";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 type SessionPayload = {
-  /** Email address, lowercased. */
+  /** Email address or role identifier, lowercased. */
   e: string;
   /** Expiry, seconds since epoch. */
   x: number;
@@ -57,7 +51,7 @@ async function hmacKey(): Promise<CryptoKey> {
 }
 
 /** Length-independent comparison, so a mismatch leaks no timing signal. */
-function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
@@ -80,7 +74,11 @@ export async function createSessionToken(email: string): Promise<string> {
   return `${body}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
-/** Returns the email if the token is authentic and unexpired, else null. */
+export async function createAdminToken(): Promise<string> {
+  return createSessionToken("admin@vitti.capital");
+}
+
+/** Returns the email/identifier if the token is authentic and unexpired, else null. */
 export async function readSessionToken(
   token: string | undefined | null,
 ): Promise<string | null> {
@@ -115,6 +113,17 @@ export async function readSessionToken(
   } catch {
     return null;
   }
+}
+
+/** Validates admin passcode in constant-time */
+export function verifyAdminPasscode(inputPasscode: string): boolean {
+  const expectedPasscode = process.env.ADMIN_PASSCODE;
+  if (!expectedPasscode || !inputPasscode) return false;
+
+  const a = new TextEncoder().encode(inputPasscode.trim());
+  const b = new TextEncoder().encode(expectedPasscode.trim());
+
+  return timingSafeEqual(a, b);
 }
 
 export const sessionCookieOptions = {

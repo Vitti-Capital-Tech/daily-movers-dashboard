@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { FileText, Building2, Layers, Sparkles } from "lucide-react";
 
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
@@ -87,7 +86,6 @@ export default async function DailyMoversPage({
   }
 
   const user = await getSessionUser();
-  if (!user) redirect("/login?next=%2Fdaily-movers");
 
   const filters = parseFilters(params);
 

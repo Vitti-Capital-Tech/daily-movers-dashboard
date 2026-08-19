@@ -133,12 +133,12 @@ graph TD
 
 ---
 
-## 6. Authentication & Security Architecture
+## 6. Authentication, Authorization & Security Architecture
 
-### 6.1 Authentication Mechanism (Domain Allowlist Identification)
-- **Model**: Frictionless corporate email identification restricted to `@vitti.capital`.
-- **Session Tokens**: Stateless, tamper-proof cookie (`vitti_session`) containing `{ email, expiry }` signed with an HMAC-SHA256 secret (`AUTH_SECRET`).
-- **Cryptographic Standard**: Web Crypto API standard primitives (`crypto.subtle`) ensuring cross-runtime compatibility between Edge Middleware and Node Serverless.
+### 6.1 Public-First Read Architecture with Passcode Admin Elevation
+- **Public Viewer Access by Default**: All team members and analysts can navigate `/daily-movers`, `/companies`, and `/companies/[ticker]` with zero login barrier. Default sessions carry `{ role: "viewer", canWrite: false }`.
+- **Passcode-Based Admin Elevation**: The 2 authorized research authors unlock write mode by providing the secret `ADMIN_PASSCODE` in the `AdminUnlockDialog`.
+- **Session Tokens**: Upon passcode verification, a stateless, tamper-proof cookie (`vitti_admin`) containing `{ e: "admin@vitti.capital", x: expiry }` is signed using HMAC-SHA256 with `AUTH_SECRET` via Web Crypto standard primitives (`crypto.subtle`).
 
 ### 6.2 Multi-Layered Authorization & Enforcement (Defense-in-Depth)
 
@@ -146,40 +146,44 @@ graph TD
 sequenceDiagram
     autonumber
     actor User as User Browser
-    participant MW as Edge Middleware
-    participant Layout as (app)/layout.tsx
-    participant Action as Server Action (saveMover)
-    participant Storage as Supabase Storage
+    participant Shell as UI Shell / UserMenu
+    participant UnlockAction as unlockAdmin(passcode)
+    participant Action as Mutation Server Action (saveMover)
     participant DB as Postgres (Drizzle)
 
-    User->>MW: HTTP GET /daily-movers (Cookie: vitti_session)
-    MW->>MW: Verify HMAC signature & domain (@vitti.capital)
-    alt Invalid or Missing Cookie
-        MW-->>User: 302 Redirect to /login
-    else Valid Cookie
-        MW->>Layout: Forward Request
-        Layout->>DB: Query admin_emails to resolve Role (admin/viewer)
-        Layout-->>User: Render Shell & Table (Hide admin buttons if viewer)
+    User->>Shell: View /daily-movers
+    Shell-->>User: Render Dashboard in Read-Only Mode (Add/Edit buttons hidden)
+
+    Note over User,UnlockAction: Admin Elevation Phase
+    User->>Shell: Click "Admin Unlock" & Enter Passcode
+    Shell->>UnlockAction: POST passcode
+    UnlockAction->>UnlockAction: Verify ADMIN_PASSCODE in constant time
+    alt Passcode Valid
+        UnlockAction-->>User: Set Signed 'vitti_admin' HMAC Cookie
+        Shell-->>User: Re-render with "+ Add Mover" & Edit Triggers
+    else Passcode Invalid
+        UnlockAction-->>User: Return Error Message
     end
 
-    User->>Action: POST /actions/movers (saveMover)
-    Action->>Action: assertCanWrite() -> requireAdmin()
-    Action->>DB: Check admin_emails table
-    alt Role is viewer
+    Note over User,Action: Mutation Enforcement Phase
+    User->>Action: POST saveMover / deleteMover / extractReportAction
+    Action->>Action: requireAdmin() -> verify 'vitti_admin' cookie
+    alt Caller is Viewer
         Action-->>User: Reject with NotAuthorisedError
-    else Role is admin
+    else Caller is Admin
         Action->>DB: Execute INSERT / UPDATE
-        Action-->>User: Return Success & Revalidate Cache
+        Action-->>User: Return Success & Revalidate
     end
 ```
 
 | Layer | Enforcement Mechanism | Purpose |
 | :--- | :--- | :--- |
-| **Layer 1: Edge Middleware** | HMAC token verification + `@vitti.capital` domain check | Blocks unauthorized traffic at edge; redirects to `/login`. |
-| **Layer 2: Server Layout** | Server-side `getSessionUser()` verification | Redundant fail-safe preventing data leaks if middleware is misconfigured. |
-| **Layer 3: Mutation Chokepoint** | `assertCanWrite()` / `requireAdmin()` in Server Actions | Cryptographic and database-backed verification that caller is in `admin_emails`. |
-| **Layer 4: Storage Security** | Private Supabase bucket + 60s signed URLs | Prevents unauthenticated access to uploaded research PDFs. |
-| **Layer 5: Database Layer (RLS)** | Row-Level Security enabled on all tables with **zero public policies** | Complete lockdown against public Supabase anon key requests. Drizzle connects as table owner to bypass RLS safely. |
+| **Layer 1: Default Viewer Shell** | `getSessionUser()` defaults to `{ role: "viewer", canWrite: false }` | Renders clean institutional dashboard for everyone with zero login barriers. |
+| **Layer 2: Constant-Time Passcode Gate** | `verifyAdminPasscode()` using bitwise loop | Protects admin elevation against timing and brute-force attacks. |
+| **Layer 3: Cryptographic Admin Token** | Web Crypto HMAC-SHA256 signed `vitti_admin` cookie | Prevents client-side cookie forgery for privilege escalation. |
+| **Layer 4: Mutation Chokepoint** | `requireAdmin()` on all Server Actions (`saveMover`, `deleteMover`, `extractReportAction`, `createReportUploadUrl`) | Strictly enforces that database mutations only execute from validated admin sessions. |
+| **Layer 5: Storage Security** | Private Supabase bucket + 60s signed URLs | Prevents unauthenticated access to uploaded research PDFs. |
+| **Layer 6: Database Layer (RLS)** | Row-Level Security enabled on all tables with **zero public policies** | Complete lockdown against public Supabase anon key requests. Drizzle connects as table owner to bypass RLS safely. |
 
 ---
 

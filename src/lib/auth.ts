@@ -6,7 +6,11 @@ import { cookies } from "next/headers";
 import { getDb } from "@/db";
 import { adminEmails, appUsers, type UserRole } from "@/db/schema";
 import { isAllowedEmail } from "@/lib/auth-config";
-import { readSessionToken, SESSION_COOKIE } from "@/lib/session";
+import {
+  readSessionToken,
+  ADMIN_COOKIE,
+  SESSION_COOKIE,
+} from "@/lib/session";
 
 export type SessionUser = {
   email: string;
@@ -15,15 +19,14 @@ export type SessionUser = {
   canWrite: boolean;
 };
 
+const DEFAULT_VIEWER: SessionUser = {
+  email: "viewer@vitti.capital",
+  role: "viewer",
+  canWrite: false,
+};
+
 /**
- * Role is looked up from `admin_emails` on every request rather than copied onto
- * a user row, so revoking write access takes effect immediately and there is no
- * second copy to fall out of sync.
- *
- * Degrades to `viewer` if the database can't be reached. That's deliberate on
- * two counts: it fails closed on permissions, and it keeps a database outage
- * from throwing inside the *authentication* path — which would 500 the whole
- * page instead of letting the data layer render its own diagnostic.
+ * Checks role from admin_emails table if a specific email is provided.
  */
 export async function roleFor(email: string): Promise<UserRole> {
   try {
@@ -43,61 +46,82 @@ export async function roleFor(email: string): Promise<UserRole> {
 }
 
 /**
- * The signed-in user, or null.
+ * Resolves the session user.
  *
- * Returns null ONLY for a missing, forged, expired or out-of-domain cookie —
- * never because of a database problem. If a database failure returned null, the
- * layout would redirect to /login, the middleware would see a still-valid cookie
- * and bounce back, and the user would sit in a redirect loop instead of seeing
- * the real error.
+ * Defaults to viewer (read-only) mode so the dashboard is publicly viewable without a login barrier.
+ * When the admin passcode is unlocked, returns admin mode with write permissions.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
+export async function getSessionUser(): Promise<SessionUser> {
   const store = await cookies();
-  const email = await readSessionToken(store.get(SESSION_COOKIE)?.value);
 
-  // A valid signature is not enough — the domain rule is re-checked so that
-  // narrowing the allowlist invalidates existing cookies.
-  if (!email || !isAllowedEmail(email)) return null;
+  // 1. Check for dedicated admin unlock cookie
+  const adminCookie = store.get(ADMIN_COOKIE)?.value;
+  if (adminCookie) {
+    const adminId = await readSessionToken(adminCookie);
+    if (adminId) {
+      return {
+        email: "admin@vitti.capital",
+        role: "admin",
+        canWrite: true,
+      };
+    }
+  }
 
-  const role = await roleFor(email);
-  return { email, role, canWrite: role === "admin" };
+  // 2. Check for legacy/email session cookie if present
+  const sessionCookie = store.get(SESSION_COOKIE)?.value;
+  if (sessionCookie) {
+    const email = await readSessionToken(sessionCookie);
+    if (email && isAllowedEmail(email)) {
+      const role = await roleFor(email);
+      return {
+        email,
+        role,
+        canWrite: role === "admin",
+      };
+    }
+  }
+
+  // 3. Default to public viewer mode
+  return DEFAULT_VIEWER;
 }
 
 /** Records the sign-in for audit. Never affects authorisation. */
 export async function touchUser(email: string): Promise<void> {
-  const db = getDb();
-  await db
-    .insert(appUsers)
-    .values({ email })
-    .onConflictDoUpdate({
-      target: appUsers.email,
-      set: { lastSeenAt: sql`now()` },
-    });
+  try {
+    const db = getDb();
+    await db
+      .insert(appUsers)
+      .values({ email })
+      .onConflictDoUpdate({
+        target: appUsers.email,
+        set: { lastSeenAt: sql`now()` },
+      });
+  } catch (err) {
+    console.warn("touchUser failed", err);
+  }
 }
 
 export class NotAuthenticatedError extends Error {
-  constructor() {
-    super("You need to sign in.");
+  constructor(message = "You need to unlock admin mode.") {
+    super(message);
     this.name = "NotAuthenticatedError";
   }
 }
 
 export class NotAuthorisedError extends Error {
-  constructor() {
-    super("Your account has read-only access.");
+  constructor(message = "Admin unlock required to add or edit Daily Movers.") {
+    super(message);
     this.name = "NotAuthorisedError";
   }
 }
 
 export async function requireSessionUser(): Promise<SessionUser> {
-  const user = await getSessionUser();
-  if (!user) throw new NotAuthenticatedError();
-  return user;
+  return getSessionUser();
 }
 
-/** Throws unless the caller is an admin. Use at the top of every write. */
+/** Throws unless the caller has admin permissions. Use at the top of every write. */
 export async function requireAdmin(): Promise<SessionUser> {
-  const user = await requireSessionUser();
+  const user = await getSessionUser();
   if (!user.canWrite) throw new NotAuthorisedError();
   return user;
 }

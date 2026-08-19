@@ -245,40 +245,41 @@ sequenceDiagram
 ```mermaid
 graph TD
     subgraph Request["Inbound HTTP Request"]
-        C["Cookie: vitti_session=body.signature"]
+        C["Cookie: vitti_admin or vitti_session"]
     end
 
     subgraph TokenParsing["lib/session.ts (Web Crypto)"]
         Split["Split into Body & Signature"]
         Verify["crypto.subtle.verify(HMAC-SHA256, AUTH_SECRET)"]
         Expiry["Check payload.x >= currentTime"]
-        Domain["isAllowedEmail(payload.e) -> @vitti.capital"]
     end
 
     subgraph AuthLogic["lib/auth.ts"]
-        RoleQuery["SELECT email FROM admin_emails WHERE email = ?"]
-        SessionUser["Construct SessionUser: { email, role, canWrite }"]
+        CheckAdmin["Is valid vitti_admin token?"]
+        DefaultViewer["Default: { role: 'viewer', canWrite: false }"]
+        AdminRole["Admin: { role: 'admin', canWrite: true }"]
     end
 
     C --> Split
     Split --> Verify
-    Verify -->|Valid| Expiry
-    Expiry -->|Not Expired| Domain
-    Domain -->|Valid Domain| RoleQuery
-    RoleQuery --> SessionUser
+    Verify -->|Valid Admin Cookie| Expiry
+    Expiry -->|Not Expired| AdminRole
+    Split -->|No / Invalid Cookie| DefaultViewer
 ```
 
-### 5.1 Session Token Format (`src/lib/session.ts`)
+### 5.1 Public Viewer Access & Admin Token Format (`src/lib/session.ts`)
+- **Default Public Session**: Visitors without an admin token automatically receive a guest session: `{ email: "viewer@vitti.capital", role: "viewer", canWrite: false }`.
+- **Admin Token (`vitti_admin`)**: Generated upon passcode verification via `unlockAdmin()`.
 - **Structure**: `<base64url(payload)>.<base64url(signature)>`
 - **Payload Schema**:
   ```typescript
   type SessionPayload = {
-    e: string; // User email address (lowercased)
+    e: string; // Identifier: "admin@vitti.capital"
     x: number; // Expiration epoch in seconds (TTL: 30 days)
   };
   ```
 - **Signing Algorithm**: HMAC using SHA-256 (`crypto.subtle`) with `AUTH_SECRET` (minimum 32-character requirement).
-- **Constant-Time Verification**: `timingSafeEqual()` bitwise loop prevents timing attacks during signature verification.
+- **Constant-Time Passcode Check**: `verifyAdminPasscode()` uses `timingSafeEqual()` bitwise loop to validate against `ADMIN_PASSCODE`.
 - **Cookie Security Attributes**: `HttpOnly = true`, `SameSite = Lax`, `Secure = true` (in production), `Path = /`, `Max-Age = 2,592,000` (30 days).
 
 ---
@@ -336,6 +337,15 @@ classDiagram
    - Maps extracted catalyst slug against `catalysts` table to resolve `catalystId`.
    - Maps or auto-creates authoring analyst in `analysts` table to resolve `analystId`.
 5. Returns typed `ExtractionResponse` to immediately populate client state in `MoverDialog`.
+
+### 7.4 `unlockAdmin(_prev, formData: FormData)`
+1. Extracts `passcode` from submission.
+2. Validates against `process.env.ADMIN_PASSCODE` in constant time via `verifyAdminPasscode()`.
+3. Issues HMAC-SHA256 signed `vitti_admin` session token cookie and triggers cache revalidation.
+
+### 7.5 `lockAdmin()`
+1. Clears `vitti_admin` and `vitti_session` cookies.
+2. Revalidates dashboard cache, instantly returning user to View-Only mode.
 
 ---
 
