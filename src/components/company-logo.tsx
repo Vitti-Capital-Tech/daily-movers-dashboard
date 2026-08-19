@@ -20,55 +20,17 @@ function getPalette(ticker: string) {
   return MONOGRAM_PALETTES[code % MONOGRAM_PALETTES.length];
 }
 
-// Common ASX company domain mappings
-const KNOWN_DOMAINS: Record<string, string> = {
-  JBH: "jbhifi.com.au",
-  SPZ: "smartparking.com",
-  BHP: "bhp.com",
-  CBA: "commbank.com.au",
-  CSL: "csl.com",
-  NAB: "nab.com.au",
-  WBC: "westpac.com.au",
-  ANZ: "anz.com.au",
-  WES: "wesfarmers.com.au",
-  MQG: "macquarie.com",
-  TLS: "telstra.com.au",
-  RIO: "riotinto.com",
-  FMG: "fortescue.com",
-  GMG: "goodman.com",
-  TCL: "transurban.com",
-  WDS: "woodside.com",
-  COL: "colesgroup.com.au",
-  WOW: "woolworthsgroup.com.au",
-  REA: "rea-group.com",
-  XRO: "xero.com",
-  WTC: "wisetechglobal.com",
-  DRO: "droneshield.com",
-  NXT: "nextdc.com",
-  BGA: "begagroup.com.au",
-  ZIP: "zip.co",
-  PLS: "pilbaraminerals.com.au",
-};
-
-/** Derives probable domain name from company name */
-function inferDomain(ticker: string, companyName?: string): string {
-  const cleanTicker = ticker.trim().toUpperCase();
-  if (KNOWN_DOMAINS[cleanTicker]) return KNOWN_DOMAINS[cleanTicker];
-
-  if (companyName) {
-    const simplified = companyName
-      .toLowerCase()
-      .replace(/\b(limited|ltd|group|corporation|corp|holdings|pty|inc|plc)\b/gi, "")
-      .replace(/[^a-z0-9]/g, "");
-    if (simplified.length >= 3) {
-      return `${simplified}.com`;
-    }
-  }
-
-  return `${cleanTicker.toLowerCase()}.com.au`;
-}
-
 export type CompanyLogoSize = "xs" | "sm" | "md" | "lg" | "xl";
+
+/**
+ * One URL per ticker, resolved by `/api/logo` -- it walks the upstream sources
+ * server-side, so a freshly uploaded ticker gets a logo with nothing registered
+ * for it here. The company name rides along as a hint for the fallbacks.
+ */
+function logoEndpoint(ticker: string, name?: string) {
+  const query = name ? `?name=${encodeURIComponent(name)}` : "";
+  return `/api/logo/${encodeURIComponent(ticker)}${query}`;
+}
 
 export function CompanyLogo({
   ticker,
@@ -83,18 +45,22 @@ export function CompanyLogo({
   size?: CompanyLogoSize;
   className?: string;
 }) {
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-
   const cleanTicker = (ticker || "").trim().toUpperCase();
-  const domain = inferDomain(cleanTicker, name);
 
-  // Candidate sources to try in order
+  // Keyed by ticker: paging the movers table swaps the ticker under a reused
+  // component instance, and a "this one failed" index carried over from the
+  // previous row would hide a logo that loads perfectly well.
+  const [state, setState] = useState({ ticker: cleanTicker, index: 0, loaded: false });
+  if (state.ticker !== cleanTicker) {
+    setState({ ticker: cleanTicker, index: 0, loaded: false });
+  }
+  const { index: sourceIndex, loaded } = state;
+
+  // Candidate sources to try in order. The proxy is the last one it needs:
+  // everything it could fall back to, it has already tried itself.
   const sources = [
     explicitLogoUrl,
-    `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`,
-    `https://logo.clearbit.com/${domain}`,
-    `https://s3-symbol-logo.tradingview.com/${cleanTicker.toLowerCase()}.svg`,
+    cleanTicker ? logoEndpoint(cleanTicker, name) : null,
   ].filter(Boolean) as string[];
 
   const currentSrc = sources[sourceIndex];
@@ -143,11 +109,10 @@ export function CompanyLogo({
             alt={`${cleanTicker} logo`}
             loading="lazy"
             className="size-full object-contain"
-            onLoad={() => setLoaded(true)}
-            onError={() => {
-              setLoaded(false);
-              setSourceIndex((prev) => prev + 1);
-            }}
+            onLoad={() => setState((prev) => ({ ...prev, loaded: true }))}
+            onError={() =>
+              setState((prev) => ({ ...prev, index: prev.index + 1, loaded: false }))
+            }
           />
         </div>
       )}
