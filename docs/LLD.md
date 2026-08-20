@@ -14,6 +14,8 @@ daily-movers-dashboard/
 │   ├── 0000_big_enchantress.sql
 │   ├── 0001_military_senator_kelly.sql
 │   ├── 0002_post_event_returns.sql # mover_status, company_prices, company_quotes
+│   ├── 0003_drop_unused_columns_indexes.sql # dead columns & redundant indexes
+│   ├── 0004_mover_anchor_close.sql # move_date_close; drops company_prices
 │   └── auth-setup.sql           # RLS, app_users table, admin_emails seed
 ├── scripts/                     # Operational automation scripts
 │   ├── apply-sql.mts            # Idempotent statement-by-statement SQL runner
@@ -103,7 +105,6 @@ erDiagram
     COMPANIES ||--o{ DAILY_MOVERS : "researched in"
     CATALYSTS ||--o{ DAILY_MOVERS : "categorizes"
     ANALYSTS ||--o{ DAILY_MOVERS : "authored by"
-    COMPANIES ||--o{ COMPANY_PRICES : "closes for"
     COMPANIES ||--o| COMPANY_QUOTES : "latest price of"
     ADMIN_EMAILS ||--o{ APP_USERS : "authorizes"
 
@@ -140,6 +141,7 @@ erDiagram
         text reason_for_move
         text main_takeaway
         numeric report_price
+        numeric move_date_close
         mover_status status
         text report_url
         text report_storage_path
@@ -148,14 +150,6 @@ erDiagram
         text created_by
         timestamptz created_at
         timestamptz updated_at
-    }
-
-    COMPANY_PRICES {
-        integer company_id PK
-        date price_date PK
-        numeric close
-        text source
-        timestamptz fetched_at
     }
 
     COMPANY_QUOTES {
@@ -221,7 +215,8 @@ erDiagram
 | `move_window_label`| `text` | Nullable | Verbatim phrasing from PDF (e.g., "Morning Trade"). |
 | `reason_for_move` | `text` | NOT NULL (Max 1000 chars) | Detailed catalyst analysis. |
 | `main_takeaway` | `text` | NOT NULL (Max 1000 chars) | Core investment conclusion for future reference. |
-| `report_price` | `numeric(12,4)` | Nullable | Share price recorded at time of report publication. When null, post-event returns fall back to the `company_prices` close on `move_date`. |
+| `report_price` | `numeric(12,4)` | Nullable | Share price recorded at time of report publication. When null, the post-event return falls back to `move_date_close`. |
+| `move_date_close` | `numeric(12,4)` | Nullable | ASX close on (or last before) `move_date` — the fallback anchor. Resolved once from market data and then never touched, since a past close does not change. Null only where the provider has no data for that date. |
 | `status` | `mover_status` enum | NOT NULL, Default `new` (`new` \| `reviewed` \| `follow_up`) | **Vestigial.** The Status column was removed from the UI; the column is retained so reversing that needs no destructive migration. Nothing reads or writes it. |
 | `report_url` | `text` | Nullable | External link to research PDF/document. |
 | `report_storage_path`| `text` | Nullable | Relative object key in private `reports` bucket. |
@@ -231,20 +226,7 @@ erDiagram
 | `created_at` | `timestamptz` | NOT NULL, Default `now()` | Record creation timestamp. |
 | `updated_at` | `timestamptz` | NOT NULL, Default `now()` | Last modification timestamp. |
 
-#### 5. `company_prices`
-Daily closes, read for the anchor price when a mover has no `report_price`. Raw (unadjusted) closes, so they stay comparable with a hand-entered `report_price` and with the live quote.
-
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `company_id` | `integer` | Composite PK, FK -> `companies(id)` (`ON DELETE CASCADE`) | Company the close belongs to. |
-| `price_date` | `date` | Composite PK | ASX-local trading date. Composite key makes a re-fetch idempotent. |
-| `close` | `numeric(12,4)` | NOT NULL | Closing price (provisional for the current session). |
-| `source` | `text` | NOT NULL | Provider that supplied it (`yahoo`). |
-| `fetched_at` | `timestamptz` | NOT NULL, Default `now()` | When this row was last written. |
-
-Index: `company_prices_company_date_idx` on (`company_id`, `price_date` DESC) — window lookups read backwards from a date.
-
-#### 6. `company_quotes`
+#### 5. `company_quotes`
 One row per company holding the latest price, overwritten in place, plus the refresh bookkeeping.
 
 | Column | Type | Constraints | Description |
@@ -269,21 +251,21 @@ Nothing here is entered by hand. The return is **derived on read** from stored p
 | Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider` (`fetchQuotes` + `fetchCloses`), `DailyClose`, `Quote`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. Split in two because current prices are wanted for every company on a schedule and batch cheaply, while closes are only needed for the few companies missing history. |
 | Yahoo adapter | `src/lib/market/yahoo.ts` | Built on the `yahoo-finance2` package, which owns the cookie/crumb handshake `quote()` requires, response validation and retries. `fetchQuotes` batches up to 40 symbols per request; tickers the quote endpoint skips (suspended listings such as `OPT.AX`) fall back to the price in a chart response's metadata. Bars are dated by shifting the bar's opening instant by the exchange's `gmtoffset` -- a no-op under AEST, but required under daylight saving, where 10:00 local is 23:00 UTC the previous day. |
 | Provider selection | `src/lib/market/index.ts` | Single-line swap point for a licensed feed. |
-| Refresh service | `src/lib/market/refresh.ts` | Two phases. **Quotes**: every due company in one batched request, then a single multi-row upsert (`excluded.*`) rather than one round trip each -- the database is in Tokyo, and sequential upserts dominated the runtime. **Closes**: only for companies actually missing history, capped at 20 per run with 4 concurrent requests (both lifted when forced). Staleness is a 30 min TTL with a 6 h backoff after a failure; concurrent callers are coalesced by an in-flight promise keyed on mode. |
+| Refresh service | `src/lib/market/refresh.ts` | **Quotes**: every due company in one batched request, then a single multi-row upsert (`excluded.*`) rather than one round trip each -- the database is in Tokyo, and sequential upserts dominated the runtime. **Anchors**: only for movers whose `move_date_close` is still null (i.e. newly added ones), capped at 20 per run with 4 concurrent requests; normally there are none. Staleness is a 30 min TTL with a 6 h backoff after a failure; concurrent callers are coalesced by an in-flight promise keyed on mode. |
 | Trigger route | `src/app/api/prices/refresh/route.ts` | `POST`. Unauthenticated for the automatic stale-only sweep (self-limiting via TTL + ceiling); `{ force: true }` requires `canWrite`, since one forced click is a request per covered company. Returns `{ due, refreshed, failed }`. |
 | Client trigger | `src/components/daily-movers/price-refresher.tsx` | Fires after paint, calls `router.refresh()` only when something changed. |
 | Manual control | `src/components/daily-movers/price-refresh-button.tsx` | Shows "Prices as of ..." (from `getPriceFreshness()`) to everyone, plus a force-refresh button for admins. Forced runs ignore the TTL and the per-run ceiling. |
-| Derivation | `src/lib/queries.ts`, `src/lib/movers.ts` | SQL returns the anchor and current prices; `pctChange` turns them into the return. |
+| Derivation | `src/lib/queries.ts`, `src/lib/movers.ts` | The anchor is `coalesce(report_price, move_date_close)` -- a plain column read, previously a correlated subquery over the price series. `pctChange` turns it and the current price into the return. |
 
 Semantics:
 
-- **Anchor** = `report_price`, else the last close on or before `move_date`. `<=` rather than `=` because a move date can land on a day with no close of its own. An inferred anchor is marked in the UI with a dotted underline.
+- **Anchor** = `report_price`, else `move_date_close` (the last close on or before `move_date`; `<=` rather than `=` because a move date can land on a day with no close of its own). Resolved once per mover, on the refresh after it is added. An inferred anchor is marked in the UI with a dotted underline.
 - **Post-Event Return** = anchor → current price. Null when either side is unknown, rendered as `—` with the reason on hover rather than as a misleading 0.0%.
-- Fixed-window returns (1W / 1M) were removed as unnecessary; `company_prices` is still required, since the anchor fallback reads the close on the move date.
+- Fixed-window returns (1W / 1M) were removed as unnecessary. The `company_prices` daily series went with them: it existed to find a close anywhere inside a window, and the only historical price still read is the anchor — one value per mover, now stored on the mover itself. That was ~2,000 rows serving 39 numbers.
 
 Refresh is pull-based with no cron: a page load asks, and the service decides whether anything is due. A run that hits its ceiling is resumed by the next request, since staleness is re-evaluated each time. Adding an older mover for an already-tracked company automatically triggers a history backfill on the next refresh.
 
-**History is considered complete once a close exists at or before the earliest move date** -- which is exactly what the anchor lookup needs -- not once it reaches the requested `move_date - 10 days`. The lead days widen the *request* so a move date after a long weekend still has a preceding close, but the first trading day Yahoo returns is usually a day or two later, so comparing against the requested date never matched: 16 companies re-fetched and re-upserted their entire history on every refresh (~700 wasted row writes each time, measured at 511 in one sweep). With the correct check a steady-state refresh writes 47 quote rows in one statement and ~0 price rows.
+*(Historical note, now moot: while the daily series existed,)* **history was considered complete once a close existed at or before the earliest move date** -- which is exactly what the anchor lookup needs -- not once it reaches the requested `move_date - 10 days`. The lead days widen the *request* so a move date after a long weekend still has a preceding close, but the first trading day Yahoo returns is usually a day or two later, so comparing against the requested date never matched: 16 companies re-fetched and re-upserted their entire history on every refresh (~700 wasted row writes each time, measured at 511 in one sweep). With the correct check a steady-state refresh writes 47 quote rows in one statement and ~0 price rows.
 
 The one remaining exception is a ticker whose history Yahoo cannot cover back to its move date at all (`OPT`, suspended since July): its anchor can never be satisfied, so it re-fetches ~23 bars per refresh. Bounding that properly needs a stored "history requested from" marker; it is left as a known, measured cost rather than hidden.
 

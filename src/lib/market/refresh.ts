@@ -1,10 +1,10 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { companies, companyPrices, companyQuotes, dailyMovers } from "@/db/schema";
-import { marketData, type DailyClose, type Quote } from "@/lib/market";
+import { companies, companyQuotes, dailyMovers } from "@/db/schema";
+import { marketData, UnknownSymbolError, type Quote } from "@/lib/market";
 
 /**
  * Keeps stored prices current without anyone entering a number by hand.
@@ -15,14 +15,13 @@ import { marketData, type DailyClose, type Quote } from "@/lib/market";
  * which is why the work happens after the page has already rendered from
  * whatever was last stored.
  *
- * Two phases, because the two kinds of data have very different costs:
+ * Two kinds of price, on very different schedules:
  *
- *  1. **Quotes** -- every due company in a single batched request, then one
- *     upsert each. This is the part that runs every 30 minutes.
- *  2. **Closes** -- only for companies actually missing history, and only for
- *     the dates they're missing. Most refreshes skip this phase entirely, which
- *     is what keeps steady-state database writes to a handful of rows a day
- *     rather than re-writing a rolling window on every sweep.
+ *  1. **Current prices** for every due company -- one batched request, then one
+ *     multi-row upsert. This is the part that runs every 30 minutes.
+ *  2. **The anchor close** for a mover with no report price -- fetched once per
+ *     mover, ever, because a past close does not change. Normally there is
+ *     nothing to do here at all.
  */
 
 /** How long a quote is considered current. Roughly the provider's own delay. */
@@ -36,29 +35,21 @@ const QUOTE_TTL_MS = 30 * 60 * 1000;
 const FAILURE_BACKOFF_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Ceiling on history fetches in one run, so a first load against a large archive
- * doesn't turn into a hundred sequential chart requests. Whatever is left over is
- * picked up by the next request -- the staleness check makes runs resumable by
- * nature. Quotes have no such ceiling: they're one batched call regardless.
+ * Ceiling on anchor lookups in one run, so importing a large archive doesn't
+ * turn into a hundred sequential chart requests. The rest are picked up by the
+ * next refresh, since the "still null" condition is what selects them.
  */
-const MAX_BACKFILLS_PER_RUN = 20;
+const MAX_ANCHORS_PER_RUN = 20;
 
-/** Concurrent history requests. Enough to be quick, not enough to look hostile. */
+/** Concurrent anchor requests. Enough to be quick, not enough to look hostile. */
 const CONCURRENCY = 4;
 
 /**
- * Days of slack before the earliest mover when first backfilling a company.
- * The anchor price falls back to the close on the move date, and a move date on
- * a Monday after a holiday needs the preceding week to be present.
+ * How far before the move date to ask for closes. The anchor is the last close
+ * on or before that date, and a move date after a long weekend needs the
+ * preceding week in the window to find one.
  */
-const BACKFILL_LEAD_DAYS = 10;
-
-/**
- * How far back a top-up re-reads. Today's bar is provisional while the market is
- * open, so the next day's top-up has to overlap far enough to overwrite it with
- * the settled close.
- */
-const TOPUP_OVERLAP_DAYS = 3;
+const ANCHOR_LOOKBACK_DAYS = 10;
 
 export type RefreshSummary = {
   /** Companies that were due a refresh. */
@@ -83,27 +74,9 @@ export type RefreshOptions = {
 type Candidate = {
   companyId: number;
   ticker: string;
-  earliestMoveDate: string;
-  earliestStored: string | null;
-  latestStored: string | null;
   attemptedAt: Date | null;
   hasError: boolean;
 };
-
-/**
- * Today on the ASX. Stored closes are dated in exchange-local time, so asking
- * "is our history current?" in any other timezone is off by up to a day.
- */
-const ASX_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Australia/Sydney",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-function asxToday(): string {
-  return ASX_DATE_FORMAT.format(new Date());
-}
 
 function isoDaysBefore(isoDate: string, days: number): string {
   const shifted = new Date(`${isoDate}T00:00:00Z`);
@@ -118,107 +91,20 @@ function isDue(candidate: Candidate, now: number): boolean {
   return age > (candidate.hasError ? FAILURE_BACKOFF_MS : QUOTE_TTL_MS);
 }
 
-/**
- * Which dates of history a company is missing, or null when it needs none.
- *
- * `backfill` means we can't price the anchor yet: there is no close at or before
- * its earliest move date. `topup` means only recent days are missing. Returning
- * null -- the common case once a company is established and already has today --
- * is what lets most refreshes touch `company_prices` not at all.
- */
-function closesNeededFrom(candidate: Candidate): string | null {
-  const backfillFrom = isoDaysBefore(
-    candidate.earliestMoveDate,
-    BACKFILL_LEAD_DAYS,
-  );
-
-  /**
-   * Satisfied once there is a close at or before the earliest move date, which
-   * is exactly what the anchor lookup needs -- NOT once history reaches
-   * `backfillFrom`.
-   *
-   * The distinction matters: the lead days widen the *request* so a move date
-   * after a long weekend still has a preceding close, but the first trading day
-   * Yahoo returns is usually a day or two after the date asked for. Comparing
-   * against the requested date therefore never matched, and 16 companies
-   * re-fetched and re-upserted their whole history on every refresh -- ~700
-   * wasted row writes a time.
-   */
-  if (
-    !candidate.earliestStored ||
-    !candidate.latestStored ||
-    candidate.earliestStored > candidate.earliestMoveDate
-  ) {
-    return backfillFrom;
-  }
-
-  if (candidate.latestStored < asxToday()) {
-    return isoDaysBefore(candidate.latestStored, TOPUP_OVERLAP_DAYS);
-  }
-
-  return null;
-}
-
 /** Only companies we've actually published research on are worth tracking. */
 async function findCandidates(): Promise<Candidate[]> {
   const db = getDb();
 
   return db
-    .select({
+    .selectDistinct({
       companyId: companies.id,
       ticker: companies.ticker,
-      earliestMoveDate: sql<string>`min(${dailyMovers.moveDate})`,
-      earliestStored: sql<string | null>`(
-        select min(p.price_date)
-        from ${companyPrices} p
-        where p.company_id = ${companies.id}
-      )`,
-      latestStored: sql<string | null>`(
-        select max(p.price_date)
-        from ${companyPrices} p
-        where p.company_id = ${companies.id}
-      )`,
       attemptedAt: companyQuotes.attemptedAt,
       hasError: sql<boolean>`${companyQuotes.error} is not null`,
     })
     .from(companies)
     .innerJoin(dailyMovers, eq(dailyMovers.companyId, companies.id))
-    .leftJoin(companyQuotes, eq(companyQuotes.companyId, companies.id))
-    .groupBy(
-      companies.id,
-      companies.ticker,
-      companyQuotes.attemptedAt,
-      companyQuotes.error,
-    );
-}
-
-async function storeCloses(
-  companyId: number,
-  closes: DailyClose[],
-): Promise<void> {
-  if (closes.length === 0) return;
-
-  const db = getDb();
-  await db
-    .insert(companyPrices)
-    .values(
-      closes.map((bar) => ({
-        companyId,
-        priceDate: bar.date,
-        close: bar.close,
-        source: marketData.name,
-      })),
-    )
-    // Today's bar is provisional until the close, so a re-fetch has to be able
-    // to correct a date it already wrote.
-    .onConflictDoUpdate({
-      target: [companyPrices.companyId, companyPrices.priceDate],
-      set: {
-        close: sql`excluded.close`,
-        source: sql`excluded.source`,
-        fetchedAt: sql`now()`,
-      },
-    });
+    .leftJoin(companyQuotes, eq(companyQuotes.companyId, companies.id));
 }
 
 /**
@@ -296,7 +182,7 @@ async function recordFailures(
 }
 
 /**
- * Phase 1: one batched request for every due company, then one row each.
+ * One batched request for every due company, then two statements.
  *
  * A ticker absent from the response is recorded as a failure so it backs off,
  * which is how a delisted holding stops being asked for every half hour.
@@ -323,39 +209,82 @@ async function refreshQuotes(due: Candidate[]): Promise<number> {
   return priced.length;
 }
 
+type MissingAnchor = { moverId: number; ticker: string; moveDate: string };
+
 /**
- * Phase 2: history, only where it's missing.
+ * Movers that still need an anchor close: no report price was entered and we
+ * haven't resolved the close on their date yet.
  *
- * Failures here are logged and counted but deliberately do NOT mark the company
- * as failed: its quote may have succeeded, and writing an error would put the
- * price itself into a six-hour backoff over a missing close. `closesNeededFrom`
- * stays true, so the next sweep simply tries again.
+ * Normally empty. It fills only when a new mover is added, which is why this is
+ * a one-off lookup rather than anything the 30-minute refresh repeats.
  */
-async function refreshCloses(candidates: Candidate[]): Promise<number> {
-  let failures = 0;
+async function findMissingAnchors(): Promise<MissingAnchor[]> {
+  const db = getDb();
+
+  return db
+    .select({
+      moverId: dailyMovers.id,
+      ticker: companies.ticker,
+      moveDate: dailyMovers.moveDate,
+    })
+    .from(dailyMovers)
+    .innerJoin(companies, eq(companies.id, dailyMovers.companyId))
+    .where(
+      and(isNull(dailyMovers.reportPrice), isNull(dailyMovers.moveDateClose)),
+    );
+}
+
+/**
+ * Resolves and stores the close on (or last before) each mover's date.
+ *
+ * Written once per mover and never revisited: a past close is settled. A mover
+ * whose date the provider has no data for stays null and renders as "—", and is
+ * retried on later refreshes -- one request, no writes.
+ */
+async function fillAnchors(missing: MissingAnchor[]): Promise<void> {
+  const db = getDb();
   let next = 0;
 
   async function worker() {
-    while (next < candidates.length) {
-      const candidate = candidates[next++];
-      const from = closesNeededFrom(candidate);
-      if (!from) continue;
+    while (next < missing.length) {
+      const mover = missing[next++];
 
       try {
-        const closes = await marketData.fetchCloses(candidate.ticker, from);
-        await storeCloses(candidate.companyId, closes);
+        const closes = await marketData.fetchCloses(
+          mover.ticker,
+          isoDaysBefore(mover.moveDate, ANCHOR_LOOKBACK_DAYS),
+        );
+
+        // Last close at or before the move date. `<=` rather than `=` because a
+        // move date can land on a day with no close of its own -- a halt, or a
+        // date recorded slightly off -- and the previous close is the honest
+        // answer there.
+        const anchor = closes
+          .filter((bar) => bar.date <= mover.moveDate)
+          .at(-1);
+
+        if (!anchor) continue;
+
+        await db
+          .update(dailyMovers)
+          .set({ moveDateClose: anchor.close })
+          .where(eq(dailyMovers.id, mover.moverId));
       } catch (error) {
-        failures += 1;
-        console.error(`history fetch failed for ${candidate.ticker}`, error);
+        // Logged, not recorded against the company: its live quote may be fine,
+        // and a missing historical close shouldn't put the price into backoff.
+        const detail =
+          error instanceof UnknownSymbolError ? error.message : error;
+        console.error(
+          `anchor close unavailable for ${mover.ticker} on ${mover.moveDate}`,
+          detail,
+        );
       }
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, worker),
+    Array.from({ length: Math.min(CONCURRENCY, missing.length) }, worker),
   );
-
-  return failures;
 }
 
 /**
@@ -408,20 +337,12 @@ async function sweep(options: RefreshOptions): Promise<RefreshSummary> {
     return { due: due.length, refreshed: 0, failed: due.length };
   }
 
-  // Oldest attempt first, so a run that hits the history ceiling still makes
-  // progress on the most out-of-date companies rather than the same ones.
-  const needHistory = due
-    .filter((candidate) => closesNeededFrom(candidate) !== null)
-    .sort(
-      (a, b) =>
-        (a.attemptedAt?.getTime() ?? 0) - (b.attemptedAt?.getTime() ?? 0),
+  const missing = await findMissingAnchors();
+  if (missing.length > 0) {
+    await fillAnchors(
+      options.force ? missing : missing.slice(0, MAX_ANCHORS_PER_RUN),
     );
-
-  const historyQueue = options.force
-    ? needHistory
-    : needHistory.slice(0, MAX_BACKFILLS_PER_RUN);
-
-  if (historyQueue.length > 0) await refreshCloses(historyQueue);
+  }
 
   return { due: due.length, refreshed, failed: due.length - refreshed };
 }

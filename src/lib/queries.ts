@@ -7,7 +7,6 @@ import {
   analysts,
   catalysts,
   companies,
-  companyPrices,
   companyQuotes,
   dailyMovers,
 } from "@/db/schema";
@@ -21,25 +20,16 @@ import {
 } from "@/lib/movers";
 
 /**
- * The price the post-event return is measured from: the entered report price
- * if there is one, otherwise the close on the move date. The fallback is what
- * keeps the performance columns populated across the archive, since
- * `report_price` was manual entry and is null on most historical rows.
+ * The price the post-event return is measured from: the entered report price if
+ * there is one, otherwise the ASX close on the mover's own date.
  *
- * `<=` rather than `=`: a move date can land on a day with no close of its own
- * (a halt, or a date recorded slightly off), and the previous close is the
- * honest answer there.
+ * Both live on the mover row, so this is a plain read -- it used to be a
+ * correlated subquery over a daily price series, which was ~2,000 stored rows to
+ * serve 39 values once the fixed-window returns were removed.
  */
 const anchorPriceSql = sql<number | null>`coalesce(
   ${dailyMovers.reportPrice}::float8,
-  (
-    select p.close::float8
-    from ${companyPrices} p
-    where p.company_id = ${dailyMovers.companyId}
-      and p.price_date <= ${dailyMovers.moveDate}
-    order by p.price_date desc
-    limit 1
-  )
+  ${dailyMovers.moveDateClose}::float8
 )`;
 
 const SELECTION = {

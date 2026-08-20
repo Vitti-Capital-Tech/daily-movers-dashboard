@@ -8,7 +8,6 @@ import {
   numeric,
   pgEnum,
   pgTable,
-  primaryKey,
   serial,
   text,
   timestamp,
@@ -149,11 +148,28 @@ export const dailyMovers = pgTable(
     mainTakeaway: text("main_takeaway").notNull(),
 
     /**
-     * Not present in the source PDFs -- manual entry, hence nullable. When it
-     * is null the post-event returns fall back to the close on `move_date` from
-     * `company_prices`, so the performance columns still populate.
+     * Not present in the source PDFs -- manual entry, hence nullable. When it is
+     * null the post-event return falls back to `moveDateClose` below.
      */
     reportPrice: numeric("report_price", {
+      precision: 12,
+      scale: 4,
+      mode: "number",
+    }),
+
+    /**
+     * ASX close on (or last before) `move_date` -- the fallback anchor for the
+     * post-event return when no report price was entered.
+     *
+     * Resolved once, from market data, and then never touched: a past close does
+     * not change. Stored on the mover rather than as a price series because this
+     * is the only historical price the app reads, and one value per mover is 39
+     * numbers where a daily series was ~2,000 rows. It is deliberately NOT the
+     * same thing as a cached quote -- `company_quotes` holds the live price, at
+     * one row per company; this is per mover *date*, and one company can have
+     * several movers needing different closes.
+     */
+    moveDateClose: numeric("move_date_close", {
       precision: 12,
       scale: 4,
       mode: "number",
@@ -191,46 +207,6 @@ export const dailyMovers = pgTable(
 ).enableRLS();
 
 /**
- * Daily closing prices, one row per company per trading day.
- *
- * Post-event returns are computed from this table on read rather than stored on
- * the mover. A stored return is a number that was true on the day it was
- * written; deriving it means a late or corrected close fixes every window at
- * once, and the same reasoning as `move_pct` applies -- two copies of a figure
- * eventually disagree.
- *
- * Closes are raw, not split/dividend-adjusted, so they stay comparable with a
- * hand-entered `report_price` and with the live quote below. The tradeoff is
- * that a share split needs a re-fetch of that company's history to stay sane.
- */
-export const companyPrices = pgTable(
-  "company_prices",
-  {
-    companyId: integer("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
-    priceDate: date("price_date").notNull(),
-    close: numeric("close", { precision: 12, scale: 4, mode: "number" }).notNull(),
-    source: text("source").notNull(),
-    fetchedAt: timestamp("fetched_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-    /**
-     * Natural key: re-fetching a date overwrites it instead of duplicating it.
-     *
-     * This is also the only index the table needs. The anchor lookup
-     * (`company_id = ? and price_date <= ? order by price_date desc limit 1`)
-     * is served by scanning this one backwards -- a separate DESC index was
-     * tried and the planner ignored it, while still paying to maintain it on
-     * every refresh.
-     */
-    primaryKey({ columns: [t.companyId, t.priceDate] }),
-  ],
-).enableRLS();
-
-/**
  * Latest known price per company -- one row, overwritten in place, because only
  * the current value is ever displayed.
  *
@@ -263,17 +239,9 @@ export const companyQuotes = pgTable("company_quotes", {
 
 export const companiesRelations = relations(companies, ({ many, one }) => ({
   dailyMovers: many(dailyMovers),
-  prices: many(companyPrices),
   quote: one(companyQuotes, {
     fields: [companies.id],
     references: [companyQuotes.companyId],
-  }),
-}));
-
-export const companyPricesRelations = relations(companyPrices, ({ one }) => ({
-  company: one(companies, {
-    fields: [companyPrices.companyId],
-    references: [companies.id],
   }),
 }));
 
