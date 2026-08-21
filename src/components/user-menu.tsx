@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { Lock, LogOut, KeyRound, ShieldCheck, Eye } from "lucide-react";
+import { Lock, KeyRound, ShieldCheck, Eye } from "lucide-react";
 import { lockAdmin } from "@/actions/admin-auth";
 import { AdminUnlockDialog } from "@/components/admin-unlock-dialog";
 import { Button } from "@/components/ui/button";
@@ -128,27 +128,6 @@ export function UserMenu({
                 </DropdownMenuItem>
               }
             />
-          )}
-
-          {user.email !== "viewer@vitti.capital" && (
-            <>
-              <DropdownMenuSeparator />
-              <form action="/auth/signout" method="post">
-                <DropdownMenuItem
-                  nativeButton
-                  className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                  render={
-                    <button
-                      type="submit"
-                      className="w-full cursor-pointer flex items-center gap-2 text-left"
-                    />
-                  }
-                >
-                  <LogOut className="size-3.5" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </form>
-            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

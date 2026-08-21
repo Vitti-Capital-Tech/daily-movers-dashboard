@@ -122,10 +122,12 @@ export default async function DailyMoversPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/40 pb-5">
         <PageHeading />
-        <div className="flex items-center gap-2.5">
-          <DownloadReportsButton totalReports={summary.totalMovers} />
-          {user.canWrite ? <MoverDialog options={options} mode="create" /> : null}
-        </div>
+        {user.canWrite ? (
+          <div className="flex items-center gap-2.5">
+            <DownloadReportsButton totalReports={summary.totalMovers} />
+            <MoverDialog options={options} mode="create" />
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

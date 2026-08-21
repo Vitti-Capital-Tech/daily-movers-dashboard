@@ -39,8 +39,8 @@ async function runInPool<T, R>(
 
 export async function GET(request: NextRequest) {
   const user = await getSessionUser();
-  if (!user) {
-    return new NextResponse("Unauthorized", { status: 401 });
+  if (!user || !user.canWrite) {
+    return new NextResponse("Forbidden: Admin access required", { status: 403 });
   }
 
   try {

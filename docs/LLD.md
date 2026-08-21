@@ -19,9 +19,11 @@ daily-movers-dashboard/
 │   └── auth-setup.sql           # RLS, app_users table, admin_emails seed
 ├── scripts/                     # Operational automation scripts
 │   ├── apply-sql.mts            # Idempotent statement-by-statement SQL runner
+│   ├── download-reports.mts     # Batch CLI script to download all attached PDFs to a local folder
 │   └── storage-setup.mts        # Private Supabase Storage bucket initialization
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
+│   │   ├── admin-auth.ts        # unlockAdmin, lockAdmin
 │   │   ├── extract.ts           # extractReportAction (Claude PDF AI extraction)
 │   │   ├── movers.ts            # saveMover, deleteMover
 │   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
@@ -34,24 +36,23 @@ daily-movers-dashboard/
 │   │   │   │   └── page.tsx
 │   │   │   └── layout.tsx       # Auth protection barrier & shell wrapper
 │   │   ├── api/                 # API route handlers
-│   │   │   ├── logo/[ticker]/    # Server-resolved company logo proxy (cached)
+│   │   │   ├── extract/         # Multipart PDF AI extraction route handler
+│   │   │   ├── logo/[ticker]/   # Multi-source company logo proxy with HTML scraper
 │   │   │   │   └── route.ts
-│   │   │   ├── prices/refresh/   # POST: stale top-up, or {force:true} for admins
+│   │   │   ├── prices/refresh/  # POST: stale top-up, or {force:true} for admins
 │   │   │   │   └── route.ts
-│   │   │   └── reports/[id]/    # Protected 60-second signed PDF redirect handler
+│   │   │   ├── reports/[id]/    # Protected 60-second signed PDF redirect handler
+│   │   │   │   └── route.ts
+│   │   │   └── reports/download-all/ # Admin-protected batch ZIP archive stream
 │   │   │       └── route.ts
-│   │   ├── auth/signout/        # POST sign-out route handler
-│   │   │   └── route.ts
 │   │   ├── login/               # Passwordless identification UI & actions
-│   │   │   ├── actions.ts       # signIn Server Action
-│   │   │   ├── login-form.tsx   # Client-side form with useActionState
-│   │   │   └── page.tsx
 │   │   ├── globals.css          # Tailwind CSS 4 theme, typography & OKLCH color tokens
 │   │   ├── layout.tsx           # Root HTML layout with ThemeProvider and fonts
 │   │   └── page.tsx             # Root redirect to /daily-movers
 │   ├── components/              # UI Component Library
 │   │   ├── daily-movers/        # Domain-specific components
 │   │   │   ├── company-combobox.tsx
+│   │   │   ├── download-reports-button.tsx # Admin-gated batch ZIP download trigger
 │   │   │   ├── filter-bar.tsx
 │   │   │   ├── mover-dialog.tsx # Add/Edit modal with Claude AI Auto-Fill dropzone
 │   │   │   ├── mover-row-actions.tsx
@@ -61,12 +62,14 @@ daily-movers-dashboard/
 │   │   │   ├── price-refresher.tsx # Post-paint stale-price top-up trigger
 │   │   │   └── report-upload.tsx# Direct browser-to-storage PDF uploader
 │   │   ├── ui/                  # shadcn/ui Base UI & Radix primitives
+│   │   ├── admin-unlock-dialog.tsx # Passcode entry modal for admin mode
 │   │   ├── app-shell.tsx        # Navigation sidebar, branding & mobile header
+│   │   ├── company-logo.tsx     # High-contrast adaptive logo tile with monogram fallback
 │   │   ├── db-not-configured.tsx# Fallback diagnostic alerts
 │   │   ├── nav-link.tsx         # Active-state navigation anchor with icons
 │   │   ├── theme-provider.tsx   # next-themes client wrapper
 │   │   ├── theme-toggle.tsx     # Light / Dark / System theme switcher
-│   │   └── user-menu.tsx        # User profile, role badge & sign-out trigger
+│   │   └── user-menu.tsx        # User profile, role badge & admin unlock/lock trigger
 │   ├── db/                      # Database connection & schema definitions
 │   │   ├── index.ts             # Connection caching & pooler configuration
 │   │   ├── schema.ts            # Drizzle ORM table & relation schemas
@@ -78,11 +81,11 @@ daily-movers-dashboard/
 │   │   ├── auth.ts              # RBAC & session verification (server-only)
 │   │   ├── db-error.ts          # Postgres error code parser & credential scrubbing
 │   │   ├── format.ts            # Date, percentage & price formatters
-│   │   ├── market/              # Market data (ASX prices)
+│   │   ├── market/              # Market data (ASX prices & profile discovery)
 │   │   │   ├── index.ts         # Provider selection — single swap point
 │   │   │   ├── provider.ts      # MarketDataProvider contract & shared types
 │   │   │   ├── refresh.ts       # Staleness rules, backfill & upserts (server-only)
-│   │   │   └── yahoo.ts         # Yahoo Finance chart adapter ({TICKER}.AX)
+│   │   │   └── yahoo.ts         # Yahoo Finance chart adapter & assetProfile scraper
 │   │   ├── movers.ts            # Shared runtime types, return derivation & pagination constants
 │   │   ├── queries.ts           # Drizzle SQL query builder (server-only)
 │   │   ├── session.ts           # Web Crypto HMAC-SHA256 token manager
@@ -421,6 +424,15 @@ classDiagram
 1. Clears `vitti_admin` and `vitti_session` cookies.
 2. Revalidates dashboard cache, instantly returning user to View-Only mode.
 
+### 7.6 `GET /api/reports/download-all` Route Handler (`src/app/api/reports/download-all/route.ts`)
+1. **Authentication Gate**: Enforces admin permission by checking `user.canWrite` (`getSessionUser()`), returning HTTP 403 if unauthorized.
+2. **Entity Query**: Fetches all `daily_movers` with `report_storage_path` or `report_url` joined with `companies.ticker` and `companies.name`.
+3. **Concurrent Download Pool**: Executes downloads with an in-process worker pool (`CONCURRENCY_LIMIT = 8`):
+   - Supabase Storage blobs are downloaded via `supabase.storage.from("daily-mover-reports").download(path)`.
+   - External report URLs are fetched with timeout protection.
+4. **In-Memory ZIP Packaging**: Files are added to a `JSZip` instance named as `YYYY-MM-DD_TICKER_CompanyName.pdf` and compressed with DEFLATE level 6.
+5. **Streaming Response**: Returns binary ZIP payload with `Content-Disposition: attachment; filename="daily-movers-reports-YYYY-MM-DD.zip"`.
+
 ---
 
 ## 8. Frontend Component Architecture, Theming & State Management
@@ -439,7 +451,8 @@ graph TD
         Filter["FilterBar (Search, Date Bounds, Catalyst, Direction, Active Count)"]
         Table["MoversTable (Sortable Headers, Directional Move Chips, Documents Column)"]
         Dialog["MoverDialog (Add/Edit Modal with ReportUpload)"]
-        Logo["CompanyLogo (Proxy-Resolved Logo & Monogram Fallback)"]
+        DownloadZip["DownloadReportsButton (Admin-Only ZIP Exporter)"]
+        Logo["CompanyLogo (High-Contrast Logo Tile & Monogram Fallback)"]
         Refresher["PriceRefresher (Post-Paint Price Top-Up)"]
         RefreshBtn["PriceRefreshButton (As-Of Stamp & Admin Force Refresh)"]
         RowActions["MoverRowActions (Edit / Delete / Download Triggers)"]
@@ -454,6 +467,7 @@ graph TD
     DailyMoversPage --> Filter
     DailyMoversPage --> Table
     DailyMoversPage --> Dialog
+    DailyMoversPage --> DownloadZip
     DailyMoversPage --> Pager
     Table --> Logo
     Table --> RowActions
@@ -468,9 +482,10 @@ graph TD
 | `ThemeProvider` | Client | Wraps application with `next-themes` provider supporting `attribute="class"`, `defaultTheme="dark"`, `enableSystem`. |
 | `ThemeToggle` | Client | Interactive mode selector (Light / Midnight Dark / System) using `useSyncExternalStore` for hydration-safe rendering. |
 | `AppShell` | Server | Renders institutional navigation sidebar, branding with live pulse indicator, mobile header, and main container. |
-| `UserMenu` | Client | Renders user avatar circle, role status pill (Admin vs Viewer), and admin lock/exit trigger. |
+| `UserMenu` | Client | Renders user avatar circle, role status pill (Admin vs Viewer), and admin unlock/lock trigger (`lockAdmin()`). |
 | `AdminUnlockDialog` | Client | Modal dialog allowing authorized editors to unlock write permissions with the secret admin passcode. |
-| `CompanyLogo` | Client | Monogram base layer with a branded logo faded in over it, resolved through the `/api/logo/[ticker]` proxy (ticker-keyed upstream first, name-derived domain favicons as fallback). |
+| `CompanyLogo` | Client | High-contrast adaptive logo tile (`bg-slate-900 dark:bg-card`) with an image overlay faded in over a monogram base layer. Upstream resolution walks: Parqet Symbol → Yahoo Finance Profile URL → HTML `<link rel="icon">` scrape → Favicon CDNs. |
+| `DownloadReportsButton` | Client | Admin-gated button that triggers `/api/reports/download-all`, displays loading spinner and progress toast notifications, and downloads the ZIP file directly. |
 | `FilterBar` | Client | Binds search inputs, date pickers, catalyst dropdowns, and direction selectors to URL query parameters with active filter counts and reset. |
 | `MoversTable` | Client | Renders tabular daily mover records with company logos, directional move chips, monospace ticker badges, the **performance block** (Report Price, Current Price, Post-Event Return), and the **Documents column**. |
 | `PriceRefresher` | Client | Renders nothing; asks `/api/prices/refresh` for a top-up after paint and calls `router.refresh()` only if prices changed. |

@@ -68,34 +68,31 @@ account password.
 | `npm run db:auth` | Apply `drizzle/auth-setup.sql` (trigger, allowlist, admin seed) |
 | `npm run db:seed` | Idempotent seed |
 | `npm run db:studio` | Drizzle Studio |
+| `npm run storage:setup` | Create Supabase private storage bucket |
+| `npm run reports:download` | Batch download all attached PDF reports to a local folder |
 
 ## Auth & Access Control
 
 The dashboard implements a **Public View-Only by Default** model with **Passcode-based Admin Elevation**:
 
 1. **Public View-Only (Default)**: Anyone visiting the site lands directly on the **Daily Movers Dashboard** in read-only mode (`role: "viewer"`). All team members and analysts can search, filter, view company timelines, and open PDF reports without logging in.
-2. **Admin Elevation (Write Access)**: The 2 authorized research editors can unlock full write/edit permissions by clicking **"Admin Unlock"** in the sidebar and entering the `ADMIN_PASSCODE` (stored in `.env.local` / Vercel).
+2. **Admin Elevation (Write Access)**: The authorized research editors can unlock full write/edit permissions by clicking **"Unlock Admin Mode"** in the user menu and entering the `ADMIN_PASSCODE` (stored in `.env.local` / Vercel).
 3. **Signed Sessions**: Once unlocked, a stateless HMAC-SHA256 cookie (`vitti_admin`) is minted with `AUTH_SECRET` (valid for 30 days). Multiple editors can be unlocked simultaneously across different devices.
 4. **Instant Lock**: Editors can click **"Exit Admin Mode"** from the user menu anytime to return to View-Only mode.
-5. **Backend Mutation Chokepoint**: All database writes (`saveMover`, `deleteMover`, `extractReportAction`, `/api/extract`) strictly enforce `requireAdmin()` on the server side.
+5. **Backend Mutation Chokepoint**: All database writes (`saveMover`, `deleteMover`, `extractReportAction`, `/api/extract`, `/api/reports/download-all`) strictly enforce `requireAdmin()` on the server side.
 
-`app_users` records who has signed in. It's audit only — role is never read from
-it.
+`app_users` records who has signed in. It's audit only — role is never read from it.
 
 **Where enforcement lives:**
 
 | Layer | Protects against | Mechanism |
 | --- | --- | --- |
-| Middleware | Unauthenticated page access | Verifies the cookie, redirects to `/login` |
-| `(app)/layout.tsx` | A middleware misconfiguration | Re-checks server-side |
+| `(app)/layout.tsx` | Privilege leakage | Evaluates session and configures UI state |
 | `assertCanWrite()` | Non-admins calling a Server Action directly | `requireAdmin()` at the top of every write |
+| API Route Handlers | Unauthorized API calls | `user.canWrite` checks on `/api/extract`, `/api/prices/refresh`, and `/api/reports/download-all` |
 | RLS | Anyone using the public anon key | RLS on, zero policies — see below |
 
-Hiding the Add/Edit buttons is a courtesy, not a control: a Server Action is a
-public HTTP endpoint, so the check has to be server-side.
-
-The domain rule is re-checked when the cookie is read, not just at sign-in, so
-narrowing `ALLOWED_EMAIL_DOMAIN` invalidates existing sessions.
+Hiding the Add/Edit and Download All buttons is a courtesy, not a control: a Server Action and API route are public HTTP endpoints, so the check has to be server-side.
 
 ### Why RLS has no policies
 
@@ -111,19 +108,17 @@ deliberately. All data access is meant to go through Drizzle server-side.
 
 ## Deploying to Vercel
 
-> **Read the Auth warning above first.** Deploying puts this on a public URL,
-> and sign-in currently accepts any `@vitti.capital` address on trust. Add a
-> verification step, or gate the deployment, before it goes live.
-
 **Environment variables** (Vercel → Settings → Environment Variables):
 
 | Variable | Value |
 | --- | --- |
 | `DATABASE_URL` | The pooler URI, port 6543, username `postgres.<ref>` |
 | `AUTH_SECRET` | A **fresh** 32-byte hex string, not the local one |
-| `NEXT_PUBLIC_SUPABASE_URL` | Needed again since report upload landed — the browser uploads direct to Storage |
+| `NEXT_PUBLIC_SUPABASE_URL` | Needed since report upload landed — the browser uploads direct to Storage |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same. Public by design; safe because RLS has no policies |
 | `SUPABASE_SERVICE_ROLE_KEY` | Signs upload and download URLs. **Server-side only** — never `NEXT_PUBLIC_*` |
+| `ADMIN_PASSCODE` | The secret passcode to unlock Admin mode |
+| `ANTHROPIC_API_KEY` | API key for Claude 3.5 Sonnet PDF auto-extraction |
 
 > Paste values **without** surrounding quotes. Vercel stores them verbatim, so
 > `"postgres://…"` becomes a different string and fails to parse. Env vars are
@@ -139,8 +134,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 **Function region.** `vercel.json` pins functions to `hnd1` (Tokyo) because the
 Supabase project is in `ap-northeast-1`. Vercel defaults to US East, which adds
 roughly 150–200 ms per query round trip — and the table page issues several
-queries. If a deploy complains about the region (plan restrictions), delete
-`vercel.json` and set the region in Vercel → Settings → Functions instead.
+queries.
 
 **Connection pooling** is already handled: `src/db/index.ts` drops the pool to a
 single connection when `process.env.VERCEL` is set, because each concurrent
@@ -164,13 +158,13 @@ vercel --prod        # or just push to main once GitHub is connected
 Connecting the GitHub repo in the Vercel dashboard is the better path: every
 push to `main` deploys, and pull requests get preview URLs.
 
-**After the first deploy, check:** signing in works, `/daily-movers` shows both
-seeded rows, and the account menu opens (that last one is client-side only, so
-it isn't covered by the server-rendered checks).
-
 ## Layout
 
 ```
+scripts/
+  apply-sql.mts          Idempotent statement-by-statement SQL runner
+  download-reports.mts   Batch CLI utility to download all research PDFs to a local folder
+  storage-setup.mts      Supabase storage bucket initializer
 src/
   actions/
     admin-auth.ts        Server Actions for passcode unlocking and locking admin mode
@@ -183,24 +177,27 @@ src/
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
     api/extract/         multipart PDF research extraction route handler
+    api/logo/[ticker]/   universal multi-source company logo proxy (cached)
+    api/prices/refresh/  market price refresh endpoint
     api/reports/[id]/    protected 60s signed URL PDF download redirect
+    api/reports/download-all/ protected admin-only ZIP archive bundle of all PDFs
     login/               passwordless identification screen
-    auth/signout/        POST sign-out route handler
   components/
     admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
-    company-logo.tsx     multi-source CDN company logo with institutional monogram fallback
-    daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload
+    company-logo.tsx     high-contrast adaptive company logo with institutional monogram fallback
+    daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload, download-reports-button
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper
     theme-toggle.tsx     Light / Dark / System theme switcher
     app-shell.tsx        navigation sidebar, header, and role badge
-    user-menu.tsx        analyst profile dropdown & sign-out trigger
+    user-menu.tsx        analyst profile dropdown & admin unlock/lock trigger
   db/
     schema.ts            tables, indexes, relations, enums
     seed.ts              catalysts, analysts, companies, sample movers
   lib/
     ai/
       anthropic.ts       Claude 3.5 Sonnet PDF tool extraction client
+    market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
     queries.ts           server-only data access layer
     storage.ts           Supabase storage path builders and byte validation
@@ -222,9 +219,9 @@ which would defeat the whole purpose of the app.
 **Direction is derived, never stored.** `move_pct` is signed; Up/Down and ↑/↓
 come from its sign. Storing them separately lets them contradict the number.
 
-Related: the source PDFs print the magnitude only (`~11.5%`) with the direction
-in the prose ("Shares **Fall** as Much as…"), so extraction must take the sign
-from the headline, not the figure.
+**Universal Company Logo Resolution.** Company logos are resolved server-side through a multi-tier fallback pipeline: Parqet Symbol CDN → live company website via `yahoo-finance2` `assetProfile` → direct HTML `<link rel="icon">` / `<meta property="og:image">` scraping → domain favicons. The `<CompanyLogo />` component wraps logos in a high-contrast container (`bg-slate-900 dark:bg-card`) to ensure transparent logos with white or dark text render with crisp clarity in both Light and Dark modes.
+
+**Batch Research Archive (`.zip`).** Admins can download all attached PDF reports at once via the header **"Download All Reports (.zip)"** button or the `npm run reports:download` CLI script. The backend concurrently fetches all PDFs from Supabase Storage and streams a single compressed ZIP file created with `JSZip`.
 
 **`move_window_label`.** Reports don't all say "Intraday" — the SPZ report says
 "Morning Trade". That maps to `intraday` for filtering, with the verbatim
@@ -239,22 +236,4 @@ quietly dies at a few thousand.
 
 **`lib/queries.ts` is `server-only`.** It imports the Postgres driver, so
 anything a client component needs at runtime lives in `lib/movers.ts` instead.
-
-## Not done yet
-
-- **PDF upload + extraction.** Schema fields exist (`report_storage_path`,
-  `extraction`); the pipeline does not.
-- **Adding new companies from the UI.** Companies come from the seed for now.
-- **Admin screen for `admin_emails`.** Granting write access is a SQL statement
-  (above), not a UI.
-- **Rate limiting on the magic-link endpoint.** Supabase applies its own send
-  limits, but there's nothing app-side.
-
-## Open question
-
-For JBH the announcement was the FY26 result, but the sell-off followed the weak
-July FY27 trading update. The seed records the catalyst as `trading_update` (the
-price-moving event). If the convention should instead be the announcement,
-change it in `src/db/seed.ts` — the same decision determines what the extraction
-prompt will be asked to identify.
 
