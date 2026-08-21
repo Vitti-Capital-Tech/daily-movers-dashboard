@@ -126,7 +126,7 @@ export function CompanyLogo({
       {!isFailed && currentSrc && (
         <div
           className={cn(
-            "absolute inset-0 flex items-center justify-center bg-white dark:bg-card transition-opacity duration-200",
+            "absolute inset-0 flex items-center justify-center bg-slate-900 dark:bg-card transition-opacity duration-200",
             currentSize.iconPad,
             loaded ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
