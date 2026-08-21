@@ -1,6 +1,7 @@
 import { FileText, Building2, Layers, Sparkles } from "lucide-react";
 
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
+import { DownloadReportsButton } from "@/components/daily-movers/download-reports-button";
 import { FilterBar } from "@/components/daily-movers/filter-bar";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
 import { MoversTable } from "@/components/daily-movers/movers-table";
@@ -121,7 +122,10 @@ export default async function DailyMoversPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/40 pb-5">
         <PageHeading />
-        {user.canWrite ? <MoverDialog options={options} mode="create" /> : null}
+        <div className="flex items-center gap-2.5">
+          <DownloadReportsButton totalReports={summary.totalMovers} />
+          {user.canWrite ? <MoverDialog options={options} mode="create" /> : null}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
