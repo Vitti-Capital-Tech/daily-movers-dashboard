@@ -201,15 +201,33 @@ compliance footer that is a constant in `lib/posts/types.ts` rather than
 something the model writes.
 
 **What the page gives you.** The whole archive in publication order (not ranked
-by winners), the assessment above the drafts and not collapsible, two or three
-variants per validated call with the LinkedIn fold marked so you can see what
-lands above "…see more", copy-to-clipboard including the footer, and a
-posted/discarded status so the desk doesn't publish about the same call twice.
+by winners), searchable by ticker or company and filterable to assessed /
+not-assessed, paginated. Clicking a ticker opens that draft at
+`/post-studio/[id]` — its own page and its own URL, because reviewing two or
+three variants of several hundred words is a reading task and compliance needs a
+link to send. Each draft page shows the assessment above the copy and not
+collapsible, the verbatim clause it rests on, the LinkedIn fold marked so you
+can see what lands above "…see more", a copy button that includes the compliance
+footer, and a posted/discarded status so the desk doesn't publish about the same
+call twice.
 
-**Numbers go stale.** A draft saying "+27.1% since our note" is only true as at
-the moment it was written. The prices it was computed from are stored on the
-row, and the panel warns when the live return has drifted more than three
-percentage points from what the copy claims.
+**Numbers go stale, and a verdict is about a moment.** A draft saying "+27.1%
+since our note" is only true as at the moment it was written; the prices it was
+computed from are stored on the row, and the panel warns when the live return
+has drifted more than three percentage points from what the copy claims.
+
+**Assess again** re-runs the judgement against today's price, and it is
+available for every verdict. "Too early to say" three weeks after publication is
+the right answer then and the wrong one three months later — often the note
+named milestones that simply hadn't happened yet — so a mover is never written
+off by its first assessment. Rows whose verdict produced no copy carry the
+button in the table itself, since that is where the reviewer notices the "Since"
+figure has moved on; validated drafts are re-assessed from their own page.
+
+Each run is a **new row, never an overwrite**, and the draft page lists every
+assessment of that call with the return each was judged against. That history is
+what distinguishes re-examining a call from shopping it until the verdict comes
+out favourably.
 
 The app never posts anything. It produces text for a human to review and paste.
 
@@ -323,6 +341,7 @@ src/
       companies/[ticker]/ research history timeline — the point of the app
       mover-studio/      AI draft review queue (admin only)
       post-studio/       track record + LinkedIn copy (admin only)
+      post-studio/[id]/  one drafted post: assessment, variants, re-assess, history
     api/cron/daily-mover/  scheduled weekday draft, Sydney-time gated
     api/drafts/[id]/pdf/   admin-only signed URL for an unapproved draft PDF
     api/extract/         multipart PDF research extraction route handler
@@ -332,6 +351,8 @@ src/
     api/reports/download-all/ protected admin-only ZIP archive bundle of all PDFs
     login/               passwordless identification screen
   components/
+    table-search.tsx     shared debounced, URL-backed table search
+    table-pagination.tsx shared pager used by every table
     admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
     company-logo.tsx     high-contrast adaptive company logo with institutional monogram fallback
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload, download-reports-button
@@ -359,6 +380,7 @@ src/
     report/              typed report blocks + the react-pdf template
     market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
+    table.ts             shared paging/search params and clamping
     queries.ts           server-only data access layer
     storage.ts           Supabase storage path builders and byte validation
     validation.ts        Zod schema for form mutations
@@ -438,6 +460,15 @@ by which it can vary.
 maintaining every year and fails silently the first year nobody updates it. The
 newest quote timestamp across the market is today only if the market opened
 today — so the data answers the question itself.
+
+**Every table pages and filters in SQL.** `lib/table.ts` holds the shared
+`parseTableParams` / `resolvePaging` pair and `components/table-search.tsx` and
+`table-pagination.tsx` the shared controls, used by the Daily Movers archive,
+the company directory and Post Studio. Extracted when the third table needed
+them: three implementations of "read `?page=` and clamp it" is how two of them
+end up disagreeing about what happens when a filter narrows the result set
+under you. State lives in the URL, so a filtered view is shareable and the back
+button works.
 
 **`lib/queries.ts` is `server-only`.** It imports the Postgres driver, so
 anything a client component needs at runtime lives in `lib/movers.ts` instead.

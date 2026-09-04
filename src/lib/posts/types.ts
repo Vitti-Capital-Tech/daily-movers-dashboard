@@ -6,6 +6,8 @@
  * Studio UI takes its types from here.
  */
 
+import type { TableParams } from "@/lib/table";
+
 export type PostVerdict = "validated" | "mixed" | "contradicted" | "too_early";
 export type PostStatus = "draft" | "posted" | "discarded";
 
@@ -93,6 +95,17 @@ export type PostRow = {
   createdBy: string | null;
   createdAt: Date;
   postedAt: Date | null;
+};
+
+/** Which verdicts to show. `assessed`/`unassessed` filter on having a post. */
+export type TrackRecordAssessed = "all" | "assessed" | "unassessed";
+
+/**
+ * Extends the shared table params rather than redeclaring `q`/`page`/`perPage`,
+ * so `parseTableParams` and `resolvePaging` apply unchanged.
+ */
+export type TrackRecordFilters = TableParams & {
+  assessed?: TrackRecordAssessed;
 };
 
 export const VERDICT_LABELS: Record<PostVerdict, string> = {

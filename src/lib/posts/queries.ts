@@ -1,6 +1,6 @@
 import "server-only";
 
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -11,8 +11,16 @@ import {
   linkedinPosts,
 } from "@/db/schema";
 import { pctChange } from "@/lib/movers";
+import { resolvePaging, type Paged } from "@/lib/table";
 
-import { daysBetween, type PostRow, type PostStatus, type TrackRecordRow } from "./types";
+import {
+  daysBetween,
+  type PostRow,
+  type PostStatus,
+  type PostVerdict,
+  type TrackRecordFilters,
+  type TrackRecordRow,
+} from "./types";
 
 /**
  * Reads for Post Studio: the track record, and the posts drafted from it.
@@ -32,16 +40,81 @@ const anchorPriceSql = sql<number | null>`coalesce(
 )`;
 
 /**
- * Every published mover with its performance since publication.
+ * Only the newest post per mover.
  *
- * Not paginated. The whole point of the page is the track record as one view,
- * the archive is in the dozens rather than the thousands, and the sort the page
- * wants — by how far the price has moved since — cannot be done in SQL without
- * repeating the return expression in the ORDER BY. It is derived once here in
- * `pctChange`, which is also what the table view uses, so the two can't drift.
+ * A correlated subquery rather than a plain join, because a mover assessed
+ * three times would otherwise multiply into three track-record rows — and with
+ * pagination that would also make the row count wrong, not just the display.
  */
-export async function listTrackRecord(): Promise<TrackRecordRow[]> {
+const newestPostSql = sql`${linkedinPosts.id} = (
+  select lp.id from ${linkedinPosts} lp
+  where lp.mover_id = ${dailyMovers.id}
+  order by lp.created_at desc
+  limit 1
+)`;
+
+/**
+ * Filtering happens in SQL, not in the browser — the same rule the archive's
+ * own list follows. Client-side filtering looks fine on 56 rows and quietly
+ * dies at a few thousand, and it would make the pagination count a lie.
+ */
+function buildTrackRecordWhere(filters: TrackRecordFilters) {
+  const conditions = [];
+
+  if (filters.q) {
+    const term = `%${filters.q}%`;
+    conditions.push(
+      or(ilike(companies.ticker, term), ilike(companies.name, term)),
+    );
+  }
+
+  /**
+   * `assessed` asks whether this mover has *any* post, not whether the newest
+   * one survives the join — so it is an EXISTS rather than a null check on the
+   * joined row.
+   */
+  if (filters.assessed === "assessed") {
+    conditions.push(
+      sql`exists (select 1 from ${linkedinPosts} lp where lp.mover_id = ${dailyMovers.id})`,
+    );
+  }
+  if (filters.assessed === "unassessed") {
+    conditions.push(
+      sql`not exists (select 1 from ${linkedinPosts} lp where lp.mover_id = ${dailyMovers.id})`,
+    );
+  }
+
+  return conditions.length ? and(...conditions) : undefined;
+}
+
+/**
+ * Published movers with their performance since publication, filtered and
+ * paginated.
+ *
+ * Ordered by publication date, newest first — deliberately not by return. A
+ * leaderboard of biggest gains would push everything that went the other way
+ * onto the last page, which is the exact framing that turns a track record into
+ * a misleading one.
+ *
+ * The post-event return is derived here in `pctChange` rather than in SQL, so
+ * there is one copy of that arithmetic shared with the archive's table. The cost
+ * is that the return cannot be an ORDER BY key; the benefit is that the two
+ * views can never disagree about a number.
+ */
+export async function listTrackRecord(
+  filters: TrackRecordFilters = {},
+): Promise<Paged<TrackRecordRow>> {
   const db = getDb();
+
+  const where = buildTrackRecordWhere(filters);
+
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(dailyMovers)
+    .innerJoin(companies, eq(dailyMovers.companyId, companies.id))
+    .where(where);
+
+  const { page, perPage, pageCount, offset } = resolvePaging(filters, total);
 
   const rows = await db
     .select({
@@ -67,23 +140,14 @@ export async function listTrackRecord(): Promise<TrackRecordRow[]> {
     .innerJoin(companies, eq(dailyMovers.companyId, companies.id))
     .innerJoin(catalysts, eq(dailyMovers.catalystId, catalysts.id))
     .leftJoin(companyQuotes, eq(companyQuotes.companyId, dailyMovers.companyId))
-    /**
-     * Only the newest post per mover. A lateral join rather than a plain left
-     * join, because a mover regenerated three times would otherwise multiply
-     * into three track-record rows.
-     */
-    .leftJoin(
-      linkedinPosts,
-      sql`${linkedinPosts.id} = (
-        select lp.id from ${linkedinPosts} lp
-        where lp.mover_id = ${dailyMovers.id}
-        order by lp.created_at desc
-        limit 1
-      )`,
-    )
-    .orderBy(desc(dailyMovers.moveDate), desc(dailyMovers.id));
+    .leftJoin(linkedinPosts, newestPostSql)
+    .where(where)
+    // id as a tiebreaker so same-day rows keep a stable order across pages.
+    .orderBy(desc(dailyMovers.moveDate), desc(dailyMovers.id))
+    .limit(perPage)
+    .offset(offset);
 
-  return rows.map((row): TrackRecordRow => {
+  const mapped = rows.map((row): TrackRecordRow => {
     const postEventReturn = pctChange(row.anchorPrice, row.currentPrice);
 
     return {
@@ -123,6 +187,8 @@ export async function listTrackRecord(): Promise<TrackRecordRow[]> {
         : null,
     };
   });
+
+  return { rows: mapped, total, page, perPage, pageCount };
 }
 
 export async function getPostById(id: number): Promise<PostRow | null> {
@@ -163,6 +229,54 @@ export async function getPostById(id: number): Promise<PostRow | null> {
     ...row,
     variants: Array.isArray(row.variants) ? row.variants : [],
   } as PostRow;
+}
+
+/**
+ * Every assessment ever made of one mover, newest first.
+ *
+ * The point of keeping them rather than overwriting: a verdict is a judgement
+ * about a moment. "Too early to say" three weeks after publication is the right
+ * answer then and the wrong one three months later, and the history is what
+ * shows a reviewer that the call was re-examined rather than shopped until it
+ * came out favourably.
+ */
+export async function listAssessmentsForMover(moverId: number): Promise<
+  {
+    id: number;
+    verdict: PostVerdict;
+    status: PostStatus;
+    variantCount: number;
+    /** The return the assessment was made against, from its snapshot. */
+    snapshotReturn: number | null;
+    createdAt: Date;
+  }[]
+> {
+  const db = getDb();
+
+  const rows = await db
+    .select({
+      id: linkedinPosts.id,
+      verdict: linkedinPosts.verdict,
+      status: linkedinPosts.status,
+      variants: linkedinPosts.posts,
+      snapshot: linkedinPosts.snapshot,
+      createdAt: linkedinPosts.createdAt,
+    })
+    .from(linkedinPosts)
+    .where(eq(linkedinPosts.moverId, moverId))
+    .orderBy(desc(linkedinPosts.createdAt));
+
+  return rows.map((row) => ({
+    id: row.id,
+    verdict: row.verdict,
+    status: row.status,
+    variantCount: Array.isArray(row.variants) ? row.variants.length : 0,
+    snapshotReturn:
+      row.snapshot && typeof row.snapshot === "object"
+        ? ((row.snapshot as { postEventReturn?: number }).postEventReturn ?? null)
+        : null,
+    createdAt: row.createdAt,
+  }));
 }
 
 /** Counts per status, for the page's summary line. */

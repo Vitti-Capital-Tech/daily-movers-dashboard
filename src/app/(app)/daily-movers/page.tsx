@@ -5,7 +5,7 @@ import { DownloadReportsButton } from "@/components/daily-movers/download-report
 import { FilterBar } from "@/components/daily-movers/filter-bar";
 import { MoverDialog } from "@/components/daily-movers/mover-dialog";
 import { MoversTable } from "@/components/daily-movers/movers-table";
-import { Pagination } from "@/components/daily-movers/pagination";
+import { TablePagination } from "@/components/table-pagination";
 import { PriceRefreshButton } from "@/components/daily-movers/price-refresh-button";
 import { PriceRefresher } from "@/components/daily-movers/price-refresher";
 import { Card, CardContent } from "@/components/ui/card";
@@ -170,7 +170,7 @@ export default async function DailyMoversPage({
         canWrite={user.canWrite}
       />
 
-      <Pagination
+      <TablePagination
         page={result.page}
         pageCount={result.pageCount}
         perPage={result.perPage}

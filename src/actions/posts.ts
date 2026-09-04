@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
 import { linkedinPosts } from "@/db/schema";
@@ -131,6 +132,7 @@ export async function generatePostAction(
   const { judgement: result, usage } = judgement;
 
   const db = getDb();
+  let postId: number;
   try {
     const [created] = await db
       .insert(linkedinPosts)
@@ -152,19 +154,22 @@ export async function generatePostAction(
       .returning({ id: linkedinPosts.id });
 
     revalidateStudio();
-
-    return {
-      ok: true,
-      postId: created.id,
-      message:
-        result.verdict === "validated"
-          ? `${mover.ticker}: ${result.variants.length} draft${result.variants.length === 1 ? "" : "s"} ready.`
-          : `${mover.ticker}: nothing to publish — see the assessment.`,
-    };
+    postId = created.id;
   } catch (error) {
     console.error("generatePostAction: insert failed", error);
     return { ok: false, message: "Drafted the post but could not save it." };
   }
+
+  /**
+   * Straight to the draft's own page rather than back to the table with a
+   * toast. Either outcome is worth reading in full -- the copy if there is any,
+   * the reason if there isn't -- and a toast that says "nothing to publish"
+   * without saying why just sends the reviewer looking for the row again.
+   *
+   * Outside the try/catch on purpose: `redirect()` signals by throwing, so
+   * calling it inside would be caught as a failed insert.
+   */
+  redirect(`/post-studio/${postId}`);
 }
 
 /**

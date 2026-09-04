@@ -7,8 +7,11 @@
  * component needs at runtime belongs here.
  */
 
-export const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
-export const DEFAULT_PER_PAGE = 25;
+/**
+ * Re-exported from `lib/table.ts`, which is where they live now that three
+ * tables share them. Kept here so existing imports keep working.
+ */
+export { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS } from "@/lib/table";
 
 export type SortKey = "date" | "move" | "ticker" | "company";
 export type SortDir = "asc" | "desc";

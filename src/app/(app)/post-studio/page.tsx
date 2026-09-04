@@ -1,17 +1,14 @@
 import { Megaphone, ShieldAlert } from "lucide-react";
 
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
-import { PostReview } from "@/components/post-studio/post-review";
 import { TrackRecordTable } from "@/components/post-studio/track-record-table";
 import { Card, CardContent } from "@/components/ui/card";
 import { isDbConfigured } from "@/db";
 import { getSessionUser } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-error";
-import {
-  getPostById,
-  getPostCounts,
-  listTrackRecord,
-} from "@/lib/posts/queries";
+import { getPostCounts, listTrackRecord } from "@/lib/posts/queries";
+import type { TrackRecordAssessed } from "@/lib/posts/types";
+import { parseTableParams } from "@/lib/table";
 
 /**
  * Post Studio — the archive's track record, and LinkedIn copy drawn from it.
@@ -19,11 +16,17 @@ import {
  * Admin only, enforced here and not only in the sidebar. Same reasoning as
  * Mover Studio: a route is a public URL anyone can type, so hiding the nav link
  * is the courtesy half and this check is the control.
+ *
+ * A drafted post lives at `/post-studio/[id]` rather than in a panel above this
+ * table: the copy is long, there are two or three variants of it, and a reviewer
+ * reads it end to end before deciding — which is a page, not a sidebar.
  */
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+const ASSESSED_VALUES: TrackRecordAssessed[] = ["all", "assessed", "unassessed"];
 
 export default async function PostStudioPage({
   searchParams,
@@ -65,15 +68,23 @@ export default async function PostStudioPage({
   }
 
   const params = await searchParams;
-  const requested = Number(
-    Array.isArray(params.post) ? params.post[0] : params.post,
-  );
+  const table = parseTableParams(params);
 
-  let rows: Awaited<ReturnType<typeof listTrackRecord>>;
+  const assessedRaw = Array.isArray(params.assessed)
+    ? params.assessed[0]
+    : params.assessed;
+  const assessed = ASSESSED_VALUES.includes(assessedRaw as TrackRecordAssessed)
+    ? (assessedRaw as TrackRecordAssessed)
+    : "all";
+
+  let page: Awaited<ReturnType<typeof listTrackRecord>>;
   let counts: Awaited<ReturnType<typeof getPostCounts>>;
 
   try {
-    [rows, counts] = await Promise.all([listTrackRecord(), getPostCounts()]);
+    [page, counts] = await Promise.all([
+      listTrackRecord({ ...table, assessed }),
+      getPostCounts(),
+    ]);
   } catch (error) {
     return (
       <div className="space-y-6">
@@ -82,19 +93,6 @@ export default async function PostStudioPage({
       </div>
     );
   }
-
-  const post =
-    Number.isInteger(requested) && requested > 0
-      ? await getPostById(requested)
-      : null;
-
-  /**
-   * The live return for the mover this post is about, so the panel can warn
-   * when the draft's numbers have drifted away from today's figure.
-   */
-  const liveReturn = post
-    ? (rows.find((row) => row.moverId === post.moverId)?.postEventReturn ?? null)
-    : null;
 
   return (
     <div className="space-y-6">
@@ -116,11 +114,11 @@ export default async function PostStudioPage({
         </CardContent>
       </Card>
 
-      {post ? (
-        <PostReview post={post} liveReturn={liveReturn} />
-      ) : null}
-
-      <TrackRecordTable rows={rows} counts={counts} activePostId={post?.id ?? null} />
+      <TrackRecordTable
+        page={page}
+        counts={counts}
+        assessed={assessed}
+      />
     </div>
   );
 }

@@ -9,19 +9,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PER_PAGE_OPTIONS } from "@/lib/movers";
+import { PER_PAGE_OPTIONS } from "@/lib/table";
 import { useQueryParams } from "@/lib/use-query-params";
 
-export function Pagination({
+/**
+ * The pager for every table in the app.
+ *
+ * Was `daily-movers/pagination.tsx`; moved and generalised when the company
+ * directory and Post Studio needed the same thing. Nothing here is
+ * archive-specific — page state lives in the URL, so the server component
+ * re-runs its query and this component holds no state of its own.
+ */
+export function TablePagination({
   page,
   pageCount,
   perPage,
   total,
+  /** What one row is called, for the count label. */
+  noun = "rows",
 }: {
   page: number;
   pageCount: number;
   perPage: number;
   total: number;
+  noun?: string;
 }) {
   const { setParams } = useQueryParams();
 
@@ -31,7 +42,9 @@ export function Pagination({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-2">
-        <Label className="text-xs text-muted-foreground">Rows per page</Label>
+        <Label className="text-xs text-muted-foreground">
+          {noun === "rows" ? "Rows" : noun} per page
+        </Label>
         <Select
           value={String(perPage)}
           onValueChange={(value) => setParams({ perPage: value })}
@@ -60,6 +73,8 @@ export function Pagination({
             size="sm"
             disabled={page <= 1}
             onClick={() =>
+              // `keepPage` because this *is* the page change — without it the
+              // helper would strip `page` on the way out.
               setParams({ page: String(page - 1) }, { keepPage: true })
             }
           >

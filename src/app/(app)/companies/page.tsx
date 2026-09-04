@@ -3,6 +3,8 @@ import { ChevronRight, FileText } from "lucide-react";
 
 import { CompanyLogo } from "@/components/company-logo";
 import { DbNotConfigured, DbUnreachable } from "@/components/db-not-configured";
+import { TablePagination } from "@/components/table-pagination";
+import { TableSearch } from "@/components/table-search";
 import {
   Table,
   TableBody,
@@ -16,10 +18,17 @@ import { isDbConfigured } from "@/db";
 import { describeDbError } from "@/lib/db-error";
 import { formatMoveDate } from "@/lib/format";
 import { listCompaniesWithCounts } from "@/lib/queries";
+import { parseTableParams } from "@/lib/table";
 
 export const dynamic = "force-dynamic";
 
-export default async function CompaniesPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function CompaniesPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   if (!isDbConfigured()) {
     return (
       <div className="space-y-6">
@@ -29,9 +38,11 @@ export default async function CompaniesPage() {
     );
   }
 
-  let companies: Awaited<ReturnType<typeof listCompaniesWithCounts>>;
+  const table = parseTableParams(await searchParams);
+
+  let directory: Awaited<ReturnType<typeof listCompaniesWithCounts>>;
   try {
-    companies = await listCompaniesWithCounts();
+    directory = await listCompaniesWithCounts(table);
   } catch (error) {
     return (
       <div className="space-y-6">
@@ -44,12 +55,24 @@ export default async function CompaniesPage() {
   return (
     <div className="space-y-6">
       <div className="border-b border-border/40 pb-5">
-        <Heading count={companies.length} />
+        <Heading count={directory.total} />
       </div>
 
-      {companies.length === 0 ? (
+      <TableSearch
+        placeholder="Filter by ticker, company or sector..."
+        label="Filter the company directory"
+        className="max-w-sm"
+      />
+
+      {directory.rows.length === 0 ? (
         <div className="rounded-xl border border-border/70 bg-card/40 px-6 py-16 text-center text-sm text-muted-foreground backdrop-blur-xs">
-          No companies found. Run <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">npm run db:seed</code> to populate samples.
+          {table.q ? (
+            <>No companies match &ldquo;{table.q}&rdquo;.</>
+          ) : (
+            <>
+              No companies found. Run <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">npm run db:seed</code> to populate samples.
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border/70 bg-card/50 shadow-xs backdrop-blur-xs">
@@ -66,7 +89,7 @@ export default async function CompaniesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-border/40">
-                {companies.map((company) => (
+                {directory.rows.map((company) => (
                   <TableRow
                     key={company.id}
                     className="group hover:bg-accent/40 transition-colors"
@@ -126,6 +149,16 @@ export default async function CompaniesPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="border-t border-border/60 px-4 py-3">
+            <TablePagination
+              page={directory.page}
+              pageCount={directory.pageCount}
+              perPage={directory.perPage}
+              total={directory.total}
+              noun="Companies"
+            />
           </div>
         </div>
       )}

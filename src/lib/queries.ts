@@ -10,6 +10,7 @@ import {
   companyQuotes,
   dailyMovers,
 } from "@/db/schema";
+import { resolvePaging, type Paged, type TableParams } from "@/lib/table";
 import {
   DEFAULT_PER_PAGE,
   type FormOptions,
@@ -193,9 +194,50 @@ export async function getResearchHistory(ticker: string): Promise<{
   return { company, rows: rows as MoverRow[] };
 }
 
-export async function listCompaniesWithCounts() {
+export type CompanyDirectoryRow = {
+  id: number;
+  ticker: string;
+  name: string;
+  sector: string | null;
+  moverCount: number;
+  lastMoveDate: string | null;
+};
+
+/**
+ * The company directory, filtered and paginated.
+ *
+ * `q` matches ticker, name or sector: the sector is included because it is a
+ * column in the table, and a filter that ignores a visible column reads as
+ * broken. Filtering is in SQL for the same reason as everywhere else — a
+ * client-side filter would also make the row count and the page count wrong,
+ * not merely slow.
+ *
+ * Ordered by most recently covered, with tickers alphabetical inside a date, so
+ * the companies the desk is actually working on stay at the top.
+ */
+export async function listCompaniesWithCounts(
+  params: TableParams = {},
+): Promise<Paged<CompanyDirectoryRow>> {
   const db = getDb();
-  return db
+
+  const where = params.q
+    ? or(
+        ilike(companies.ticker, `%${params.q}%`),
+        ilike(companies.name, `%${params.q}%`),
+        ilike(companies.sector, `%${params.q}%`),
+      )
+    : undefined;
+
+  // Counted on `companies` alone: the join is one-to-many, so counting the
+  // joined rows would return the number of movers, not the number of companies.
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(companies)
+    .where(where);
+
+  const { page, perPage, pageCount, offset } = resolvePaging(params, total);
+
+  const rows = await db
     .select({
       id: companies.id,
       ticker: companies.ticker,
@@ -206,11 +248,16 @@ export async function listCompaniesWithCounts() {
     })
     .from(companies)
     .leftJoin(dailyMovers, eq(dailyMovers.companyId, companies.id))
+    .where(where)
     .groupBy(companies.id, companies.ticker, companies.name, companies.sector)
     .orderBy(
       sql`max(${dailyMovers.moveDate}) DESC NULLS LAST`,
       asc(companies.ticker),
-    );
+    )
+    .limit(perPage)
+    .offset(offset);
+
+  return { rows, total, page, perPage, pageCount };
 }
 
 /** Lookups for the Add/Edit form. */
