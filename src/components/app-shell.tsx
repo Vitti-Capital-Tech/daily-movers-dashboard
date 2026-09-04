@@ -1,6 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { TrendingUp, Building2, Activity, ShieldCheck, Eye, KeyRound } from "lucide-react";
+import {
+  TrendingUp,
+  Building2,
+  Activity,
+  ShieldCheck,
+  Eye,
+  KeyRound,
+  Sparkles,
+} from "lucide-react";
 
 import { NavLink } from "@/components/nav-link";
 import { UserMenu } from "@/components/user-menu";
@@ -56,6 +64,20 @@ export function AppShell({
             >
               Companies
             </NavLink>
+            {/*
+              Admin only. Drafts are machine-written and unreviewed, so they are
+              not Vitti research until approved — a viewer should not have a
+              route to them. The page and the draft PDF route both re-check this
+              server-side; hiding the link is only the courtesy half.
+            */}
+            {user.canWrite && (
+              <NavLink
+                href="/mover-studio"
+                icon={<Sparkles className="size-4" />}
+              >
+                Mover Studio
+              </NavLink>
+            )}
           </nav>
         </div>
 
@@ -110,6 +132,11 @@ export function AppShell({
             <NavLink href="/companies" compact>
               Companies
             </NavLink>
+            {user.canWrite && (
+              <NavLink href="/mover-studio" compact>
+                Studio
+              </NavLink>
+            )}
           </nav>
 
           <div className="flex items-center gap-2">

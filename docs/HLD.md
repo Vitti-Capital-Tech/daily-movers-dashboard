@@ -54,6 +54,9 @@ graph TD
         PDFRoute["Protected PDF Route (/api/reports/[id])"]
         ZipRoute["Protected Batch ZIP Route (/api/reports/download-all)"]
         PriceRoute["Price Refresh Route (/api/prices/refresh)"]
+        CronRoute["Scheduled Draft Route (/api/cron/daily-mover)"]
+        DraftPdfRoute["Admin-Only Draft PDF Route (/api/drafts/[id]/pdf)"]
+        DraftPipeline["Mover Studio Pipeline (screen -> select -> read -> write -> render)"]
         LogoRoute["Logo Proxy Route (/api/logo/[ticker])"]
         AuthLayer["Auth & Session Verification (Web Crypto HMAC)"]
         QueryLayer["Data Access Layer (lib/queries.ts - server-only)"]
@@ -286,22 +289,32 @@ graph LR
    - Drag & drop PDF uploader with progress tracking and direct browser-to-storage upload.
    - Protected download endpoint (`/api/reports/[id]`) with 60-second signed URLs.
 4. **AI-Powered PDF Extraction**:
-   - Claude 3.5 Sonnet multimodal extraction pre-populating company, ticker, catalyst, analyst, and percentage move in the Add Mover dialog.
-5. **Company Research Directory (`/companies`)**:
+   - Claude Sonnet 4.6 multimodal extraction pre-populating company, ticker, catalyst, analyst, and percentage move in the Add Mover dialog.
+5. **Mover Studio — Autonomous Daily Mover Drafting (`/mover-studio`, admin only)**:
+   - Scheduled each weekday at 12:30 Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change).
+   - Computes both sides of the ASX movers board from the exchange's company directory plus the market provider's session moves, applies a dollar-turnover and market-cap liquidity screen, and drops any mover with no price-sensitive filing that session.
+   - Claude Sonnet 5 selects the subject with a recorded rationale, confidence score and runners-up, reads the company's last ~25 price-sensitive announcements, and emits both the report's typed page blocks and the `daily_movers` columns in one structured call.
+   - Renders the report to PDF with `@react-pdf/renderer` into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.
+   - Approval projects the draft into `daily_movers` and *moves* the PDF into the manual-upload key scheme, so every downstream consumer is unchanged.
+   - Declines without erroring when the market did not trade, when an analyst has already published for the day, or when a scheduled draft already exists.
+6. **Company Research Directory (`/companies`)**:
    - Comprehensive directory of all covered listed entities with sector tags, mover counts, and latest coverage timestamps.
-6. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
+7. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
    - "Most Recent Research Takeaway" hero card with highlight banner and quote icon.
    - Vertical research history timeline connecting chronological notes with directional status nodes.
    - Action links to Daily Mover source reports.
-7. **Theme Customization (`ThemeToggle`)**:
+8. **Theme Customization (`ThemeToggle`)**:
    - Seamless switching between Light mode, Midnight Navy Dark mode, and System preference.
-8. **Authentication & Session Management (`UserMenu`, `AdminUnlockDialog`)**:
+9. **Authentication & Session Management (`UserMenu`, `AdminUnlockDialog`)**:
    - Frictionless Public Viewer mode with constant-time passcode admin elevation and instant lock back to view-only.
 
 ---
 
 ## 9. Future Roadmap & Extensibility
 
+- **Licensed announcements feed**: Mover Studio currently reads company announcements from the ASX's own public statistics pages, whose terms reserve commercial use to holders of ASX's written authority. `src/lib/asx/provider.ts` is the seam a licensed feed drops into.
+- **Prompt iteration from rejections**: Rejected drafts store the reviewer's reason alongside the screen, the selection and the generated document. That is a labelled evaluation set for improving the drafting prompt, and nothing reads it yet.
+- **Re-draft on rejection**: The announcement corpus is cached for an hour, so asking for a second draft of the same company is cheap. There is no button for it.
 - **Automated LLM Extraction Pipeline**: Background workers parsing uploaded PDFs from Supabase Storage, running structured prompts, and populating `extraction` JSONB for automated diffing.
 - **UI Company Management**: Interface for adding and updating company ticker and sector metadata without database seeding.
 - **Admin Management Portal**: UI for granting/revoking write permissions in `admin_emails`.

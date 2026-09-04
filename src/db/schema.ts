@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -22,6 +22,22 @@ import {
 export const moveTypeEnum = pgEnum("move_type", ["intraday", "closing"]);
 
 export const userRoleEnum = pgEnum("user_role", ["admin", "viewer"]);
+
+/**
+ * Lifecycle of an AI-generated Daily Mover draft.
+ *
+ * `generating` exists because the pipeline reads 20-30 announcement PDFs and
+ * makes several Claude calls -- far longer than a request should hold open. The
+ * row is inserted first and advanced in place, so a reload during generation
+ * shows progress rather than losing the run.
+ */
+export const draftStatusEnum = pgEnum("draft_status", [
+  "generating",
+  "pending",
+  "approved",
+  "rejected",
+  "failed",
+]);
 
 /**
  * Write-access allowlist, keyed by email. A table rather than a hardcoded list
@@ -237,6 +253,146 @@ export const companyQuotes = pgTable("company_quotes", {
   error: text("error"),
 }).enableRLS();
 
+/**
+ * An AI-generated Daily Mover awaiting an analyst's approval.
+ *
+ * Deliberately a separate table rather than a `status` column on
+ * `daily_movers`: every row in that table is approved research, which is what
+ * makes "what did we say last time?" answerable. A status column would put an
+ * unreviewed draft one forgotten `WHERE` clause away from being quoted back as
+ * Vitti's published view.
+ *
+ * On approval the row is projected into `daily_movers` and the PDF is moved from
+ * the `drafts/` prefix to the same storage key scheme a manual upload uses, so
+ * nothing downstream needs to know a report was drafted rather than written.
+ */
+export const moverDrafts = pgTable(
+  "mover_drafts",
+  {
+    id: serial("id").primaryKey(),
+
+    status: draftStatusEnum("status").notNull().default("generating"),
+
+    /**
+     * Trading day the draft covers, in the exchange's timezone. Not
+     * `created_at::date` -- a run started at 02:30 UTC is the same ASX session
+     * as one started at 23:00 UTC the day before.
+     */
+    moveDate: date("move_date").notNull(),
+
+    /** "cron" or "manual" -- which is worth knowing when a draft looks odd. */
+    trigger: text("trigger").notNull().default("manual"),
+
+    /**
+     * The ticker Claude picked. Text rather than an FK because the pick happens
+     * before any company row is resolved, and a draft for a company we have
+     * never covered must not create a `companies` row until it is approved --
+     * otherwise every rejected draft leaves a stub behind in the directory.
+     */
+    ticker: text("ticker"),
+    companyName: text("company_name"),
+    sector: text("sector"),
+
+    /** Resolved on approval only; null for pending and rejected drafts. */
+    companyId: integer("company_id").references(() => companies.id, {
+      onDelete: "set null",
+    }),
+
+    /** Signed, like `daily_movers.move_pct`. Direction is derived from it. */
+    movePct: numeric("move_pct", {
+      precision: 6,
+      scale: 2,
+      mode: "number",
+    }),
+    moveType: moveTypeEnum("move_type"),
+    moveWindowLabel: text("move_window_label"),
+
+    /** Slug, not an id -- resolved against `catalysts` when approved. */
+    catalystSlug: text("catalyst_slug"),
+    reasonForMove: text("reason_for_move"),
+    mainTakeaway: text("main_takeaway"),
+    reportPrice: numeric("report_price", {
+      precision: 12,
+      scale: 4,
+      mode: "number",
+    }),
+    analystId: integer("analyst_id").references(() => analysts.id, {
+      onDelete: "set null",
+    }),
+
+    /**
+     * The screen that produced the shortlist: both boards as fetched and the
+     * liquidity filters applied. Kept because "why did it pick this?" is
+     * unanswerable a week later without the list it chose from.
+     */
+    screen: jsonb("screen"),
+
+    /** Claude's pick, its reasoning, and the runners-up it passed over. */
+    selection: jsonb("selection"),
+
+    /**
+     * Every announcement read, with its ASX `idsId` and source URL. This is the
+     * audit trail: an analyst reviewing a claim in the draft needs to reach the
+     * announcement it came from.
+     */
+    sources: jsonb("sources"),
+
+    /** The typed page blocks the PDF was rendered from. See `lib/report/types`. */
+    report: jsonb("report"),
+
+    /** Key under the `drafts/` prefix, until approval moves it. */
+    draftStoragePath: text("draft_storage_path"),
+
+    /**
+     * Cost and provenance audit -- which model wrote this, and what it cost.
+     *
+     * Input is split three ways because the three are billed at different
+     * rates, and this pipeline puts most of its input through the prompt cache:
+     * the announcement corpus is the large, stable part of the prompt, so a
+     * re-draft reads it back at a tenth of the price. Storing only
+     * `input_tokens` reported a 153k-token corpus as 3k tokens.
+     */
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    outputTokens: integer("output_tokens"),
+
+    /** Current pipeline stage, for the polling UI. Null once terminal. */
+    progress: text("progress"),
+    /** Why generation failed; null unless status is `failed`. */
+    error: text("error"),
+
+    /** Set when approved -- the `daily_movers` row this became. */
+    approvedMoverId: integer("approved_mover_id").references(
+      () => dailyMovers.id,
+      { onDelete: "set null" },
+    ),
+
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** Why an analyst rejected it -- the feedback loop for the prompt. */
+    reviewNote: text("review_note"),
+  },
+  (t) => [
+    // The review queue: newest first, usually filtered to `pending`.
+    index("mover_drafts_status_created_idx").on(t.status, t.createdAt.desc()),
+    /**
+     * One scheduled draft per trading day. This is the cron's idempotency
+     * guard: a retried or double-fired invocation hits this constraint instead
+     * of spending a second run's worth of Claude calls. Manual drafts are
+     * excluded so an analyst can re-draft a day as often as they like.
+     */
+    uniqueIndex("mover_drafts_cron_day_key")
+      .on(t.moveDate)
+      .where(sql`${t.trigger} = 'cron'`),
+  ],
+).enableRLS();
+
 export const companiesRelations = relations(companies, ({ many, one }) => ({
   dailyMovers: many(dailyMovers),
   quote: one(companyQuotes, {
@@ -275,11 +431,29 @@ export const dailyMoversRelations = relations(dailyMovers, ({ one }) => ({
   }),
 }));
 
+export const moverDraftsRelations = relations(moverDrafts, ({ one }) => ({
+  company: one(companies, {
+    fields: [moverDrafts.companyId],
+    references: [companies.id],
+  }),
+  analyst: one(analysts, {
+    fields: [moverDrafts.analystId],
+    references: [analysts.id],
+  }),
+  approvedMover: one(dailyMovers, {
+    fields: [moverDrafts.approvedMoverId],
+    references: [dailyMovers.id],
+  }),
+}));
+
 export type Company = typeof companies.$inferSelect;
 export type Catalyst = typeof catalysts.$inferSelect;
 export type Analyst = typeof analysts.$inferSelect;
 export type DailyMover = typeof dailyMovers.$inferSelect;
 export type NewDailyMover = typeof dailyMovers.$inferInsert;
 export type MoveType = (typeof moveTypeEnum.enumValues)[number];
+export type MoverDraft = typeof moverDrafts.$inferSelect;
+export type NewMoverDraft = typeof moverDrafts.$inferInsert;
+export type DraftStatus = (typeof draftStatusEnum.enumValues)[number];
 export type AppUser = typeof appUsers.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];

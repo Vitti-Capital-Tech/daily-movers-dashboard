@@ -16,6 +16,8 @@ daily-movers-dashboard/
 │   ├── 0002_post_event_returns.sql # mover_status, company_prices, company_quotes
 │   ├── 0003_drop_unused_columns_indexes.sql # dead columns & redundant indexes
 │   ├── 0004_mover_anchor_close.sql # move_date_close; drops company_prices
+│   ├── 0005_mover_drafts.sql    # mover_drafts table + draft_status enum
+│   ├── 0006_draft_cache_tokens.sql # cache_write_tokens, cache_read_tokens
 │   └── auth-setup.sql           # RLS, app_users table, admin_emails seed
 ├── scripts/                     # Operational automation scripts
 │   ├── apply-sql.mts            # Idempotent statement-by-statement SQL runner
@@ -24,6 +26,7 @@ daily-movers-dashboard/
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
 │   │   ├── admin-auth.ts        # unlockAdmin, lockAdmin
+│   │   ├── drafts.ts            # startDraft, approveDraft, rejectDraft, reapDrafts
 │   │   ├── extract.ts           # extractReportAction (Claude PDF AI extraction)
 │   │   ├── movers.ts            # saveMover, deleteMover
 │   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
@@ -34,8 +37,14 @@ daily-movers-dashboard/
 │   │   │   │   └── page.tsx
 │   │   │   ├── daily-movers/    # Main Daily Movers table & filters
 │   │   │   │   └── page.tsx
+│   │   │   ├── mover-studio/    # AI draft review queue (admin only)
+│   │   │   │   └── page.tsx
 │   │   │   └── layout.tsx       # Auth protection barrier & shell wrapper
 │   │   ├── api/                 # API route handlers
+│   │   │   ├── cron/daily-mover/ # Weekday scheduled draft, Sydney-time gated
+│   │   │   │   └── route.ts
+│   │   │   ├── drafts/[id]/pdf/ # Admin-only signed URL for an unapproved draft
+│   │   │   │   └── route.ts
 │   │   │   ├── extract/         # Multipart PDF AI extraction route handler
 │   │   │   ├── logo/[ticker]/   # Multi-source company logo proxy with HTML scraper
 │   │   │   │   └── route.ts
@@ -50,6 +59,7 @@ daily-movers-dashboard/
 │   │   ├── layout.tsx           # Root HTML layout with ThemeProvider and fonts
 │   │   └── page.tsx             # Root redirect to /daily-movers
 │   ├── components/              # UI Component Library
+│   │   ├── mover-studio/        # Draft queue, review card, inline report preview, evidence list
 │   │   ├── daily-movers/        # Domain-specific components
 │   │   │   ├── company-combobox.tsx
 │   │   │   ├── download-reports-button.tsx # Admin-gated batch ZIP download trigger
@@ -75,11 +85,28 @@ daily-movers-dashboard/
 │   │   ├── schema.ts            # Drizzle ORM table & relation schemas
 │   │   └── seed.ts              # Idempotent database seed script
 │   ├── lib/                     # Utilities, helpers & business logic
-│   │   ├── ai/                  # AI & LLM extraction modules
-│   │   │   └── anthropic.ts     # Claude 3.5 Sonnet document tool extraction client
+│   │   ├── ai/                  # AI & LLM modules
+│   │   │   ├── announcement-text.ts # Announcement PDFs -> prompt text (unpdf, visual fallback)
+│   │   │   ├── anthropic.ts     # Extraction client (uploaded reports)
+│   │   │   ├── client.ts        # Shared Anthropic client, model choices, token accounting
+│   │   │   └── mover-draft.ts   # The two drafting calls: select a mover, write the report
+│   │   ├── asx/                 # ASX listing universe, announcements & computed movers board
+│   │   │   ├── announcements.ts # Legacy statistics servlet parser + PDF access gate
+│   │   │   ├── board.ts         # screenBoards(): universe -> quotes -> liquidity screen -> ranked
+│   │   │   ├── index.ts         # Server-side entry point
+│   │   │   ├── provider.ts      # AsxDataProvider contract & shared types
+│   │   │   ├── source.ts        # Provider selection — single swap point
+│   │   │   ├── types.ts         # Client-safe types, DEFAULT_SCREEN, SCREEN_LIMITS
+│   │   │   └── universe.ts      # ASX company directory CSV
 │   │   ├── auth-config.ts       # Domain & path matching (edge safe)
 │   │   ├── auth.ts              # RBAC & session verification (server-only)
+│   │   ├── catalysts.ts         # The closed catalyst vocabulary, defined once
 │   │   ├── db-error.ts          # Postgres error code parser & credential scrubbing
+│   │   ├── drafts/              # Mover Studio pipeline & reads
+│   │   │   ├── generate.ts      # runDraftPipeline, shouldRunScheduled, reapStaleGenerating
+│   │   │   ├── queries.ts       # Draft queue reads (server-only)
+│   │   │   ├── trading-day.ts   # Australia/Sydney date & session arithmetic (client-safe)
+│   │   │   └── types.ts         # Client-safe draft row shapes & cost estimation
 │   │   ├── format.ts            # Date, percentage & price formatters
 │   │   ├── market/              # Market data (ASX prices & profile discovery)
 │   │   │   ├── index.ts         # Provider selection — single swap point
@@ -88,6 +115,10 @@ daily-movers-dashboard/
 │   │   │   └── yahoo.ts         # Yahoo Finance chart adapter & assetProfile scraper
 │   │   ├── movers.ts            # Shared runtime types, return derivation & pagination constants
 │   │   ├── queries.ts           # Drizzle SQL query builder (server-only)
+│   │   ├── report/              # Daily Mover report document
+│   │   │   ├── render.ts        # renderReportPdf + draft storage keys (server-only)
+│   │   │   ├── template.tsx     # The react-pdf document
+│   │   │   └── types.ts         # Typed page blocks, disclaimer constant, validation
 │   │   ├── session.ts           # Web Crypto HMAC-SHA256 token manager
 │   │   ├── storage.ts           # Storage path sanitization, upload helper & limits
 │   │   ├── supabase/admin.ts    # Service-role Supabase admin client
@@ -110,6 +141,9 @@ erDiagram
     ANALYSTS ||--o{ DAILY_MOVERS : "authored by"
     COMPANIES ||--o| COMPANY_QUOTES : "latest price of"
     ADMIN_EMAILS ||--o{ APP_USERS : "authorizes"
+    MOVER_DRAFTS ||--o| DAILY_MOVERS : "published as"
+    COMPANIES ||--o{ MOVER_DRAFTS : "resolved on approval"
+    ANALYSTS ||--o{ MOVER_DRAFTS : "by-lined by"
 
     COMPANIES {
         serial id PK
@@ -124,6 +158,43 @@ erDiagram
         text slug UK
         text label
         integer sort_order
+    }
+
+    MOVER_DRAFTS {
+        serial id PK
+        draft_status status
+        date move_date
+        text trigger
+        text ticker
+        text company_name
+        text sector
+        integer company_id FK
+        numeric move_pct
+        move_type move_type
+        text move_window_label
+        text catalyst_slug
+        text reason_for_move
+        text main_takeaway
+        numeric report_price
+        integer analyst_id FK
+        jsonb screen
+        jsonb selection
+        jsonb sources
+        jsonb report
+        text draft_storage_path
+        text model
+        integer input_tokens
+        integer cache_write_tokens
+        integer cache_read_tokens
+        integer output_tokens
+        text progress
+        text error
+        integer approved_mover_id FK
+        text created_by
+        timestamptz created_at
+        text reviewed_by
+        timestamptz reviewed_at
+        text review_note
     }
 
     ANALYSTS {
@@ -251,7 +322,8 @@ Nothing here is entered by hand. The return is **derived on read** from stored p
 
 | Layer | File | Responsibility |
 | :--- | :--- | :--- |
-| Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider` (`fetchQuotes` + `fetchCloses`), `DailyClose`, `Quote`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. Split in two because current prices are wanted for every company on a schedule and batch cheaply, while closes are only needed for the few companies missing history. |
+| Provider contract | `src/lib/market/provider.ts` | `MarketDataProvider` (`fetchQuotes` + `fetchSessionMoves` + `fetchCloses`), `DailyClose`, `Quote`, `SessionMove`, `UnknownSymbolError`. Nothing above this layer sees a provider's response format. Split three ways because the work genuinely differs: current prices are wanted for every covered company on a schedule and batch cheaply; session moves are wanted for the whole ~1,200-ticker screening universe once a day and are read, ranked and discarded rather than stored; closes are only needed for the few companies missing history. |
+| Session moves | `src/lib/market/yahoo.ts` | `fetchSessionMoves` batches 50 symbols per request with 4 in flight (~25 requests for the whole universe). A chunk that fails is logged and its tickers are simply absent, so one bad batch out of twenty-five cannot cost the day's board. Turnover is derived as `price × volume` — providers report volume in shares, and a liquidity screen has to be in dollars or a 500-million-share move in a half-cent stock passes it. |
 | Yahoo adapter | `src/lib/market/yahoo.ts` | Built on the `yahoo-finance2` package, which owns the cookie/crumb handshake `quote()` requires, response validation and retries. `fetchQuotes` batches up to 40 symbols per request; tickers the quote endpoint skips (suspended listings such as `OPT.AX`) fall back to the price in a chart response's metadata. Bars are dated by shifting the bar's opening instant by the exchange's `gmtoffset` -- a no-op under AEST, but required under daylight saving, where 10:00 local is 23:00 UTC the previous day. |
 | Provider selection | `src/lib/market/index.ts` | Single-line swap point for a licensed feed. |
 | Refresh service | `src/lib/market/refresh.ts` | **Quotes**: every due company in one batched request, then a single multi-row upsert (`excluded.*`) rather than one round trip each -- the database is in Tokyo, and sequential upserts dominated the runtime. **Anchors**: only for movers whose `move_date_close` is still null (i.e. newly added ones), capped at 20 per run with 4 concurrent requests; normally there are none. Staleness is a 30 min TTL with a 6 h backoff after a failure; concurrent callers are coalesced by an in-flight promise keyed on mode. |
@@ -271,6 +343,35 @@ Refresh is pull-based with no cron: a page load asks, and the service decides wh
 *(Historical note, now moot: while the daily series existed,)* **history was considered complete once a close existed at or before the earliest move date** -- which is exactly what the anchor lookup needs -- not once it reaches the requested `move_date - 10 days`. The lead days widen the *request* so a move date after a long weekend still has a preceding close, but the first trading day Yahoo returns is usually a day or two later, so comparing against the requested date never matched: 16 companies re-fetched and re-upserted their entire history on every refresh (~700 wasted row writes each time, measured at 511 in one sweep). With the correct check a steady-state refresh writes 47 quote rows in one statement and ~0 price rows.
 
 The one remaining exception is a ticker whose history Yahoo cannot cover back to its move date at all (`OPT`, suspended since July): its anchor can never be satisfied, so it re-fetches ~23 bars per refresh. Bounding that properly needs a stored "history requested from" marker; it is left as a known, measured cost rather than hidden.
+
+---
+
+## 3.4 `mover_drafts` — Why a Separate Table
+
+`mover_drafts` is deliberately **not** a `status` column on `daily_movers`.
+
+Every row in `daily_movers` is approved research, which is precisely what makes
+"what did we say last time?" answerable. A status column would require every
+existing query — the table view, the company timeline, the summary counts, the
+ZIP export — to carry `WHERE status = 'approved'`, and a single omission would
+surface an unreviewed machine draft as Vitti's published position.
+
+Consequences of the split, each deliberate:
+
+| Decision | Reason |
+| --- | --- |
+| `ticker` is text, not a `company_id` FK | The pick happens before any company is resolved. Creating a `companies` row for a draft would leave a stub in the directory for every rejection. The FK is populated only on approval. |
+| `catalyst_slug` is text, not a `catalyst_id` FK | Same: resolved against `catalysts` at approval time. |
+| Row is inserted **before** the pipeline runs | Reading ~25 filings and generating a report takes minutes — longer than a request should be held open. The row is the state and the client polls it, so a reload rejoins the run rather than losing it, and a crash leaves a `failed` row carrying its reason. |
+| `screen`, `selection`, `sources`, `report` as `jsonb` | The audit trail. "Why did it pick this?" is unanswerable a week later without the board it chose from, and a reviewer checking a number needs the announcement it came from. Same reasoning as `daily_movers.extraction`. |
+| Input tokens split three ways | Cache writes, cache reads and uncached input bill at different rates, and this pipeline puts most of its input through the cache. Recording only `input_tokens` reported a 235k-token corpus as 3k. |
+| Partial unique index on `(move_date) WHERE trigger = 'cron'` | The scheduled run's idempotency guard: a retried or double-fired invocation hits the constraint instead of spending a second run's Claude calls. Manual drafts are excluded so an analyst can re-draft freely. |
+
+**Approval is a projection plus a storage move.** The draft's fields (as edited
+by the reviewer) are inserted into `daily_movers`, and the PDF is `move`d from
+the `drafts/` prefix into the same `<TICKER>/<date>-<slug>-<random>.pdf` scheme
+a manual upload produces. `/api/reports/[id]`, `/api/reports/download-all` and
+`scripts/download-reports.mts` therefore need no knowledge of drafts at all.
 
 ---
 
@@ -408,7 +509,7 @@ classDiagram
 ### 7.3 `POST /api/extract` Route Handler (`src/app/api/extract/route.ts`)
 1. Authenticates session caller with `requireAdmin()` (enforces admin privilege).
 2. Validates uploaded PDF file bytes ($\le 25$ MB).
-3. Invokes `extractMoverFromPdfBuffer()` using Anthropic Claude 3.5 Sonnet with tool calling (`save_daily_mover_research`).
+3. Invokes `extractMoverFromPdfBuffer()` using Claude Sonnet 4.6 with tool calling (`save_daily_mover_research`).
 4. **Auto-Entities Resolution**:
    - Queries `companies` by ticker; if not found, automatically inserts the company into `companies` and returns the newly minted entity ID.
    - Maps extracted catalyst slug with multi-strategy fuzzy matching against `catalysts` table to resolve `catalystId`.
@@ -432,6 +533,46 @@ classDiagram
    - External report URLs are fetched with timeout protection.
 4. **In-Memory ZIP Packaging**: Files are added to a `JSZip` instance named as `YYYY-MM-DD_TICKER_CompanyName.pdf` and compressed with DEFLATE level 6.
 5. **Streaming Response**: Returns binary ZIP payload with `Content-Disposition: attachment; filename="daily-movers-reports-YYYY-MM-DD.zip"`.
+
+### 7.7 `startDraftAction(_prev, formData: FormData)` (`src/actions/drafts.ts`)
+1. **Authorization Gate**: `requireAdmin()`.
+2. **Screen Criteria**: Reads `minTurnover`, `minMarketCap`, `minAbsChangePct`, `perSide` and clamps each into `SCREEN_LIMITS`, falling back to `DEFAULT_SCREEN`.
+3. **Row First**: Inserts a `mover_drafts` row with `status = 'generating'` and returns its id immediately — the pipeline takes minutes, so the row is the state the client polls.
+4. **Background Continuation**: Hands `runDraftPipeline(draftId, moveDate, criteria)` to `after()` from `next/server`, so the action responds in milliseconds while the invocation stays alive for the work. Requires `maxDuration = 800` on the page, since a Server Action inherits the page's timeout.
+
+### 7.8 `runDraftPipeline(draftId, requestedDate, criteria, options)` (`src/lib/drafts/generate.ts`)
+Advances the row in place, writing a human-readable `progress` string at each stage:
+1. **`screenBoards()`** — ASX company directory (~1,830 listings) → market-cap pre-filter at 70% of the floor → `marketData.fetchSessionMoves()` in batches of 50 → turnover computed as `price × volume` → both sides ranked.
+2. **Session Date** — derived as the exchange-local date of the newest quote timestamp, *not* the server clock. For `trigger = 'cron'` a mismatch is raised as a closed market (the public-holiday check); a manual run adopts the feed's date.
+3. **Candidate Shortlist** — one announcements lookup per screened mover (concurrency 6, interleaved across gainers and losers, capped at 40). Movers with no price-sensitive filing that session are dropped as unexplainable.
+4. **`selectMover()`** — one tool call returning `{ ticker, rationale, runnerUps, confidence }`, with the ticker constrained server-side to the candidate list.
+5. **`loadAnnouncementDocuments()`** — ~25 announcement PDFs downloaded (concurrency 4) and text-extracted with `unpdf`, capped at 90k chars each, falling back to a base64 `document` block only when extraction yields nothing. Unreadable filings are skipped, never fatal.
+6. **`writeReport()`** — one streamed tool call returning both `ReportPage[]` and the `daily_movers` columns. The corpus carries a `cache_control` breakpoint with a 1-hour TTL; volatile content (market data, rationale) is placed after it. The exchange feed overrides `movePct` if the model's figure disagrees by more than a point or flips sign.
+7. **`renderReportPdf()`** — validates document structure, then `@react-pdf/renderer` → `Buffer`, uploaded to `drafts/<TICKER>/<date>-daily-mover-<random>.pdf`.
+8. **Terminal Write** — one `UPDATE` sets `status = 'pending'`, the mover columns, the report JSON, the storage path and the four token counters.
+
+Failures are caught in one place and written as `status = 'failed'` with the message on `error`, so no run ends silently.
+
+### 7.9 `approveDraftAction(_prev, formData: FormData)`
+1. **Authorization Gate**: `requireAdmin()`.
+2. **State Guard**: Only `pending` or `rejected` drafts may be approved; an already-approved draft is refused.
+3. **Reviewer Edits Win**: `movePct`, `catalystSlug`, `moveType`, `moveWindowLabel`, `reasonForMove` and `mainTakeaway` are taken from the submitted form, not the stored draft — the model drafts, the analyst is still the author.
+4. **Entity Resolution**: Company resolved or created (identical logic to `/api/extract`), catalyst resolved by slug with a sort-order fallback.
+5. **Storage Move**: `supabase.storage.move(draftPath, buildReportPath(...))` — the archive's own key scheme, so `/api/reports/[id]`, the ZIP export and the CLI script are unchanged.
+6. **Projection**: `INSERT` into `daily_movers` with `extraction` carrying `{ source: "mover-studio", draftId, model, selection, sources, report }`.
+7. **Draft Closure**: `status = 'approved'`, `approved_mover_id` set, `draft_storage_path` cleared, reviewer and timestamp recorded.
+8. **Cache Invalidation**: `/daily-movers`, `/companies`, `/companies/[ticker]`, `/mover-studio`.
+
+### 7.10 `rejectDraftAction(_prev, formData: FormData)`
+1. `requireAdmin()`, then `status = 'rejected'` with `review_note`, `reviewed_by` and `reviewed_at`.
+2. The PDF is deliberately **left** in the `drafts/` prefix: a rejection plus its reason plus the document that was rejected is the most useful evidence there is for improving the prompt.
+
+### 7.11 `GET /api/cron/daily-mover` Route Handler
+1. **Secret Gate**: Requires `Authorization: Bearer $CRON_SECRET`. An unset `CRON_SECRET` disables the route rather than leaving it open — it can spend the Claude budget.
+2. **Timezone Gate**: `vercel.json` schedules both `30 1 * * 1-5` and `30 2 * * 1-5` UTC because Vercel cron has no timezone field and Sydney alternates between UTC+10 and UTC+11. The handler proceeds only if Sydney local time is within 40 minutes of 12:30; the other firing declines. `?force=1` skips this check alone, for re-running a missed session.
+3. **Reap**: `reapStaleGenerating()` clears `generating` rows older than 30 minutes, so a killed invocation cannot hold the day's unique index and block every later attempt.
+4. **Day Guards** (`shouldRunScheduled`): declines if not a Sydney weekday, if a `daily_movers` row already exists for the date, or if a scheduled draft for the date already exists.
+5. **Background Run**: `after(() => generateDraft({ trigger: "cron" }))`, with `maxDuration = 800`.
 
 ---
 

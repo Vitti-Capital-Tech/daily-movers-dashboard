@@ -5,6 +5,7 @@ import {
   type DailyClose,
   type MarketDataProvider,
   type Quote,
+  type SessionMove,
 } from "./provider";
 
 /**
@@ -25,6 +26,21 @@ import {
  * chunking keeps one oversized URL from failing the whole sweep.
  */
 const QUOTE_CHUNK_SIZE = 40;
+
+/**
+ * The board screen asks about ~1,200 tickers at once, so the chunk size sets
+ * how many requests that is: 50 makes it ~25. Kept at 50 rather than pushed
+ * higher because the URL carries every symbol, and an over-long one fails the
+ * whole chunk.
+ */
+const MOVES_CHUNK_SIZE = 50;
+
+/**
+ * How many move chunks are in flight at once. Sequential would make a board
+ * screen ~25 round trips deep; unbounded would open 25 at once and invite a
+ * rate limit. Four keeps the whole sweep inside a few seconds.
+ */
+const MOVES_CONCURRENCY = 4;
 
 /**
  * Some listings are missing from the quote endpoint but still have chart data --
@@ -177,6 +193,84 @@ export const yahooProvider: MarketDataProvider = {
             const ticker = attempts[next++];
             const quote = await quoteFromChart(ticker);
             if (quote) found.set(ticker, quote);
+          }
+        },
+      ),
+    );
+
+    return found;
+  },
+
+  async fetchSessionMoves(
+    tickers: string[],
+  ): Promise<Map<string, SessionMove>> {
+    const found = new Map<string, SessionMove>();
+    if (tickers.length === 0) return found;
+
+    const batches = chunk(tickers, MOVES_CHUNK_SIZE);
+    let next = 0;
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(MOVES_CONCURRENCY, batches.length) },
+        async function worker() {
+          while (next < batches.length) {
+            const batch = batches[next++];
+
+            let rows: Awaited<ReturnType<typeof yahoo.quote>>[];
+            try {
+              const result = await yahoo.quote(batch.map(symbolFor));
+              rows = Array.isArray(result) ? result : [result];
+            } catch (error) {
+              // One bad chunk out of ~25 must not cost the whole board. The
+              // tickers in it are simply absent, which the screen reads as
+              // "no data" rather than as a zero move.
+              console.warn(
+                `session moves: chunk of ${batch.length} failed`,
+                error,
+              );
+              continue;
+            }
+
+            for (const row of rows) {
+              const ticker = tickerFor(row?.symbol);
+              if (!ticker) continue;
+
+              const price = row?.regularMarketPrice;
+              const changePct = row?.regularMarketChangePercent;
+              if (
+                typeof price !== "number" ||
+                !Number.isFinite(price) ||
+                price <= 0
+              ) {
+                continue;
+              }
+              // A row echoed back without a move is not a 0% mover; it is a
+              // ticker Yahoo knows the name of and nothing else.
+              if (typeof changePct !== "number" || !Number.isFinite(changePct)) {
+                continue;
+              }
+
+              const volume =
+                typeof row.regularMarketVolume === "number" &&
+                Number.isFinite(row.regularMarketVolume)
+                  ? row.regularMarketVolume
+                  : null;
+
+              found.set(ticker, {
+                changePct,
+                price,
+                volume,
+                turnover: volume === null ? null : price * volume,
+                marketCap:
+                  typeof row.marketCap === "number" &&
+                  Number.isFinite(row.marketCap)
+                    ? row.marketCap
+                    : null,
+                currency: typeof row.currency === "string" ? row.currency : null,
+                asOf: asDate(row.regularMarketTime),
+              });
+            }
           }
         },
       ),

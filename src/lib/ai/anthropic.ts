@@ -3,6 +3,14 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { extractText } from "unpdf";
 
+import { CATALYST_SLUGS } from "@/lib/catalysts";
+
+import {
+  describeAnthropicError,
+  extractionModel,
+  getAnthropicClient,
+} from "./client";
+
 export type ExtractedMoverData = {
   ticker: string;
   companyName: string;
@@ -59,24 +67,8 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       catalystSlug: {
         type: "string",
-        enum: [
-          "earnings_result",
-          "trading_update",
-          "quarterly_update",
-          "guidance_change",
-          "contract_customer_win",
-          "capital_raise",
-          "ma_takeover",
-          "capital_management",
-          "clinical_trial_result",
-          "exploration_drilling_result",
-          "resource_reserve_update",
-          "regulatory_approval",
-          "project_milestone",
-          "management_board_change",
-          "strategic_operational_update",
-          "other",
-        ],
+        // Shared with the seed and the drafting pipeline — see lib/catalysts.ts.
+        enum: [...CATALYST_SLUGS],
         description: "The primary catalyst category driving the price movement.",
       },
       reasonForMove: {
@@ -112,21 +104,11 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
   },
 };
 
-function getAnthropicClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error(
-      "ANTHROPIC_API_KEY is missing. Please add your Anthropic API key to .env.local to enable automated PDF extraction.",
-    );
-  }
-  return new Anthropic({ apiKey: apiKey.trim() });
-}
-
 export async function extractMoverFromPdfBuffer(
   pdfBuffer: Buffer,
 ): Promise<ExtractedMoverData> {
   const anthropic = getAnthropicClient();
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+  const model = extractionModel();
 
   // Step 1: Attempt token-efficient text extraction
   let extractedPdfText = "";
@@ -223,13 +205,7 @@ Key rules:
   } catch (error) {
     if (error instanceof Anthropic.APIError) {
       console.error("Anthropic API Error:", error.status, error.message);
-      if (error.status === 401) {
-        throw new Error("Invalid ANTHROPIC_API_KEY. Please verify your API key in .env.local.");
-      }
-      if (error.status === 429) {
-        throw new Error("Anthropic API rate limit exceeded or credit balance exhausted.");
-      }
-      throw new Error(`Claude API Error: ${error.message}`);
+      throw new Error(describeAnthropicError(error));
     }
     throw error;
   }

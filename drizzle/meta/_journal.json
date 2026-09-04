@@ -36,6 +36,20 @@
       "when": 1787191194951,
       "tag": "0004_mover_anchor_close",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788510104883,
+      "tag": "0005_mover_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788512213354,
+      "tag": "0006_draft_cache_tokens",
+      "breakpoints": true
     }
   ]
 }

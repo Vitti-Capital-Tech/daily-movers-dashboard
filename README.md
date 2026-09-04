@@ -1,7 +1,8 @@
 # Daily Movers Dashboard
 
 Searchable archive of Vitti Capital Daily Mover research, so that when a company
-comes up again you can immediately see what we said last time.
+comes up again you can immediately see what we said last time — plus **Mover
+Studio**, which drafts each weekday's Daily Mover for an analyst to approve.
 
 ## Documentation
 
@@ -16,7 +17,11 @@ comes up again you can immediately see what we said last time.
 | UI | Tailwind 4 + shadcn/ui (Base UI primitives) + Lucide Icons |
 | Theming | next-themes (Light / Dark / System mode toggle) |
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
-| AI Extraction | Anthropic Claude 3.5 Sonnet (`@anthropic-ai/sdk`) |
+| AI Extraction | Claude Sonnet 4.6 — reads an uploaded report and fills the form |
+| AI Drafting | Claude Sonnet 5 — screens the board, reads ~25 filings, writes the report |
+| PDF Generation | `@react-pdf/renderer` (no Chromium) |
+| Market Data | Yahoo Finance (`yahoo-finance2`) — quotes and session moves |
+| ASX Data | ASX company directory + company announcements (see caveat below) |
 | Database | Postgres (Supabase) |
 | Auth & Permissions | Public View-Only by default + Passcode Admin Elevation (HMAC-SHA256) |
 | Data access | Drizzle ORM + postgres.js |
@@ -71,6 +76,62 @@ account password.
 | `npm run storage:setup` | Create Supabase private storage bucket |
 | `npm run reports:download` | Batch download all attached PDF reports to a local folder |
 
+## Mover Studio
+
+Each weekday at **12:30 Sydney time**, Claude drafts that day's Daily Mover and
+leaves it in a review queue at `/mover-studio` for an analyst to approve or
+reject. Approving files it in the archive exactly as a manual upload would.
+
+**The pipeline**
+
+1. **Screen the board.** Every ASX listing is quoted; the ones that moved at
+   least 5% on at least $500k of turnover and $20m of market cap are ranked into
+   top-20 gainers and top-20 losers.
+2. **Shortlist the explainable ones.** Each survivor's announcements for the day
+   are checked, and anything without a *price-sensitive* filing is dropped — a
+   move the public record doesn't explain is not a report.
+3. **Pick one.** Claude chooses from the shortlist and says why, with the
+   runners-up recorded so a reviewer can see what was passed over.
+4. **Read the filings.** The last ~25 price-sensitive announcements are
+   downloaded and extracted to text (a results pack runs to 36 pages and 2.6 MB;
+   ~235k tokens of input is normal).
+5. **Write it.** One call returns both the report's typed page blocks *and* the
+   `daily_movers` columns, so the archive row and the PDF cannot disagree.
+6. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
+   prefix, and the row goes to `pending`.
+
+About two minutes and roughly **US$1** per draft at list price.
+
+**When it doesn't run.** The scheduled job declines, without erroring, if it
+isn't a weekday in Sydney, if the market didn't trade (detected from the feed's
+own timestamps, not a hardcoded holiday table), if **an analyst has already
+published a Daily Mover for the day**, or if a scheduled draft for the day
+already exists. `?force=1` with the cron secret skips only the time-of-day check,
+for re-running a session that was missed.
+
+**Why the cron fires twice.** Vercel cron expressions are UTC only, and Sydney is
+UTC+10 for half the year and UTC+11 for the other half. Both 01:30 and 02:30 UTC
+are scheduled; the handler asks what time it actually is in Sydney and the wrong
+one declines. Nothing changes when daylight saving does.
+
+**Reviewing a draft.** The card shows Claude's rationale and confidence, the
+report rendered inline, and every announcement it read with the cited ones
+marked and linked. The archive fields — move, catalyst, reason, takeaway — are
+**editable before approval**: the model drafts, the analyst is still the author.
+
+**Admin only.** Drafts are machine-written and unreviewed, so they are not Vitti
+research until approved. The nav link is hidden from viewers, and the page and
+`/api/drafts/[id]/pdf` both re-check server-side.
+
+> ### Terms of access — read before running this in production
+>
+> The ASX serves company announcements for "investors' private and personal
+> use", and states that commercial use requires "the express written authority
+> of ASX" — with "the business of accessing or aggregating information" named
+> explicitly. Vitti Capital is a commercial user, so that authority, or a
+> licensed announcements feed, is a prerequisite. `src/lib/asx/provider.ts` is
+> the seam that makes swapping the source a one-module change.
+
 ## Auth & Access Control
 
 The dashboard implements a **Public View-Only by Default** model with **Passcode-based Admin Elevation**:
@@ -118,7 +179,10 @@ deliberately. All data access is meant to go through Drizzle server-side.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same. Public by design; safe because RLS has no policies |
 | `SUPABASE_SERVICE_ROLE_KEY` | Signs upload and download URLs. **Server-side only** — never `NEXT_PUBLIC_*` |
 | `ADMIN_PASSCODE` | The secret passcode to unlock Admin mode |
-| `ANTHROPIC_API_KEY` | API key for Claude 3.5 Sonnet PDF auto-extraction |
+| `ANTHROPIC_API_KEY` | API key for PDF auto-extraction and Mover Studio |
+| `ANTHROPIC_MODEL` | Optional. Extraction model; defaults to `claude-sonnet-4-6` |
+| `ANTHROPIC_DRAFT_MODEL` | Optional. Drafting model; defaults to `claude-sonnet-5` |
+| `CRON_SECRET` | **Required for the scheduled draft.** Without it `/api/cron/daily-mover` refuses every request |
 
 > Paste values **without** surrounding quotes. Vercel stores them verbatim, so
 > `"postgres://…"` becomes a different string and fails to parse. Env vars are
@@ -176,6 +240,9 @@ src/
       daily-movers/      table view + Server Actions (create/update/delete)
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
+      mover-studio/      AI draft review queue (admin only)
+    api/cron/daily-mover/  scheduled weekday draft, Sydney-time gated
+    api/drafts/[id]/pdf/   admin-only signed URL for an unapproved draft PDF
     api/extract/         multipart PDF research extraction route handler
     api/logo/[ticker]/   universal multi-source company logo proxy (cached)
     api/prices/refresh/  market price refresh endpoint
@@ -186,6 +253,7 @@ src/
     admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
     company-logo.tsx     high-contrast adaptive company logo with institutional monogram fallback
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload, download-reports-button
+    mover-studio/        review queue, draft review card + approve/reject, inline report preview, evidence list, screen controls
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper
     theme-toggle.tsx     Light / Dark / System theme switcher
@@ -196,7 +264,14 @@ src/
     seed.ts              catalysts, analysts, companies, sample movers
   lib/
     ai/
-      anthropic.ts       Claude 3.5 Sonnet PDF tool extraction client
+      client.ts          shared Anthropic client, model choices, token accounting
+      anthropic.ts       PDF tool extraction client (uploaded reports)
+      mover-draft.ts     the two drafting calls: pick a mover, write the report
+      announcement-text.ts  announcement PDFs -> text for the prompt
+    asx/                 provider interface, company directory, announcements, computed movers board
+    catalysts.ts         the closed catalyst vocabulary, in one place
+    drafts/              draft pipeline, queries, trading-day arithmetic
+    report/              typed report blocks + the react-pdf template
     market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
     queries.ts           server-only data access layer
@@ -233,6 +308,39 @@ over the archive later and diffed against what was actually saved.
 
 **Filtering happens in SQL.** Client-side filtering looks fine on 20 rows and
 quietly dies at a few thousand.
+
+**Drafts are a separate table, not a status column.** Every row in
+`daily_movers` is approved research — that is what makes "what did we say last
+time?" answerable. A `status` column would mean every existing query needs a
+`WHERE status = 'approved'`, and one forgotten filter would quote an unreviewed
+machine draft back as Vitti's published view.
+
+**Approving is a storage *move*, not a re-upload.** The draft PDF starts under
+`drafts/` and moves into the same key scheme a manual upload uses, so
+`/api/reports/[id]`, the ZIP export and the download script all keep working
+without knowing a report was ever drafted.
+
+**The movers board is computed, not scraped.** Reading a published leaderboard
+was built first and abandoned: Market Index's scans pages sit behind Cloudflare
+bot protection that fingerprints TLS rather than headers — the identical request
+succeeds from `curl` and returns **403 from Node**. Deriving the board from the
+ASX company directory plus the market provider's session moves turned out better
+anyway: no bot-detection surface, turnover computed exactly in dollars, and the
+screen runs over the whole universe instead of someone else's page one.
+
+**The liquidity screen runs before Claude sees anything.** On a representative
+day the raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover,
++27% on **$2,451**. No prompt fixes a shortlist made of those.
+
+**The disclaimer is never model-generated.** It carries an AFSL number and an FSG
+link, and a model asked to write a disclaimer will paraphrase one. It is a
+constant in `lib/report/types.ts` that the renderer appends, so there is no path
+by which it can vary.
+
+**Public holidays are detected, not tabulated.** A hardcoded holiday table needs
+maintaining every year and fails silently the first year nobody updates it. The
+newest quote timestamp across the market is today only if the market opened
+today — so the data answers the question itself.
 
 **`lib/queries.ts` is `server-only`.** It imports the Postgres driver, so
 anything a client component needs at runtime lives in `lib/movers.ts` instead.

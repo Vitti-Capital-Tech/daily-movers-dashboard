@@ -26,6 +26,31 @@ export type Quote = {
   asOf: Date;
 };
 
+/**
+ * One ticker's move for the current (or most recent) session.
+ *
+ * Separate from `Quote` because it answers a different question and carries the
+ * fields a mover screen needs but a price cache has no use for. `Quote` is
+ * stored per company and overwritten in place; this is read, ranked, and thrown
+ * away.
+ */
+export type SessionMove = {
+  /** Signed percentage move for the session: +20.6, -11.5. */
+  changePct: number;
+  price: number;
+  /** Shares traded this session. */
+  volume: number | null;
+  /**
+   * Dollar turnover, i.e. `price * volume`. Derived rather than reported —
+   * providers give volume in shares, and a liquidity screen has to be in
+   * dollars or a 500-million-share move in a half-cent stock passes it.
+   */
+  turnover: number | null;
+  marketCap: number | null;
+  currency: string | null;
+  asOf: Date;
+};
+
 export interface MarketDataProvider {
   /** Recorded on every row we store, so mixed-source data stays traceable. */
   readonly name: string;
@@ -40,6 +65,21 @@ export interface MarketDataProvider {
    * transport failure, where nothing was learned about any ticker.
    */
   fetchQuotes(tickers: string[]): Promise<Map<string, Quote>>;
+
+  /**
+   * Session moves for many tickers, in as few upstream calls as the provider
+   * allows.
+   *
+   * A third call rather than fields bolted onto `fetchQuotes` for the same
+   * reason the first two are separate: this one is aimed at ~1,200 tickers once
+   * a day to rank a board, while `fetchQuotes` is aimed at the ~50 companies the
+   * archive covers and writes what it finds to the price cache. Same upstream,
+   * different shape of work.
+   *
+   * Keyed by the ticker as passed in, with unrecognised tickers *absent* rather
+   * than an error — same contract as `fetchQuotes`.
+   */
+  fetchSessionMoves(tickers: string[]): Promise<Map<string, SessionMove>>;
 
   /**
    * Daily closes from `from` (YYYY-MM-DD) to today, ascending, with gaps
