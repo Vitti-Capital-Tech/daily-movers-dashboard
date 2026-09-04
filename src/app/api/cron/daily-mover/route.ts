@@ -18,11 +18,12 @@ import { exchangeClock } from "@/lib/drafts/trading-day";
  * year and UTC+11 for the other half, so a single UTC expression is an hour
  * wrong for six months at a time.
  *
- * So it is scheduled at both 01:30 and 02:30 UTC, and this handler decides
- * which of the two is the real one by asking what time it actually is in
- * Sydney. Under AEDT the 01:30 firing is 12:30 local and proceeds while 02:30
- * is 13:30 and declines; under AEST it is the other way round. Nothing has to
- * be changed when daylight saving starts or ends.
+ * So it is scheduled at both 01:30 and 02:30 UTC, and this handler checks that
+ * the firing lands in the middle of the Sydney session before doing anything.
+ * Under AEST those firings are 11:30 and 12:30 local; under AEDT, 12:30 and
+ * 13:30. Both pass the window, and the first one to arrive does the work — the
+ * second is a no-op against the day's unique index. Nothing has to be changed
+ * when daylight saving starts or ends.
  *
  * ## Why lunchtime
  *
@@ -46,16 +47,35 @@ function isAuthorisedCron(request: NextRequest): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-/** Target local time, and how far from it a firing may be and still count. */
-const TARGET_LOCAL_MINUTES = 12 * 60 + 30;
-const WINDOW_MINUTES = 40;
+/**
+ * The local-time window a firing must fall inside to count.
+ *
+ * Wide on purpose. The obvious design — accept only within 40 minutes of 12:30,
+ * so exactly one of the two UTC firings acts — breaks on Vercel's Hobby plan,
+ * where cron scheduling precision is **±59 minutes**: a job set for 01:30 UTC
+ * can land anywhere in the 01:00 hour, which can fall outside a narrow window
+ * and skip the day entirely.
+ *
+ * So the window spans the middle of the session instead, and *both* firings are
+ * allowed to pass it. Only one draft is still produced, because the partial
+ * unique index on `(move_date) WHERE trigger = 'cron'` makes the second firing a
+ * no-op — the dedupe was always in the database, and the narrow window was only
+ * ever belt-and-braces. Whichever firing arrives first does the work: 11:30
+ * Sydney under AEST, 12:30 under AEDT, both well into the session.
+ */
+const WINDOW_START_MINUTES = 11 * 60;
+const WINDOW_END_MINUTES = 15 * 60;
 
 /**
- * The pipeline can run for several minutes: ~25 announcement PDFs to download
- * and read, then a long-form generation call. The platform default would cut it
- * off partway and leave a `failed` row for no reason but the clock.
+ * 300 seconds, which is both the Hobby plan's ceiling and every plan's default
+ * — so this deploys anywhere. Anything above 300 fails the *build* on Hobby
+ * rather than failing at runtime, which is how it should be found.
+ *
+ * It is also comfortably enough: a measured end-to-end run (screen ~1,200
+ * tickers, shortlist, select, download and read 25 announcement PDFs, generate,
+ * render, upload) takes about 120 seconds.
  */
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   if (!isAuthorisedCron(request)) {
@@ -78,13 +98,19 @@ export async function GET(request: NextRequest) {
    */
   const forced = request.nextUrl.searchParams.get("force") === "1";
 
-  const offBy = Math.abs(clock.minutes - TARGET_LOCAL_MINUTES);
-  if (!forced && offBy > WINDOW_MINUTES) {
-    // The other of the two daily firings. Expected, not an error.
+  const localTime =
+    `${String(Math.floor(clock.minutes / 60)).padStart(2, "0")}:` +
+    `${String(clock.minutes % 60).padStart(2, "0")}`;
+
+  const inWindow =
+    clock.minutes >= WINDOW_START_MINUTES && clock.minutes <= WINDOW_END_MINUTES;
+
+  if (!forced && !inWindow) {
+    // Fired outside the session's middle — nothing to do, and not an error.
     return Response.json({
       ok: true,
       ran: false,
-      skipped: `not the Sydney firing (local time is ${String(Math.floor(clock.minutes / 60)).padStart(2, "0")}:${String(clock.minutes % 60).padStart(2, "0")}, target 12:30)`,
+      skipped: `outside the drafting window (Sydney local time is ${localTime}, window 11:00-15:00)`,
     });
   }
 

@@ -38,8 +38,11 @@ export const dynamic = "force-dynamic";
  * drafting pipeline. The work itself is handed to `after` so the action returns
  * in milliseconds — but the continuation runs on the same invocation's clock, so
  * the ceiling has to be the pipeline's, not a page render's.
+ *
+ * 300 is the Hobby plan's ceiling and every plan's default; a higher value fails
+ * the build there rather than at runtime. A measured run takes about 120s.
  */
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -143,8 +146,9 @@ export default async function MoverStudioPage({
                 No drafts yet
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                One is drafted automatically each weekday at 12:30 Sydney time,
-                unless a Daily Mover for the day is already in the archive.
+                One is drafted automatically each weekday around midday Sydney
+                time, unless a Daily Mover for the day is already in the
+                archive.
               </p>
             </CardContent>
           </Card>

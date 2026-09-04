@@ -291,7 +291,7 @@ graph LR
 4. **AI-Powered PDF Extraction**:
    - Claude Sonnet 4.6 multimodal extraction pre-populating company, ticker, catalyst, analyst, and percentage move in the Add Mover dialog.
 5. **Mover Studio — Autonomous Daily Mover Drafting (`/mover-studio`, admin only)**:
-   - Scheduled each weekday at 12:30 Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change).
+   - Scheduled each weekday around midday Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change; `maxDuration` is 300s, the Hobby ceiling, since a measured run takes ~120s).
    - Computes both sides of the ASX movers board from the exchange's company directory plus the market provider's session moves, applies a dollar-turnover and market-cap liquidity screen, and drops any mover with no price-sensitive filing that session.
    - Claude Sonnet 5 selects the subject with a recorded rationale, confidence score and runners-up, reads the company's last ~25 price-sensitive announcements, and emits both the report's typed page blocks and the `daily_movers` columns in one structured call.
    - Renders the report to PDF with `@react-pdf/renderer` into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.

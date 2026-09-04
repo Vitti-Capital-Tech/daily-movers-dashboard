@@ -78,8 +78,8 @@ account password.
 
 ## Mover Studio
 
-Each weekday at **12:30 Sydney time**, Claude drafts that day's Daily Mover and
-leaves it in a review queue at `/mover-studio` for an analyst to approve or
+Each weekday **around midday Sydney time**, Claude drafts that day's Daily Mover
+and leaves it in a review queue at `/mover-studio` for an analyst to approve or
 reject. Approving files it in the archive exactly as a manual upload would.
 
 **The pipeline**
@@ -111,8 +111,15 @@ for re-running a session that was missed.
 
 **Why the cron fires twice.** Vercel cron expressions are UTC only, and Sydney is
 UTC+10 for half the year and UTC+11 for the other half. Both 01:30 and 02:30 UTC
-are scheduled; the handler asks what time it actually is in Sydney and the wrong
-one declines. Nothing changes when daylight saving does.
+are scheduled, and the handler only acts if the firing lands between 11:00 and
+15:00 Sydney time. Both firings pass that window, and the first to arrive does
+the work — the second is a no-op against the day's unique index. The window is
+wide rather than tight because Hobby-plan cron precision is ±59 minutes, which a
+narrow window can miss entirely. Nothing changes when daylight saving does.
+
+**`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
+higher value fails the *build* on Hobby rather than failing at runtime. A
+measured run takes about 120 seconds, so 300 is ample.
 
 **Reviewing a draft.** The card shows Claude's rationale and confidence, the
 report rendered inline, and every announcement it read with the cited ones

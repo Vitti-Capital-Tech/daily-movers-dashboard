@@ -569,10 +569,10 @@ Failures are caught in one place and written as `status = 'failed'` with the mes
 
 ### 7.11 `GET /api/cron/daily-mover` Route Handler
 1. **Secret Gate**: Requires `Authorization: Bearer $CRON_SECRET`. An unset `CRON_SECRET` disables the route rather than leaving it open — it can spend the Claude budget.
-2. **Timezone Gate**: `vercel.json` schedules both `30 1 * * 1-5` and `30 2 * * 1-5` UTC because Vercel cron has no timezone field and Sydney alternates between UTC+10 and UTC+11. The handler proceeds only if Sydney local time is within 40 minutes of 12:30; the other firing declines. `?force=1` skips this check alone, for re-running a missed session.
+2. **Timezone Gate**: `vercel.json` schedules both `30 1 * * 1-5` and `30 2 * * 1-5` UTC because Vercel cron has no timezone field and Sydney alternates between UTC+10 and UTC+11. The handler proceeds only if Sydney local time falls between 11:00 and 15:00. Both firings pass that window by design: the dedupe lives in the partial unique index, not the clock, so the first firing does the work and the second is a no-op. The window is deliberately wide because Hobby-plan cron precision is ±59 minutes — a ±40-minute window around 12:30 can be missed entirely. `?force=1` skips this check alone, for re-running a missed session.
 3. **Reap**: `reapStaleGenerating()` clears `generating` rows older than 30 minutes, so a killed invocation cannot hold the day's unique index and block every later attempt.
 4. **Day Guards** (`shouldRunScheduled`): declines if not a Sydney weekday, if a `daily_movers` row already exists for the date, or if a scheduled draft for the date already exists.
-5. **Background Run**: `after(() => generateDraft({ trigger: "cron" }))`, with `maxDuration = 800`.
+5. **Background Run**: `after(() => generateDraft({ trigger: "cron" }))`, with `maxDuration = 300` — the Hobby plan's ceiling and every plan's default, so it deploys on any plan. Anything above 300 fails the build on Hobby. A measured run is ~120s.
 
 ---
 
