@@ -8,6 +8,7 @@ import {
   Eye,
   KeyRound,
   Sparkles,
+  Megaphone,
 } from "lucide-react";
 
 import { NavLink } from "@/components/nav-link";
@@ -78,6 +79,19 @@ export function AppShell({
                 Mover Studio
               </NavLink>
             )}
+            {/*
+              Also admin only, and for a sharper reason than Mover Studio's:
+              these drafts assert the firm's past performance, which is
+              regulated marketing until compliance has seen it.
+            */}
+            {user.canWrite && (
+              <NavLink
+                href="/post-studio"
+                icon={<Megaphone className="size-4" />}
+              >
+                Post Studio
+              </NavLink>
+            )}
           </nav>
         </div>
 
@@ -135,6 +149,11 @@ export function AppShell({
             {user.canWrite && (
               <NavLink href="/mover-studio" compact>
                 Studio
+              </NavLink>
+            )}
+            {user.canWrite && (
+              <NavLink href="/post-studio" compact>
+                Posts
               </NavLink>
             )}
           </nav>

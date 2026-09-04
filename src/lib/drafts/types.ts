@@ -131,18 +131,22 @@ export function draftSide(movePct: number | null): MoverSide | null {
 /**
  * Rough US-dollar cost of a draft, for the review card's footer.
  *
- * Claude Sonnet 5 list pricing — $3/MTok in, $15/MTok out — with the standard
- * cache multipliers: a write costs 1.25x the input rate, a read a tenth of it.
+ * Claude Sonnet 5 list pricing: $3/MTok input, $15/MTok output, cache reads at
+ * 0.1x the input rate.
  *
- * The split matters here rather than being a detail. Most of a draft's input is
- * the announcement corpus, which goes through the cache, so pricing it all at
- * the full input rate would overstate a re-draft several times over. A draft on
- * a model other than the default will be priced wrongly by this function, which
- * is why every place it is shown labels it an estimate.
+ * The cache **write** multiplier depends on the TTL, and getting it wrong is
+ * how this function came to understate a draft by half. A 5-minute-TTL write
+ * bills at 1.25x; a one-hour-TTL write bills at **2x**. The pipeline used the
+ * one-hour TTL while this estimate assumed 1.25x, reporting ~$0.97 for drafts
+ * that actually cost ~$1.50. The breakpoint has since been removed (see the
+ * note in `lib/ai/mover-draft.ts`), so `cacheWriteTokens` should now be zero on
+ * new drafts -- but the higher multiplier is kept here so historical rows, and
+ * any future caching, are priced honestly rather than flatteringly.
  */
 const RATE_PER_MTOK = {
   input: 3,
-  cacheWrite: 3 * 1.25,
+  /** One-hour TTL write. The conservative assumption of the two. */
+  cacheWrite: 3 * 2,
   cacheRead: 3 * 0.1,
   output: 15,
 } as const;

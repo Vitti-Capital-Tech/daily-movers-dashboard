@@ -31,6 +31,30 @@ export const userRoleEnum = pgEnum("user_role", ["admin", "viewer"]);
  * row is inserted first and advanced in place, so a reload during generation
  * shows progress rather than losing the run.
  */
+/**
+ * Whether the price action since a mover was published actually bears out what
+ * the note said.
+ *
+ * Deliberately not derivable from the sign of the return. A mover that fell 14%
+ * and has since risen 27% is a *validated* call if the note argued the
+ * disruption was temporary, and a *contradicted* one if it argued the outlook
+ * had deteriorated. Only the takeaway's own words settle it — which is why this
+ * is a judgement recorded per post, not a computed column.
+ */
+export const postVerdictEnum = pgEnum("post_verdict", [
+  "validated",
+  "mixed",
+  "contradicted",
+  "too_early",
+]);
+
+/** Lifecycle of a generated LinkedIn post. */
+export const postStatusEnum = pgEnum("post_status", [
+  "draft",
+  "posted",
+  "discarded",
+]);
+
 export const draftStatusEnum = pgEnum("draft_status", [
   "generating",
   "pending",
@@ -393,6 +417,72 @@ export const moverDrafts = pgTable(
   ],
 ).enableRLS();
 
+/**
+ * A LinkedIn post drafted from one published Daily Mover's outcome.
+ *
+ * One row per generation, keyed to the mover it is about. Kept rather than
+ * generated on demand for three reasons, in increasing importance:
+ *
+ * 1. Regenerating costs a Claude call for an answer that has not changed.
+ * 2. `status` is how the desk avoids posting about the same call twice.
+ * 3. **The numbers in the post text are a snapshot.** A post reading "since our
+ *    note, up 18.4%" is only true as at the moment it was written; the live
+ *    quote moves every day. `snapshot` stores the prices the text was computed
+ *    from, so the copy and its figures can never silently drift apart — and the
+ *    UI can warn when the live return has moved away from what the draft claims.
+ */
+export const linkedinPosts = pgTable(
+  "linkedin_posts",
+  {
+    id: serial("id").primaryKey(),
+
+    moverId: integer("mover_id")
+      .notNull()
+      .references(() => dailyMovers.id, { onDelete: "cascade" }),
+
+    status: postStatusEnum("status").notNull().default("draft"),
+
+    /** Whether the note's view was borne out. Posts exist only for `validated`. */
+    verdict: postVerdictEnum("verdict").notNull(),
+    /** Why, in the model's words -- shown to the reviewer before they post. */
+    verdictReason: text("verdict_reason"),
+    /**
+     * The clause from the mover's own takeaway that the price action bears out.
+     * The audit trail for the claim: a reviewer can check the post against what
+     * the note actually said, rather than against what it might have said.
+     */
+    evidenceQuote: text("evidence_quote"),
+
+    /** The drafted variants: `{ angle, text }[]`. Empty unless validated. */
+    posts: jsonb("posts"),
+
+    /**
+     * Prices and the return as at generation time. See the note above: without
+     * this, the figures in the post text have no fixed meaning.
+     */
+    snapshot: jsonb("snapshot"),
+
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    outputTokens: integer("output_tokens"),
+
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Set when someone marks a variant as actually published. */
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // The studio's list: newest first, often filtered to `draft`.
+    index("linkedin_posts_status_created_idx").on(t.status, t.createdAt.desc()),
+    // "Has this mover been written about?" -- asked for every row in the table.
+    index("linkedin_posts_mover_idx").on(t.moverId),
+  ],
+).enableRLS();
+
 export const companiesRelations = relations(companies, ({ many, one }) => ({
   dailyMovers: many(dailyMovers),
   quote: one(companyQuotes, {
@@ -431,6 +521,13 @@ export const dailyMoversRelations = relations(dailyMovers, ({ one }) => ({
   }),
 }));
 
+export const linkedinPostsRelations = relations(linkedinPosts, ({ one }) => ({
+  mover: one(dailyMovers, {
+    fields: [linkedinPosts.moverId],
+    references: [dailyMovers.id],
+  }),
+}));
+
 export const moverDraftsRelations = relations(moverDrafts, ({ one }) => ({
   company: one(companies, {
     fields: [moverDrafts.companyId],
@@ -455,5 +552,9 @@ export type MoveType = (typeof moveTypeEnum.enumValues)[number];
 export type MoverDraft = typeof moverDrafts.$inferSelect;
 export type NewMoverDraft = typeof moverDrafts.$inferInsert;
 export type DraftStatus = (typeof draftStatusEnum.enumValues)[number];
+export type LinkedinPost = typeof linkedinPosts.$inferSelect;
+export type NewLinkedinPost = typeof linkedinPosts.$inferInsert;
+export type PostVerdict = (typeof postVerdictEnum.enumValues)[number];
+export type PostStatus = (typeof postStatusEnum.enumValues)[number];
 export type AppUser = typeof appUsers.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];

@@ -4,6 +4,7 @@ import { extractText } from "unpdf";
 
 import { asxData } from "@/lib/asx";
 import { AnnouncementUnavailableError, type Announcement } from "@/lib/asx";
+import { CHAR_BUDGET, classifyAnnouncement } from "@/lib/asx/filings";
 
 /**
  * Announcement PDFs, turned into text the model can read.
@@ -24,17 +25,17 @@ export type AnnouncementDocument = {
   text: string;
   /** Set when text extraction produced nothing usable and bytes are needed. */
   pdfBase64: string | null;
-  /** True when the text was cut at `MAX_CHARS_PER_DOCUMENT`. */
+  /**
+   * True when the text was cut at this filing's character budget.
+   *
+   * The budget depends on what kind of filing it is — an 89-page takeover deed
+   * is read for its terms and not its schedules, while a results pack is read
+   * in full. See `CHAR_BUDGET` in `lib/asx/filings.ts` for the measurement
+   * behind those numbers. A head-truncation loses appendices and signature
+   * blocks rather than the result.
+   */
   truncated: boolean;
 };
-
-/**
- * A 300-page annual report is one announcement but a hundred thousand tokens.
- * The cap keeps one outlier filing from crowding out the other twenty-four —
- * and the front of a filing is where the substance is, so a head-truncation
- * loses appendices and signature blocks rather than the result.
- */
-const MAX_CHARS_PER_DOCUMENT = 90_000;
 
 /**
  * Above this, the PDF is not worth fetching as bytes for the visual fallback:
@@ -93,11 +94,17 @@ async function loadOne(
   }
 
   const usable = text.length >= MIN_USEFUL_TEXT_CHARS;
-  const truncated = usable && text.length > MAX_CHARS_PER_DOCUMENT;
+  /**
+   * How much of this document is worth sending, by class. A supplementary
+   * bidder's statement keeps its terms and loses its schedules; a resource
+   * estimate keeps everything.
+   */
+  const budget = CHAR_BUDGET[classifyAnnouncement(announcement).filingClass];
+  const truncated = usable && text.length > budget;
 
   return {
     announcement,
-    text: usable ? text.slice(0, MAX_CHARS_PER_DOCUMENT) : "",
+    text: usable ? text.slice(0, budget) : "",
     pdfBase64:
       !usable && bytes.length <= MAX_VISUAL_FALLBACK_BYTES
         ? Buffer.from(bytes).toString("base64")

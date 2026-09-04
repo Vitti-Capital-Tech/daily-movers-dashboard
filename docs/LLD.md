@@ -18,6 +18,7 @@ daily-movers-dashboard/
 │   ├── 0004_mover_anchor_close.sql # move_date_close; drops company_prices
 │   ├── 0005_mover_drafts.sql    # mover_drafts table + draft_status enum
 │   ├── 0006_draft_cache_tokens.sql # cache_write_tokens, cache_read_tokens
+│   ├── 0007_linkedin_posts.sql  # linkedin_posts + post_verdict/post_status enums
 │   └── auth-setup.sql           # RLS, app_users table, admin_emails seed
 ├── scripts/                     # Operational automation scripts
 │   ├── apply-sql.mts            # Idempotent statement-by-statement SQL runner
@@ -27,6 +28,7 @@ daily-movers-dashboard/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
 │   │   ├── admin-auth.ts        # unlockAdmin, lockAdmin
 │   │   ├── drafts.ts            # startDraft, approveDraft, rejectDraft, reapDrafts
+│   │   ├── posts.ts             # generatePost, setPostStatus
 │   │   ├── extract.ts           # extractReportAction (Claude PDF AI extraction)
 │   │   ├── movers.ts            # saveMover, deleteMover
 │   │   └── reports.ts           # createReportUploadUrl (signed upload tickets)
@@ -38,6 +40,8 @@ daily-movers-dashboard/
 │   │   │   ├── daily-movers/    # Main Daily Movers table & filters
 │   │   │   │   └── page.tsx
 │   │   │   ├── mover-studio/    # AI draft review queue (admin only)
+│   │   │   │   └── page.tsx
+│   │   │   ├── post-studio/     # Track record + LinkedIn copy (admin only)
 │   │   │   │   └── page.tsx
 │   │   │   └── layout.tsx       # Auth protection barrier & shell wrapper
 │   │   ├── api/                 # API route handlers
@@ -60,6 +64,7 @@ daily-movers-dashboard/
 │   │   └── page.tsx             # Root redirect to /daily-movers
 │   ├── components/              # UI Component Library
 │   │   ├── mover-studio/        # Draft queue, review card, inline report preview, evidence list
+│   │   ├── post-studio/         # Track-record table, assessment panel, variants with copy button
 │   │   ├── daily-movers/        # Domain-specific components
 │   │   │   ├── company-combobox.tsx
 │   │   │   ├── download-reports-button.tsx # Admin-gated batch ZIP download trigger
@@ -89,6 +94,7 @@ daily-movers-dashboard/
 │   │   │   ├── announcement-text.ts # Announcement PDFs -> prompt text (unpdf, visual fallback)
 │   │   │   ├── anthropic.ts     # Extraction client (uploaded reports)
 │   │   │   ├── client.ts        # Shared Anthropic client, model choices, token accounting
+│   │   │   ├── linkedin-post.ts # Judges whether a call was borne out, then drafts the copy
 │   │   │   └── mover-draft.ts   # The two drafting calls: select a mover, write the report
 │   │   ├── asx/                 # ASX listing universe, announcements & computed movers board
 │   │   │   ├── announcements.ts # Legacy statistics servlet parser + PDF access gate
@@ -114,6 +120,9 @@ daily-movers-dashboard/
 │   │   │   ├── refresh.ts       # Staleness rules, backfill & upserts (server-only)
 │   │   │   └── yahoo.ts         # Yahoo Finance chart adapter & assetProfile scraper
 │   │   ├── movers.ts            # Shared runtime types, return derivation & pagination constants
+│   │   ├── posts/               # Track record & LinkedIn post copy
+│   │   │   ├── queries.ts       # Track-record reads and post reads (server-only)
+│   │   │   └── types.ts         # Client-safe shapes, compliance footer, drift check
 │   │   ├── queries.ts           # Drizzle SQL query builder (server-only)
 │   │   ├── report/              # Daily Mover report document
 │   │   │   ├── render.ts        # renderReportPdf + draft storage keys (server-only)
@@ -142,6 +151,7 @@ erDiagram
     COMPANIES ||--o| COMPANY_QUOTES : "latest price of"
     ADMIN_EMAILS ||--o{ APP_USERS : "authorizes"
     MOVER_DRAFTS ||--o| DAILY_MOVERS : "published as"
+    DAILY_MOVERS ||--o{ LINKEDIN_POSTS : "written about in"
     COMPANIES ||--o{ MOVER_DRAFTS : "resolved on approval"
     ANALYSTS ||--o{ MOVER_DRAFTS : "by-lined by"
 
@@ -158,6 +168,25 @@ erDiagram
         text slug UK
         text label
         integer sort_order
+    }
+
+    LINKEDIN_POSTS {
+        serial id PK
+        integer mover_id FK
+        post_status status
+        post_verdict verdict
+        text verdict_reason
+        text evidence_quote
+        jsonb posts
+        jsonb snapshot
+        text model
+        integer input_tokens
+        integer cache_write_tokens
+        integer cache_read_tokens
+        integer output_tokens
+        text created_by
+        timestamptz created_at
+        timestamptz posted_at
     }
 
     MOVER_DRAFTS {
@@ -375,6 +404,39 @@ a manual upload produces. `/api/reports/[id]`, `/api/reports/download-all` and
 
 ---
 
+## 3.5 `linkedin_posts` - Why `verdict` Is Stored, Not Computed
+
+Whether a published call "worked" cannot be derived from the data. The archive
+makes this concrete: 25 of 56 movers continued in the direction they moved on
+the day and 31 reversed, and the reversals include some of the most clearly
+correct calls - a stock that fell 14% on an equipment failure and has since
+risen 27% vindicates a note arguing the failure was manageable, and refutes one
+arguing the outlook had worsened. The same numbers support opposite conclusions
+depending on what the takeaway said.
+
+So `verdict` is a recorded judgement (`validated` / `mixed` / `contradicted` /
+`too_early`) made by reading `daily_movers.main_takeaway`, and `evidence_quote`
+holds the verbatim clause it rests on. That quote is the audit trail: it lets a
+reviewer check the post's claim against what was actually written rather than
+against what it plausibly might have said.
+
+| Column | Reason |
+| :--- | :--- |
+| `snapshot` (jsonb) | The prices and return the copy was computed from. A post reading "+27.1% since our note" is true only as at the instant it was written; the live quote moves daily. Without the snapshot, the copy and the table are both correct about different moments and nothing can tell you the copy has gone stale. `returnDrift()` compares the two and the panel warns past three percentage points. |
+| `posts` (jsonb) | The drafted variants. Empty for any verdict other than `validated` - enforced in `lib/ai/linkedin-post.ts` by filtering the variants on the verdict, not merely requested in the prompt, because a polished post attached to a `contradicted` verdict must never reach a reviewer. |
+| `status` | `draft` / `posted` / `discarded`. `posted` is what stops the desk publishing about the same call twice; the track-record query reads the newest post back against each mover. |
+| One row per generation, `mover_id` FK | Re-assessing later (the price has moved on) is a new row, not an overwrite, so the history of what was claimed and when survives. The track-record join takes only the newest per mover, or a thrice-regenerated mover would multiply into three table rows. |
+
+**The compliance footer is not in this table.** It is a constant in
+`lib/posts/types.ts`, appended by `fullPostText()` at copy time - so the Copy
+button always puts the footer on the clipboard along with the body. A post
+stating a return is a past-performance representation published by a Corporate
+Authorised Representative under an AFSL; the required wording is not something a
+language model should paraphrase, and keeping it out of the schema means there is
+no path by which it varies per row. Same reasoning as the PDF disclaimer.
+
+---
+
 ## 4. Report PDF Storage & Delivery Architecture
 
 ```mermaid
@@ -546,8 +608,8 @@ Advances the row in place, writing a human-readable `progress` string at each st
 2. **Session Date** — derived as the exchange-local date of the newest quote timestamp, *not* the server clock. For `trigger = 'cron'` a mismatch is raised as a closed market (the public-holiday check); a manual run adopts the feed's date.
 3. **Candidate Shortlist** — one announcements lookup per screened mover (concurrency 6, interleaved across gainers and losers, capped at 40). Movers with no price-sensitive filing that session are dropped as unexplainable.
 4. **`selectMover()`** — one tool call returning `{ ticker, rationale, runnerUps, confidence }`, with the ticker constrained server-side to the candidate list.
-5. **`loadAnnouncementDocuments()`** — ~25 announcement PDFs downloaded (concurrency 4) and text-extracted with `unpdf`, capped at 90k chars each, falling back to a base64 `document` block only when extraction yields nothing. Unreadable filings are skipped, never fatal.
-6. **`writeReport()`** — one streamed tool call returning both `ReportPage[]` and the `daily_movers` columns. The corpus carries a `cache_control` breakpoint with a 1-hour TTL; volatile content (market data, rationale) is placed after it. The exchange feed overrides `movePct` if the model's figure disagrees by more than a point or flips sign.
+5. **`prioritiseAnnouncements()` then `loadAnnouncementDocuments()`** — the company's price-sensitive history is first reduced to 15 filings by collapsing each sequential series (offer-period extensions, Panel receipt notices, buy-back notifications) to its latest member; the survivors are downloaded (concurrency 4) and text-extracted with `unpdf` against a **per-class** character budget — 90k for a substantive filing, 14k for a legal instrument whose annexures carry nothing. Unreadable filings are skipped, never fatal. Superseded filings are recorded in `sources.skipped` so the audit trail says what was *not* read. Measured effect: 236k tokens to 114k, and citations from 12-of-26 documents to 15-of-16.
+6. **`writeReport()`** — one streamed tool call returning both `ReportPage[]` and the `daily_movers` columns. **No prompt-cache breakpoint**: a one-hour-TTL cache write bills at 2x the input rate and needs three reads against the same prefix to break even, and this pipeline drafts a different company every day, so `cache_read_input_tokens` was 0 on every measured run — the breakpoint doubled the corpus cost for nothing. The exchange feed overrides `movePct` if the model's figure disagrees by more than a point or flips sign.
 7. **`renderReportPdf()`** — validates document structure, then `@react-pdf/renderer` → `Buffer`, uploaded to `drafts/<TICKER>/<date>-daily-mover-<random>.pdf`.
 8. **Terminal Write** — one `UPDATE` sets `status = 'pending'`, the mover columns, the report JSON, the storage path and the four token counters.
 
@@ -573,6 +635,18 @@ Failures are caught in one place and written as `status = 'failed'` with the mes
 3. **Reap**: `reapStaleGenerating()` clears `generating` rows older than 30 minutes, so a killed invocation cannot hold the day's unique index and block every later attempt.
 4. **Day Guards** (`shouldRunScheduled`): declines if not a Sydney weekday, if a `daily_movers` row already exists for the date, or if a scheduled draft for the date already exists.
 5. **Background Run**: `after(() => generateDraft({ trigger: "cron" }))`, with `maxDuration = 300` — the Hobby plan's ceiling and every plan's default, so it deploys on any plan. Anything above 300 fails the build on Hobby. A measured run is ~120s.
+
+### 7.12 `generatePostAction(_prev, formData: FormData)` (`src/actions/posts.ts`)
+1. **Authorization Gate**: `requireAdmin()`.
+2. **Performance Guard**: Loads the mover with its anchor and current price via `getMoverForPost()`. A mover with no publication price or no live quote is refused with a message pointing at the price refresh, rather than generating copy around a null.
+3. **Snapshot**: Freezes `{ anchorPrice, currentPrice, postEventReturn, priceAsOf, daysSince }` before the call, so the figures the model is given are exactly the figures stored beside its output.
+4. **Assess then draft**: One `assessAndDraftPost()` call returns the verdict, the reason, the verbatim clause from the takeaway, and the variants. Variants are filtered against the verdict in the AI module, so only a `validated` call can produce copy.
+5. **Persist**: One row in `linkedin_posts` with the judgement, the variants, the snapshot and the four token counters.
+6. Runs **inline**, not via `after()` - unlike the drafting pipeline this is one small prompt taking seconds, so there is no progress worth polling and no state worth surviving a reload.
+
+### 7.13 `setPostStatusAction(_prev, formData: FormData)`
+1. `requireAdmin()`, then sets `status` to `draft` / `posted` / `discarded`.
+2. `posted_at` is stamped on `posted` and **cleared** otherwise, so the timestamp can never outlive the claim that the post was published.
 
 ---
 

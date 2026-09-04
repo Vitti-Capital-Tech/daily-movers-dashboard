@@ -2,7 +2,8 @@
 
 Searchable archive of Vitti Capital Daily Mover research, so that when a company
 comes up again you can immediately see what we said last time — plus **Mover
-Studio**, which drafts each weekday's Daily Mover for an analyst to approve.
+Studio**, which drafts each weekday's Daily Mover for an analyst to approve, and
+**Post Studio**, which turns the archive's own track record into LinkedIn copy.
 
 ## Documentation
 
@@ -19,6 +20,7 @@ Studio**, which drafts each weekday's Daily Mover for an analyst to approve.
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
 | AI Extraction | Claude Sonnet 4.6 — reads an uploaded report and fills the form |
 | AI Drafting | Claude Sonnet 5 — screens the board, reads ~25 filings, writes the report |
+| AI Post Copy | Claude Sonnet 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
 | PDF Generation | `@react-pdf/renderer` (no Chromium) |
 | Market Data | Yahoo Finance (`yahoo-finance2`) — quotes and session moves |
 | ASX Data | ASX company directory + company announcements (see caveat below) |
@@ -100,7 +102,35 @@ reject. Approving files it in the archive exactly as a manual upload would.
 6. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
    prefix, and the row goes to `pending`.
 
-About two minutes and roughly **US$1** per draft at list price.
+About a minute and roughly **US$0.40** per draft at list price (~$9/month over
+22 trading days).
+
+**How it got there.** The first working version cost $1.50. Three measured
+changes took 73% out of it without shortening the report:
+
+| Change | Corpus cost |
+| --- | --- |
+| First version: 25 filings, flat 90k cap, 1-hour prompt cache | $1.42 |
+| **Cache breakpoint removed** — a 1h cache *write* bills at 2x input and needs three reads to break even; this pipeline reads a different company every day, so it never got one | $0.71 |
+| **Sequential filings collapsed, legal instruments capped** — 16 of one company's 25 price-sensitive filings were takeover procedure: six offer-period extensions, five Panel receipt notices, an 89-page implementation deed | $0.60 |
+| **Reading target 25 → 15** | $0.33 |
+
+The quality signal is in what got cited: the 25-filing version drew facts from
+12 of 26 documents, the 15-filing version from **15 of 16**. Fewer filings, read
+more completely — and the page structure of the output is unchanged.
+
+Nothing is dropped for *looking* procedural. In the same corpus "TOV: ZNC —
+Declaration of Unacceptable Circumstances" reads like paperwork and was
+material — the published takeaway turned on it. So a sequential series collapses
+to its latest member and long legal instruments lose their annexures, but no
+class of filing is excluded outright. See `src/lib/asx/filings.ts`.
+
+**Remaining levers, not taken.** A two-stage read (Claude Haiku 4.5 summarises
+each filing, Sonnet 5 writes from the briefs) would cut roughly another half but
+loses the specific numbers the reports are built on. The Batch API is 50% off
+but asynchronous, which would mean moving the cron earlier and giving up the
+same-session timing guarantee. Both are available if the bill ever matters more
+than it does at $9/month.
 
 **When it doesn't run.** The scheduled job declines, without erroring, if it
 isn't a weekday in Sydney, if the market didn't trade (detected from the feed's
@@ -138,6 +168,50 @@ research until approved. The nav link is hidden from viewers, and the page and
 > explicitly. Vitti Capital is a commercial user, so that authority, or a
 > licensed announcements feed, is a prerequisite. `src/lib/asx/provider.ts` is
 > the seam that makes swapping the source a one-module change.
+
+## Post Studio
+
+`/post-studio` (admin only) puts every published Daily Mover against today's
+price, and drafts LinkedIn copy about the ones whose view was borne out.
+
+**The judgement is the feature.** The obvious build ranks the archive by
+post-event return and claims credit for the top of the list. On this archive
+that is wrong in both directions — only 25 of 56 movers continued in the
+direction they moved on the day, and among the 31 that reversed are calls the
+note got exactly right. So Claude reads the note's own takeaway and decides
+whether the price action bears out *what was argued*, returning one of
+`validated` / `mixed` / `contradicted` / `too_early`, plus the verbatim clause it
+is relying on. Copy is generated only for `validated`, and that is enforced in
+code rather than only asked for in the prompt.
+
+Measured on three real movers:
+
+| Mover | The call | Since | Naive logic | Actual verdict |
+| --- | --- | --- | --- | --- |
+| AVH | up 17.2% | **+101.3%** | biggest win in the archive | **mixed**, no copy — the takeaway's central claim was that the balance sheet risk was *unresolved*, and none of the milestones it named have been reached |
+| KCN | down 14.0% | **+27.1%** | reversed, discard | **validated** — the note argued the equipment failure was manageable given a $179m net cash position |
+| AR9 | up 23.0% | **−48.2%** | — | **contradicted**, no copy |
+
+**Why this matters beyond tidiness.** A post that states a return is a
+past-performance representation published by a Corporate Authorised
+Representative under an AFSL. Claiming a call the note never made is a
+misleading representation, not just an embarrassment — hence the quoted
+evidence, the refusal to write for anything but a validated call, and a
+compliance footer that is a constant in `lib/posts/types.ts` rather than
+something the model writes.
+
+**What the page gives you.** The whole archive in publication order (not ranked
+by winners), the assessment above the drafts and not collapsible, two or three
+variants per validated call with the LinkedIn fold marked so you can see what
+lands above "…see more", copy-to-clipboard including the footer, and a
+posted/discarded status so the desk doesn't publish about the same call twice.
+
+**Numbers go stale.** A draft saying "+27.1% since our note" is only true as at
+the moment it was written. The prices it was computed from are stored on the
+row, and the panel warns when the live return has drifted more than three
+percentage points from what the copy claims.
+
+The app never posts anything. It produces text for a human to review and paste.
 
 ## Auth & Access Control
 
@@ -248,6 +322,7 @@ src/
       companies/         company directory
       companies/[ticker]/ research history timeline — the point of the app
       mover-studio/      AI draft review queue (admin only)
+      post-studio/       track record + LinkedIn copy (admin only)
     api/cron/daily-mover/  scheduled weekday draft, Sydney-time gated
     api/drafts/[id]/pdf/   admin-only signed URL for an unapproved draft PDF
     api/extract/         multipart PDF research extraction route handler
@@ -261,6 +336,7 @@ src/
     company-logo.tsx     high-contrast adaptive company logo with institutional monogram fallback
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload, download-reports-button
     mover-studio/        review queue, draft review card + approve/reject, inline report preview, evidence list, screen controls
+    post-studio/         track-record table, assessment + post variants with copy-to-clipboard
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper
     theme-toggle.tsx     Light / Dark / System theme switcher
@@ -274,10 +350,12 @@ src/
       client.ts          shared Anthropic client, model choices, token accounting
       anthropic.ts       PDF tool extraction client (uploaded reports)
       mover-draft.ts     the two drafting calls: pick a mover, write the report
+      linkedin-post.ts   judges whether a call was borne out, then drafts the copy
       announcement-text.ts  announcement PDFs -> text for the prompt
     asx/                 provider interface, company directory, announcements, computed movers board
     catalysts.ts         the closed catalyst vocabulary, in one place
     drafts/              draft pipeline, queries, trading-day arithmetic
+    posts/               track-record reads, post shapes, compliance footer
     report/              typed report blocks + the react-pdf template
     market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
@@ -315,6 +393,18 @@ over the archive later and diffed against what was actually saved.
 
 **Filtering happens in SQL.** Client-side filtering looks fine on 20 rows and
 quietly dies at a few thousand.
+
+**A validated call is not a positive return.** The sign of the post-event return
+says nothing on its own: a stock that fell 14% and has since risen 27% vindicates
+a note arguing the problem was temporary, and refutes one arguing the outlook had
+worsened. Post Studio's verdict therefore comes from reading the takeaway, and
+the model must quote the clause it relies on — so the claim in a post can be
+checked against what was actually written.
+
+**Post figures are snapshotted.** `linkedin_posts.snapshot` stores the prices the
+copy was computed from. Without it, a draft reading "+27.1%" and a table reading
+"+12%" are both correct about different instants, and there is no way to tell
+that the copy has gone stale.
 
 **Drafts are a separate table, not a status column.** Every row in
 `daily_movers` is approved research — that is what makes "what did we say last

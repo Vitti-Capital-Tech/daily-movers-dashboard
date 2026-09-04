@@ -14,6 +14,7 @@ import {
   type ScreenerRow,
 } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
+import { prioritiseAnnouncements } from "@/lib/asx/filings";
 import { loadAnnouncementDocuments } from "@/lib/ai/announcement-text";
 import {
   selectMover,
@@ -392,9 +393,24 @@ async function runPipeline(
   const todayAnnouncements = allAnnouncements.filter(
     (item) => item.date === moveDate && item.isPriceSensitive,
   );
-  const historyAnnouncements = allAnnouncements
-    .filter((item) => item.isPriceSensitive && item.date !== moveDate)
-    .slice(0, ANNOUNCEMENTS_TARGET);
+  /**
+   * Which of the company's earlier filings are worth reading.
+   *
+   * Not simply the newest N. Measured on a real corpus, 16 of 25
+   * price-sensitive announcements and 55% of the tokens were takeover
+   * procedure -- six sequential offer-period extensions, five Takeovers Panel
+   * receipt notices, and an 89-page implementation deed. `prioritiseAnnouncements`
+   * collapses each sequential series to its latest member and gives long legal
+   * instruments a smaller reading budget, so the target count is spent on
+   * evidence the report can actually cite. See `lib/asx/filings.ts`.
+   */
+  const priority = prioritiseAnnouncements(
+    allAnnouncements.filter(
+      (item) => item.isPriceSensitive && item.date !== moveDate,
+    ),
+    { target: ANNOUNCEMENTS_TARGET },
+  );
+  const historyAnnouncements = priority.keep;
 
   const todayDocuments = await loadAnnouncementDocuments(todayAnnouncements);
 
@@ -421,6 +437,18 @@ async function runPipeline(
         history: historyAnnouncements,
         readToday: todayDocuments.length,
         readHistory: historyDocuments.length,
+        /**
+         * Superseded series members and filings beyond the target, kept so the
+         * audit trail says what was *not* read as well as what was.
+         */
+        skipped: priority.collapsed.map((item) => ({
+          idsId: item.idsId,
+          date: item.date,
+          headline: item.headline,
+          reason: item.seriesKey
+            ? `superseded (${item.seriesKey})`
+            : "beyond the reading target",
+        })),
       },
       progress: STAGES.writing,
     })

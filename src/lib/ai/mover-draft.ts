@@ -675,20 +675,26 @@ ${input.selection.rationale}`;
       : "(no earlier price-sensitive announcements were readable)";
 
   /**
-   * Content order is deliberate and matters for cost: the announcement corpus
-   * is the large, stable part of this prompt (~235k tokens on a real draft), so
-   * it goes first and carries the cache breakpoint, while the market data and
-   * the selection rationale — the parts that differ run to run — go after it.
+   * There is deliberately **no cache breakpoint** on the corpus, because it was
+   * costing money rather than saving it.
    *
-   * A re-draft within the hour then reads the corpus back at a tenth of the
-   * price instead of paying to write it again. The saving is conditional on the
-   * prefix being byte-identical, which means the same company, the same
-   * filings, and the same set of them successfully downloaded — so a run where
-   * one filing was unreachable the first time will miss the cache and pay full
-   * price. That is the correct behaviour, just not a guaranteed discount.
+   * Caching the announcement corpus looks obviously right — it is the large,
+   * stable-looking part of the prompt. It is wrong for this workload. A
+   * one-hour-TTL cache write bills at **2x** the input rate and a read at 0.1x,
+   * so the break-even is three requests against the same prefix. This pipeline
+   * makes one: a different company every day, so the corpus is never read back
+   * (`cache_read_input_tokens` was 0 on every measured run). The breakpoint
+   * turned $0.71 of corpus into $1.42 for no benefit.
    *
-   * The one-hour TTL covers a realistic review cycle: an analyst reads the
-   * draft, rejects it, and asks for another.
+   * Even the re-draft case doesn't recover it: two drafts of the same company
+   * cost ~$1.65 cached against ~$1.58 uncached.
+   *
+   * If a "re-draft this one" button is ever added and used routinely, the thing
+   * to reach for is the *5-minute* TTL (`{ type: "ephemeral" }` with no `ttl`),
+   * which writes at 1.25x and breaks even on the second request.
+   *
+   * Content order still matters for the model: evidence first, then the market
+   * data that overrides it, then the instruction.
    */
   const content: Anthropic.MessageParam["content"] = [
     {
@@ -698,7 +704,6 @@ ${input.selection.rationale}`;
     {
       type: "text",
       text: `EVIDENCE — EARLIER PRICE-SENSITIVE ANNOUNCEMENTS FOR ${row.ticker} (most recent first; this is your source for the business description, the segment detail and the history)\n\n${historyBlock}`,
-      cache_control: { type: "ephemeral", ttl: "1h" },
     },
     { type: "text", text: marketBlock },
     ...input.todayDocuments

@@ -92,8 +92,25 @@ export const SCREEN_LIMITS = {
   perSide: { min: 5, max: 50, step: 5 },
 } as const;
 
-/** How many price-sensitive announcements the pipeline aims to read. */
-export const ANNOUNCEMENTS_TARGET = 25;
+/**
+ * How many of a company's earlier price-sensitive announcements to read.
+ *
+ * 15, down from 25, on measurement rather than taste. The corpus is by far the
+ * largest cost in a draft, and 25 filings was buying repetition: the shipped
+ * report on a real 26-filing corpus cited 12 of them, while 16 of the 25 were
+ * takeover procedure (see `./filings.ts`). Measured on that company's full
+ * 91-filing history, with series collapsed and legal instruments capped:
+ *
+ *   25 filings -> ~200k tokens -> $0.60 of corpus
+ *   15 filings -> ~109k tokens -> $0.33
+ *   12 filings -> ~83k  tokens -> $0.25
+ *
+ * 15 keeps two to three years of results and resource updates for a typical
+ * ASX small-cap — enough for the business description, the segment detail and
+ * the history pages — while halving the bill. Raise it if reports start
+ * reading thin; the cost is roughly linear in this number.
+ */
+export const ANNOUNCEMENTS_TARGET = 15;
 
 /**
  * Compact "$1.2M" / "$840k" for the dense board table. Deliberately not

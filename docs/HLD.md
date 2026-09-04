@@ -57,6 +57,7 @@ graph TD
         CronRoute["Scheduled Draft Route (/api/cron/daily-mover)"]
         DraftPdfRoute["Admin-Only Draft PDF Route (/api/drafts/[id]/pdf)"]
         DraftPipeline["Mover Studio Pipeline (screen -> select -> read -> write -> render)"]
+        PostPipeline["Post Studio Assessor (judge the call -> draft copy only if validated)"]
         LogoRoute["Logo Proxy Route (/api/logo/[ticker])"]
         AuthLayer["Auth & Session Verification (Web Crypto HMAC)"]
         QueryLayer["Data Access Layer (lib/queries.ts - server-only)"]
@@ -297,15 +298,23 @@ graph LR
    - Renders the report to PDF with `@react-pdf/renderer` into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.
    - Approval projects the draft into `daily_movers` and *moves* the PDF into the manual-upload key scheme, so every downstream consumer is unchanged.
    - Declines without erroring when the market did not trade, when an analyst has already published for the day, or when a scheduled draft already exists.
+6. **Post Studio - Track Record & LinkedIn Copy (`/post-studio`, admin only)**:
+   - Every published Daily Mover shown against the current quote: publication anchor, latest price, post-event return, elapsed days, and whether the price continued or reversed.
+   - Claude Sonnet 5 assesses whether the price action bears out **what the note argued**, returning `validated` / `mixed` / `contradicted` / `too_early` with the verbatim clause from the takeaway it relies on. Deliberately not derived from the sign of the return: on the current archive only 25 of 56 movers continued in their original direction, and several reversals are precisely what the note predicted.
+   - LinkedIn copy is drafted **only** for `validated` calls, in the firm's voice, and that restriction is enforced in code rather than only requested in the prompt.
+   - Two or three variants per call, with the LinkedIn fold marked so the reviewer can see what lands above "see more", and a copy-to-clipboard button that includes the compliance footer.
+   - The compliance footer is an application constant, never model-generated - a post stating a return is a regulated past-performance representation made by a Corporate Authorised Representative under an AFSL.
+   - Prices are snapshotted onto the row, so the copy's figures have a fixed meaning and the panel warns when the live return has drifted from what the draft claims.
+   - Draft / posted / discarded status, so the desk does not publish about the same call twice. The application never posts anything itself.
 6. **Company Research Directory (`/companies`)**:
    - Comprehensive directory of all covered listed entities with sector tags, mover counts, and latest coverage timestamps.
-7. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
+8. **Company Historical Deep-Dive (`/companies/[ticker]`)**:
    - "Most Recent Research Takeaway" hero card with highlight banner and quote icon.
    - Vertical research history timeline connecting chronological notes with directional status nodes.
    - Action links to Daily Mover source reports.
-8. **Theme Customization (`ThemeToggle`)**:
+9. **Theme Customization (`ThemeToggle`)**:
    - Seamless switching between Light mode, Midnight Navy Dark mode, and System preference.
-9. **Authentication & Session Management (`UserMenu`, `AdminUnlockDialog`)**:
+10. **Authentication & Session Management (`UserMenu`, `AdminUnlockDialog`)**:
    - Frictionless Public Viewer mode with constant-time passcode admin elevation and instant lock back to view-only.
 
 ---
@@ -313,6 +322,7 @@ graph LR
 ## 9. Future Roadmap & Extensibility
 
 - **Licensed announcements feed**: Mover Studio currently reads company announcements from the ASX's own public statistics pages, whose terms reserve commercial use to holders of ASX's written authority. `src/lib/asx/provider.ts` is the seam a licensed feed drops into.
+- **Compliance sign-off workflow for posts**: Post Studio records draft / posted / discarded, but has no reviewer field or approval gate of its own - compliance review happens outside the app today.
 - **Prompt iteration from rejections**: Rejected drafts store the reviewer's reason alongside the screen, the selection and the generated document. That is a labelled evaluation set for improving the drafting prompt, and nothing reads it yet.
 - **Re-draft on rejection**: The announcement corpus is cached for an hour, so asking for a second draft of the same company is cheap. There is no button for it.
 - **Automated LLM Extraction Pipeline**: Background workers parsing uploaded PDFs from Supabase Storage, running structured prompts, and populating `extraction` JSONB for automated diffing.
