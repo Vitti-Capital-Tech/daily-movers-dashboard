@@ -471,6 +471,23 @@ attempt. The findings are kept on the draft either way — "was this checked, an
 what did it find" is the first thing a reviewer asks, and a corrected report
 cannot answer it.
 
+**The corpus is paid for once, not three times.** Caching the announcement
+corpus used to be the wrong call — a one-hour-TTL write bills at 2x and needs
+three reads to break even, and the pipeline made exactly one call per corpus. The
+Accuracy Gate changed that: the same filings are now read two or three times
+within minutes, so the 5-minute TTL applies and the run went from 3.00x the
+corpus to 1.45x. Getting the hit meant making the prefix byte-identical across
+calls — the cache keys on tools, then system, then messages — so both calls send
+both tools and let `tool_choice` pick the job, share one system prompt, and build
+their evidence blocks from the same function. Verified with a probe: the second
+call read 18,913 tokens from cache and billed 39.
+
+**The optional stages are on a clock.** The platform ceiling is 300 seconds and
+there is nothing past it — a killed invocation leaves no report at all. So the
+check and the rewrite each have a deadline, and when time is short the rewrite is
+dropped first: findings are useful to a human on their own, a rewrite without
+them is nothing. Whichever gets skipped says so on the draft.
+
 **Charts carry a conclusion or they don't ship.** A `chart` page is invalid
 without the one-line "what to notice" under it, enforced in `validateReportDoc`.
 The column chart plots a real zero baseline rather than bare magnitudes, because

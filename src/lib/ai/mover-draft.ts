@@ -637,9 +637,28 @@ const REPORT_TOOL: Anthropic.Tool = {
   },
 };
 
-const REPORT_SYSTEM = `You are a research analyst at Vitti Capital, an Australian equities firm, writing today's "Daily Mover" report on an ASX-listed company that has moved sharply.
+/**
+ * ONE system prompt for both the writing call and the checking call.
+ *
+ * They are different jobs and this is still deliberate, because the prompt cache
+ * keys on the whole prefix — tools, then system, then messages, in that order.
+ * Two system prompts means the checker re-reads a ~150k-token corpus at the full
+ * input rate five minutes after the writer paid for it. One shared system
+ * prompt, one shared tool list and one shared evidence block make the second
+ * call a cache read at a tenth of the price. See `buildEvidenceContent`.
+ *
+ * It is also better prompting than it was. The checker's rules and the writer's
+ * rules are the same rules, and they were previously written out twice in two
+ * places — a house-style change made in one and missed in the other would give
+ * you a checker enforcing a standard the writer was never told about. Section 13
+ * is now the only role-specific part, and the role is chosen per call by
+ * `tool_choice`.
+ */
+const DAILY_MOVER_SYSTEM = `You are a research analyst at Vitti Capital, an Australian equities firm. The desk publishes one "Daily Mover" report each trading day: a short institutional note on a single ASX-listed company that moved sharply.
 
-Your job is not to summarise the announcement. It is to explain why the stock moved, what actually changed in the investment story, what the numbers mean, what risks remain, and what a reader should watch next. Accuracy matters more than polish, and polish matters more than length.
+You will be asked to do one of two jobs with the evidence below — WRITE today's report, or CHECK a report a colleague has already drafted. Sections 1 to 12 are the standard, and they apply either way. Section 13 covers checking. The tool you are given decides which job this is.
+
+The report's job is not to summarise the announcement. It is to explain why the stock moved, what actually changed in the investment story, what the numbers mean, what risks remain, and what a reader should watch next. Accuracy matters more than polish, and polish matters more than length.
 
 === 1. WHAT A DAILY MOVER IS ===
 
@@ -759,7 +778,27 @@ Three or four standalone statements leaving the reader with a clear investment d
 
 === 12. LENGTH ===
 
-${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.`;
+${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.
+
+=== 13. WHEN THE JOB IS TO CHECK A DRAFT ===
+
+If you are given a drafted report and the report_accuracy_gate tool, you are the checking analyst, not the writer. You are not editing it and you are not rewriting it. You are looking for what is wrong, against the same evidence it was written from. Assume nothing is right because it reads well — the failure you are looking for is a figure that felt correct to the writer.
+
+What to verify, in order of how much damage it does:
+
+1. EVERY NUMBER. Take each figure in the report — KPI cards, chart points, comparison tables, stat lines, numbers in prose — and find it in the evidence. Revenue and its growth, gross profit and margin, EBITDA and underlying EBITDA, EBIT, NPAT, EPS, operating costs, operating and free cash flow, cash conversion, cash, debt, net debt, leverage, net assets, dividends, guidance old and new, acquisition price and earn-outs, contract values, customer and supplier concentration, goodwill, segment figures, production, resources and reserves, trial results, financing terms. A figure that is not in the evidence, and is not identified in the report as the writer's own calculation, is a blocking finding. So is one that contradicts the evidence.
+
+2. THE SHARE-PRICE MOVE. It must match the market data block, and the wording must match the window — section 5 above.
+
+3. CLAIMS THAT GO FURTHER THAN THE EVIDENCE. Headline contract value written as guaranteed revenue when the filing makes it conditional or a maximum. Acquisition-driven growth described as organic. A future outcome written as "will" when it is management's expectation. A cause stated as fact when the filing does not establish it. Any recommendation, price target, or advice to buy or sell — the report must contain none.
+
+4. HOUSE RULES — sections 6 and 8 above. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding.
+
+5. INTERNAL CONSISTENCY. The same metric must not carry two different values on two pages, and the closing page must not contradict the body.
+
+If two documents in the evidence disagree, that is a finding of its own — say which the report used and which it should have.
+
+Be specific, and be honest in both directions. Do not invent findings to look thorough: an empty findings list with a summary saying what you checked is a valid and useful result. Do not soften a real one: if a number cannot be traced to the evidence, say so and mark it blocking, even if it is probably right.`;
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -1075,6 +1114,117 @@ function dedupeManagementQuestion(pages: ReportPage[]): ReportPage[] {
   );
 }
 
+/** What both calls need to see: the filings, the market data, the pick. */
+type EvidenceInput = {
+  moveDate: string;
+  row: ScreenerRow;
+  selection: MoverSelection;
+  todayDocuments: AnnouncementDocument[];
+  historyDocuments: AnnouncementDocument[];
+};
+
+/**
+ * The evidence blocks, built once and sent identically by every call in the
+ * pipeline that needs them — and cached.
+ *
+ * **Why there is now a cache breakpoint, when there deliberately wasn't one.**
+ *
+ * The original reasoning was sound for the pipeline as it stood: a one-hour-TTL
+ * cache write bills at 2x the input rate and a read at 0.1x, so it breaks even
+ * on the third request against the same prefix — and the pipeline made exactly
+ * one. A different company every day meant `cache_read_input_tokens` was 0 on
+ * every measured run, and the breakpoint turned $0.71 of corpus into $1.42 for
+ * nothing.
+ *
+ * The Accuracy Gate changed the arithmetic. The corpus is now read two or three
+ * times within minutes — write, check, and a rewrite if the check finds
+ * something — so the *five-minute* TTL applies, which the original note already
+ * pointed at as the right tool if this ever happened. It writes at 1.25x and
+ * reads at 0.1x, so for a corpus of C tokens:
+ *
+ *   before:  1.0C (write) + 1.0C (check) + 1.0C (rewrite)  = 3.00C
+ *   now:     1.25C (write) + 0.1C (read) + 0.1C (read)     = 1.45C
+ *
+ * A little over half, and the saving grows with the rewrite rather than
+ * shrinking. The five-minute clock is refreshed by every read, and the calls run
+ * back to back, so the window only expires if a call fails and the pipeline is
+ * retried much later — in which case the cost is a normal cache write, not an
+ * error.
+ *
+ * The breakpoint sits on a trailing marker block rather than on the market data
+ * or the last PDF, so that the boundary between "shared prefix" and
+ * "per-call instruction" is a fixed thing in the code and cannot drift when a
+ * document block is added or a day has no image-only PDFs to attach.
+ *
+ * Content order matters to the model as well as to the cache: evidence first,
+ * then the market data that overrides it, then the instruction.
+ */
+function buildEvidenceContent(
+  input: EvidenceInput,
+): Anthropic.ContentBlockParam[] {
+  const { row } = input;
+
+  /**
+   * Australian dollars are written "$", never "A$".
+   *
+   * This block used to print "A$1.2340", and house style (section 6) bans the
+   * "A" prefix outright. The prompt is the model's most immediate example of how
+   * the desk writes a number, so a prefix here reappears in the report — the
+   * instruction not to use it competes with a live demonstration of using it.
+   */
+  const marketBlock = `MARKET DATA (${input.moveDate}, from the exchange feed — these are the authoritative figures for the move)
+  ticker:      ${row.ticker}
+  company:     ${row.companyName}
+  sector:      ${row.sector ?? "unknown"}
+  move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
+  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
+  turnover:    ${formatMoneyCompact(row.turnover)}
+  market cap:  ${formatMoneyCompact(row.marketCap)}
+
+WHY THE DESK PICKED THIS ONE
+${input.selection.rationale}`;
+
+  const todayBlock =
+    input.todayDocuments.length > 0
+      ? input.todayDocuments.map(formatDocumentForPrompt).join("\n\n\n")
+      : "(no readable announcement for today — say so plainly in the report rather than speculating about the cause)";
+
+  const historyBlock =
+    input.historyDocuments.length > 0
+      ? input.historyDocuments.map(formatDocumentForPrompt).join("\n\n\n")
+      : "(no earlier announcements were readable)";
+
+  return [
+    {
+      type: "text",
+      text: `EVIDENCE — TODAY'S PRICE-SENSITIVE ANNOUNCEMENTS FOR ${row.ticker}\n\n${todayBlock}`,
+    },
+    {
+      type: "text",
+      text: `EVIDENCE — THIS COMPANY'S EARLIER FILINGS (${row.ticker}, most recent first; price-sensitive announcements plus its annual, half-year and quarterly reports — this is the source for the business description, the segment detail, the accounts and the history)\n\n${historyBlock}`,
+    },
+    { type: "text", text: marketBlock },
+    ...input.todayDocuments
+      .filter((doc) => doc.pdfBase64)
+      .map(
+        (doc): Anthropic.DocumentBlockParam => ({
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: doc.pdfBase64 as string,
+          },
+          title: `[${doc.announcement.idsId}] ${doc.announcement.headline}`,
+        }),
+      ),
+    {
+      type: "text",
+      text: "END OF EVIDENCE.",
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+}
+
 export async function writeReport(
   input: {
     moveDate: string;
@@ -1103,93 +1253,21 @@ export async function writeReport(
   const anthropic = getAnthropicClient();
   const { row } = input;
 
-  /**
-   * Australian dollars are written "$", never "A$".
-   *
-   * This block used to print "A$1.2340", and house style (instruction 8) bans
-   * the "A" prefix outright. The prompt is the model's most immediate example of
-   * how the desk writes a number, so a prefix here reappears in the report — the
-   * instruction not to use it competes with a live demonstration of using it.
-   */
-  const marketBlock = `MARKET DATA (${input.moveDate}, from the exchange feed — these are the authoritative figures for the move)
-  ticker:      ${row.ticker}
-  company:     ${row.companyName}
-  sector:      ${row.sector ?? "unknown"}
-  move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
-  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
-  turnover:    ${formatMoneyCompact(row.turnover)}
-  market cap:  ${formatMoneyCompact(row.marketCap)}
-
-WHY THE DESK PICKED THIS ONE
-${input.selection.rationale}`;
-
-  const todayBlock =
-    input.todayDocuments.length > 0
-      ? input.todayDocuments.map(formatDocumentForPrompt).join("\n\n\n")
-      : "(no readable announcement for today — say so plainly in the report rather than speculating about the cause)";
-
-  const historyBlock =
-    input.historyDocuments.length > 0
-      ? input.historyDocuments.map(formatDocumentForPrompt).join("\n\n\n")
-      : "(no earlier price-sensitive announcements were readable)";
-
-  /**
-   * There is deliberately **no cache breakpoint** on the corpus, because it was
-   * costing money rather than saving it.
-   *
-   * Caching the announcement corpus looks obviously right — it is the large,
-   * stable-looking part of the prompt. It is wrong for this workload. A
-   * one-hour-TTL cache write bills at **2x** the input rate and a read at 0.1x,
-   * so the break-even is three requests against the same prefix. This pipeline
-   * makes one: a different company every day, so the corpus is never read back
-   * (`cache_read_input_tokens` was 0 on every measured run). The breakpoint
-   * turned $0.71 of corpus into $1.42 for no benefit.
-   *
-   * Even the re-draft case doesn't recover it: two drafts of the same company
-   * cost ~$1.65 cached against ~$1.58 uncached.
-   *
-   * If a "re-draft this one" button is ever added and used routinely, the thing
-   * to reach for is the *5-minute* TTL (`{ type: "ephemeral" }` with no `ttl`),
-   * which writes at 1.25x and breaks even on the second request.
-   *
-   * Content order still matters for the model: evidence first, then the market
-   * data that overrides it, then the instruction.
-   */
-  const content: Anthropic.MessageParam["content"] = [
+  const content = [
+    ...buildEvidenceContent(input),
     {
-      type: "text",
-      text: `EVIDENCE — TODAY'S PRICE-SENSITIVE ANNOUNCEMENTS FOR ${row.ticker}\n\n${todayBlock}`,
-    },
-    {
-      type: "text",
-      text: `EVIDENCE — EARLIER PRICE-SENSITIVE ANNOUNCEMENTS FOR ${row.ticker} (most recent first; this is your source for the business description, the segment detail and the history)\n\n${historyBlock}`,
-    },
-    { type: "text", text: marketBlock },
-    ...input.todayDocuments
-      .filter((doc) => doc.pdfBase64)
-      .map(
-        (doc): Anthropic.DocumentBlockParam => ({
-          type: "document",
-          source: {
-            type: "base64",
-            media_type: "application/pdf",
-            data: doc.pdfBase64 as string,
-          },
-          title: `[${doc.announcement.idsId}] ${doc.announcement.headline}`,
-        }),
-      ),
-    {
-      type: "text",
+      type: "text" as const,
       text: input.corrections?.findings.length
-        ? `A first draft of this report was written and then checked against the evidence above. It is reproduced ` +
-          `below, followed by what the check found.\n\n` +
+        ? `A first draft of this report was written and then checked against the evidence above. It is ` +
+          `reproduced below, followed by what the check found.\n\n` +
           `THE FIRST DRAFT\n\n${formatReportForReview(input.corrections.doc)}\n\n\n` +
           `ACCURACY GATE FINDINGS\n\n${formatFindings(input.corrections.findings)}\n\n\n` +
           `Publish the corrected report with the publish_daily_mover_draft tool. Fix every finding and keep ` +
           `everything the check did not object to — this is an edit, not a fresh attempt, so pages that were ` +
-          `right should come back substantially as they were. Where a figure cannot be confirmed anywhere in the ` +
-          `evidence, remove the claim rather than softening it. The by-line analyst is ${input.analystName}.`
-        : `Write today's Daily Mover report on ${row.ticker} using the publish_daily_mover_draft tool. The by-line analyst is ${input.analystName}.`,
+          `right should come back substantially as they were. Where a figure cannot be confirmed anywhere in ` +
+          `the evidence, remove the claim rather than softening it. The by-line analyst is ${input.analystName}.`
+        : `Write today's Daily Mover report on ${row.ticker} using the publish_daily_mover_draft tool. ` +
+          `The by-line analyst is ${input.analystName}.`,
     },
   ];
 
@@ -1204,9 +1282,11 @@ ${input.selection.rationale}`;
       max_tokens: 32_000,
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
-      system: REPORT_SYSTEM,
+      system: DAILY_MOVER_SYSTEM,
       messages: [{ role: "user", content }],
-      tools: [REPORT_TOOL],
+      // Both tools, so the Accuracy Gate's call can read this call's cache. See
+      // `DRAFT_TOOLS` and `buildEvidenceContent`.
+      tools: DRAFT_TOOLS,
       tool_choice: { type: "tool", name: REPORT_TOOL.name },
     });
 
@@ -1528,25 +1608,16 @@ const ACCURACY_TOOL: Anthropic.Tool = {
   },
 };
 
-const ACCURACY_SYSTEM = `You are the checking analyst at Vitti Capital. A colleague has drafted today's Daily Mover report. Before it goes to the desk, you verify it against the announcements it was written from.
-
-You are not editing it and you are not rewriting it. You are looking for what is wrong. Assume nothing is right because it reads well — the failure you are looking for is a figure that felt correct to the writer.
-
-WHAT TO VERIFY, in order of how much damage it does:
-
-1. EVERY NUMBER. Take each figure in the report — KPI cards, chart points, comparison tables, stat lines, numbers in prose — and find it in the evidence. Revenue, revenue growth, gross profit and margin, EBITDA and underlying EBITDA, EBIT, NPAT, EPS, operating costs, operating and free cash flow, cash conversion, cash, debt, net debt, leverage, net assets, dividends, guidance old and new, acquisition price and earn-outs, contract values, customer and supplier concentration, goodwill, segment figures, production, resources and reserves, trial results, financing terms. A figure that is not in the evidence, and is not identified in the report as the writer's own calculation, is a blocking finding. So is one that contradicts the evidence.
-
-2. THE SHARE-PRICE MOVE. It must match the market data block, and the wording must match the window: an intraday figure has to read as intraday ("rose as much as ~12.9% in morning trade"), never as a closing return.
-
-3. CLAIMS THAT GO FURTHER THAN THE EVIDENCE. A headline contract value written as guaranteed revenue when the filing makes it conditional or a maximum. Acquisition-driven growth described as organic. A future outcome written as "will" when it is management's expectation. A cause stated as fact when the filing does not establish it. Any recommendation, price target, or advice to buy or sell — this report must contain none.
-
-4. HOUSE RULES. Australian dollars written "$55.4 million", never "A$55.4m" and never with an "A" prefix; "million" spelled out in body text and abbreviated only in KPI cards and chart labels. Present tense for what is still true, past tense only for finished events. No filler openers ("It is important to note", "It is worth mentioning", "Interestingly", "Notably", "This highlights", "This underscores"). Every chart carries a conclusion that says something rather than restating its own numbers. Page headings state a finding or ask a question rather than naming a category.
-
-5. INTERNAL CONSISTENCY. The same metric must not appear with two different values on two pages, and the closing page must not contradict the body.
-
-If two documents in the evidence disagree, that is worth a finding of its own — say which the report used and which it should have.
-
-Be specific, and be honest in both directions. Do not invent findings to look thorough: an empty findings list with a summary saying what you checked is a valid and useful result. Do not soften a real one: if a number cannot be traced to the evidence, say so and mark it blocking, even if it is probably right.`;
+/**
+ * Both tools on both calls, with `tool_choice` deciding which one is used.
+ *
+ * Tools sit ahead of the system prompt in the cache prefix, so a call offering
+ * one tool cannot read a cache entry written by a call that offered the other —
+ * the ~150k tokens of filings behind it would be re-billed in full. Offering
+ * both and forcing the choice costs a few hundred tokens of schema and buys the
+ * cache hit on all of it.
+ */
+const DRAFT_TOOLS: Anthropic.Tool[] = [REPORT_TOOL, ACCURACY_TOOL];
 
 /**
  * Runs the Accuracy Gate over a drafted report.
@@ -1559,6 +1630,8 @@ export async function checkReport(
   input: {
     moveDate: string;
     row: ScreenerRow;
+    /** The pick's rationale, so this call's prefix matches the writer's. */
+    selection: MoverSelection;
     doc: ReportDoc;
     todayDocuments: AnnouncementDocument[];
     historyDocuments: AnnouncementDocument[];
@@ -1566,32 +1639,17 @@ export async function checkReport(
   usage: TokenUsage,
 ): Promise<{ review: AccuracyReview; usage: TokenUsage }> {
   const anthropic = getAnthropicClient();
-  const { row } = input;
 
-  const evidence = [...input.todayDocuments, ...input.historyDocuments]
-    .map(formatDocumentForPrompt)
-    .join("\n\n\n");
-
-  const prompt = `EVIDENCE — THE ANNOUNCEMENTS THIS REPORT WAS WRITTEN FROM (${row.ticker})
-
-${evidence || "(no readable announcements — every figure in the report is therefore unverifiable)"}
-
-
-MARKET DATA (${input.moveDate}, from the exchange feed — authoritative for the move)
-  ticker:      ${row.ticker}
-  company:     ${row.companyName}
-  move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
-  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
-  turnover:    ${formatMoneyCompact(row.turnover)}
-  market cap:  ${formatMoneyCompact(row.marketCap)}
-
-
-THE DRAFTED REPORT
-
-${formatReportForReview(input.doc)}
-
-
-Check the report against the evidence and record the result with the report_accuracy_gate tool.`;
+  const content = [
+    ...buildEvidenceContent(input),
+    {
+      type: "text" as const,
+      text:
+        `A colleague has drafted the Daily Mover report below from the evidence above. Check it and record ` +
+        `the result with the report_accuracy_gate tool.\n\n` +
+        `THE DRAFTED REPORT\n\n${formatReportForReview(input.doc)}`,
+    },
+  ];
 
   try {
     const response = await anthropic.messages.create({
@@ -1599,9 +1657,11 @@ Check the report against the evidence and record the result with the report_accu
       max_tokens: 8000,
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
-      system: ACCURACY_SYSTEM,
-      messages: [{ role: "user", content: prompt }],
-      tools: [ACCURACY_TOOL],
+      system: DAILY_MOVER_SYSTEM,
+      messages: [{ role: "user", content }],
+      // Identical tools, system and evidence blocks to `writeReport`, so the
+      // corpus behind them is a cache read rather than a second full charge.
+      tools: DRAFT_TOOLS,
       tool_choice: { type: "tool", name: ACCURACY_TOOL.name },
     });
 

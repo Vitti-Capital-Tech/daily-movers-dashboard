@@ -176,18 +176,23 @@ export function draftSide(movePct: number | null): MoverSide | null {
  * 0.1x the input rate.
  *
  * The cache **write** multiplier depends on the TTL, and getting it wrong is
- * how this function came to understate a draft by half. A 5-minute-TTL write
- * bills at 1.25x; a one-hour-TTL write bills at **2x**. The pipeline used the
- * one-hour TTL while this estimate assumed 1.25x, reporting ~$0.97 for drafts
- * that actually cost ~$1.50. The breakpoint has since been removed (see the
- * note in `lib/ai/mover-draft.ts`), so `cacheWriteTokens` should now be zero on
- * new drafts -- but the higher multiplier is kept here so historical rows, and
- * any future caching, are priced honestly rather than flatteringly.
+ * how this function once understated a draft by half: a 5-minute-TTL write bills
+ * at 1.25x and a one-hour-TTL write at **2x**, and the pipeline used the hour
+ * while this estimate assumed the five minutes.
+ *
+ * They now agree. `buildEvidenceContent` caches the announcement corpus on the
+ * **5-minute** TTL, because the pipeline reads it back two or three times within
+ * minutes — write the report, check it, and rewrite it if the check finds
+ * something — rather than once a day as it did when caching was removed. So
+ * 1.25x is the rate actually being paid.
+ *
+ * Historical rows are unaffected either way: `cacheWriteTokens` is 0 on every
+ * draft made while there was no breakpoint at all.
  */
 const RATE_PER_MTOK = {
   input: 3,
-  /** One-hour TTL write. The conservative assumption of the two. */
-  cacheWrite: 3 * 2,
+  /** 5-minute TTL write, matching the breakpoint the pipeline actually sets. */
+  cacheWrite: 3 * 1.25,
   cacheRead: 3 * 0.1,
   output: 15,
 } as const;

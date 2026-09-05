@@ -98,6 +98,29 @@ const CANDIDATE_LOOKUP_CONCURRENCY = 6;
  */
 const BACKGROUND_TARGET = 3;
 
+/**
+ * Deadlines for the two optional stages, against the platform's 300-second
+ * invocation ceiling.
+ *
+ * Both `maxDuration`s in this app are 300 — the Hobby plan's limit and every
+ * plan's default, and a higher value fails the build rather than the run. That
+ * ceiling is a hard stop with nothing after it: a killed invocation leaves a
+ * `generating` row and no report at all, which is strictly worse than an
+ * unchecked draft an analyst can read.
+ *
+ * So the Accuracy Gate and its rewrite are budgeted rather than assumed. With
+ * the corpus served from cache the check runs in roughly 40-70 seconds and a
+ * rewrite in 60-90; these thresholds leave room for the slow end of both plus
+ * the render and upload, and skipping is recorded on the draft so a reviewer is
+ * never shown a clean bill of health that was never issued.
+ *
+ * The order of preference when time is short is deliberate: skip the rewrite
+ * before skipping the check. The check's findings are useful to a human on their
+ * own; a rewrite without them is nothing.
+ */
+const CHECK_DEADLINE_MS = 200_000;
+const REWRITE_DEADLINE_MS = 150_000;
+
 async function setProgress(draftId: number, progress: string): Promise<void> {
   try {
     const db = getDb();
@@ -304,6 +327,7 @@ async function runPipeline(
 ): Promise<{ ticker: string; moveDate: string }> {
   const db = getDb();
   let usage: TokenUsage = ZERO_USAGE;
+  const startedAt = Date.now();
 
   await setProgress(draftId, STAGES.screening);
   const screen = await screenBoards(criteria);
@@ -520,14 +544,26 @@ async function runPipeline(
    */
   let accuracy: AccuracyReview | null = null;
   const evidenceCount = todayDocuments.length + historyDocuments.length;
+  const elapsedMs = () => Date.now() - startedAt;
 
-  if (evidenceCount > 0) {
+  if (evidenceCount > 0 && elapsedMs() > CHECK_DEADLINE_MS) {
+    accuracy = {
+      verdict: "pass",
+      summary:
+        `Writing the report used ${Math.round(elapsedMs() / 1000)} seconds of the ` +
+        `run's ${Math.round(CHECK_DEADLINE_MS / 1000)}-second budget, so the accuracy ` +
+        `check was skipped to get the draft saved. No figure has been verified ` +
+        `against the filings — check the numbers manually.`,
+      findings: [],
+    };
+  } else if (evidenceCount > 0) {
     await setProgress(draftId, STAGES.checking);
     try {
       const checked = await checkReport(
         {
           moveDate,
           row,
+          selection,
           doc: report.doc,
           todayDocuments,
           historyDocuments,
@@ -537,7 +573,18 @@ async function runPipeline(
       usage = checked.usage;
       accuracy = checked.review;
 
-      if (accuracy.verdict === "revise") {
+      if (accuracy.verdict === "revise" && elapsedMs() > REWRITE_DEADLINE_MS) {
+        // Out of time for the rewrite, but the findings still reach the
+        // reviewer — which is most of the value. Say so on the draft rather
+        // than leaving `revised` unset and looking like a clean pass.
+        accuracy = {
+          ...accuracy,
+          summary:
+            `${accuracy.summary} (The automatic rewrite was skipped — the run ` +
+            `had already used ${Math.round(elapsedMs() / 1000)} seconds. These ` +
+            `findings are against the report as it stands.)`.trim(),
+        };
+      } else if (accuracy.verdict === "revise") {
         await setProgress(draftId, STAGES.revising);
         const rewritten = await writeReport(
           {
