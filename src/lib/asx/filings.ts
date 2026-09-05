@@ -172,17 +172,18 @@ export const CHAR_BUDGET: Record<FilingClass, number> = {
   series: 12_000,
   "legal-instrument": 14_000,
   /**
-   * Background filings are read for context, so they get roughly half a results
-   * pack's budget.
+   * Background filings are read for context, on a deliberately tight budget.
    *
    * An annual report is the largest document a listed company files, and it is
-   * in the corpus for its front half: the operating and financial review, the
+   * in the corpus for its front matter: the operating and financial review, the
    * segment note, the cash flow statement and the debt disclosures all sit ahead
-   * of the auditor's report and the remuneration tables. Head-truncating at 45k
-   * characters keeps that and drops the rest, which is the difference between
-   * adding the accounts and doubling the bill for them.
+   * of the auditor's report, the remuneration tables and the notes on
+   * share-based payments. 25k characters is roughly the first 15 pages, which
+   * reaches all of it in the standard ASX layout — and 25k rather than the 45k
+   * this started at because the extra 20k was buying the back half of the
+   * document, which is where the parts a Daily Mover never cites live.
    */
-  background: 45_000,
+  background: 25_000,
 };
 
 export type PrioritiseResult = {

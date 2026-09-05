@@ -29,7 +29,7 @@ import { REPORTS_BUCKET } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { exchangeDate, tradedOn } from "./trading-day";
-import type { AccuracyReview } from "./types";
+import { warrantsRewrite, type AccuracyReview } from "./types";
 
 /**
  * The drafting pipeline: board -> pick -> read -> write -> PDF -> pending row.
@@ -90,13 +90,18 @@ const CANDIDATE_LOOKUP_CONCURRENCY = 6;
 /**
  * How many unflagged background filings to add to the corpus.
  *
- * Three reaches the last annual report and the two most recent halves or
- * quarterlies for almost every company, which is the accounting history a Daily
- * Mover draws on. A fourth is usually the year-before-last's annual report —
- * the largest document on the list and the one the report is least likely to
- * cite. See `isBackgroundFiling` for why these are not simply in the main list.
+ * One: the company's most recent annual, half-year or quarterly report. That is
+ * the document with the segment note, the cash flow statement and the debt
+ * maturities in it, and it is what the price-sensitive announcements do not
+ * carry — see `isBackgroundFiling`.
+ *
+ * It was three, which reached back two more reporting periods. That is a
+ * comparative history the reports were not using: a Daily Mover explains what
+ * changed *today*, and the prior-period figures it needs for that comparison are
+ * printed in the current report's own comparative columns. Three cost roughly
+ * 38k tokens against one's 7k, for filings that were rarely cited.
  */
-const BACKGROUND_TARGET = 3;
+const BACKGROUND_TARGET = 1;
 
 /**
  * Deadlines for the two optional stages, against the platform's 300-second
@@ -573,7 +578,18 @@ async function runPipeline(
       usage = checked.usage;
       accuracy = checked.review;
 
-      if (accuracy.verdict === "revise" && elapsedMs() > REWRITE_DEADLINE_MS) {
+      /**
+       * A rewrite is not the automatic answer to a `revise` verdict.
+       *
+       * `warrantsRewrite` holds the rule: one wrong number or a misdescribed
+       * share-price move is rewritten, one over-reaching sentence is left for
+       * the analyst. Every finding reaches the review card either way, so the
+       * only thing being decided here is whether the pipeline spends the money.
+       */
+      const shouldRewrite =
+        accuracy.verdict === "revise" && warrantsRewrite(accuracy.findings);
+
+      if (shouldRewrite && elapsedMs() > REWRITE_DEADLINE_MS) {
         // Out of time for the rewrite, but the findings still reach the
         // reviewer — which is most of the value. Say so on the draft rather
         // than leaving `revised` unset and looking like a clean pass.
@@ -584,7 +600,7 @@ async function runPipeline(
             `had already used ${Math.round(elapsedMs() / 1000)} seconds. These ` +
             `findings are against the report as it stands.)`.trim(),
         };
-      } else if (accuracy.verdict === "revise") {
+      } else if (shouldRewrite) {
         await setProgress(draftId, STAGES.revising);
         const rewritten = await writeReport(
           {

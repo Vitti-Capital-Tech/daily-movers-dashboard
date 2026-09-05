@@ -102,18 +102,41 @@ reject. Approving files it in the archive exactly as a manual upload would.
 6. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
    prefix, and the row goes to `pending`.
 
-About a minute and roughly **US$0.40** per draft at list price (~$9/month over
-22 trading days).
+Two to three minutes and roughly **US$0.55** per draft at list price
+(~$12/month over 22 trading days).
 
 **How it got there.** The first working version cost $1.50. Three measured
-changes took 73% out of it without shortening the report:
+changes took 73% out of it; the Accuracy Gate and the accounts then bought some
+of it back, deliberately:
 
-| Change | Corpus cost |
+| Change | Cost/draft |
 | --- | --- |
 | First version: 25 filings, flat 90k cap, 1-hour prompt cache | $1.42 |
-| **Cache breakpoint removed** — a 1h cache *write* bills at 2x input and needs three reads to break even; this pipeline reads a different company every day, so it never got one | $0.71 |
+| **Cache breakpoint removed** — a 1h cache *write* bills at 2x input and needs three reads to break even; the pipeline read a different company every day, so it never got one | $0.71 |
 | **Sequential filings collapsed, legal instruments capped** — 16 of one company's 25 price-sensitive filings were takeover procedure: six offer-period extensions, five Panel receipt notices, an 89-page implementation deed | $0.60 |
-| **Reading target 25 → 15** | $0.33 |
+| **Reading target 25 → 15** — measured: FRS, 114,429 in / 4,205 out | $0.41 |
+| **+ the accounts and the Accuracy Gate** — one background filing, a second call that verifies every figure, and a rewrite when it finds a wrong one | $0.55 |
+| *(same, with caching removed)* | *$1.28* |
+| *(same, at the first cut of these features: 3 background filings, always rewrite)* | *$0.95* |
+
+The two italic rows are what the tuning avoided. Reading the corpus three times
+at full price is what the 5-minute cache breakpoint prevents, and it is why
+caching is right now when it was wrong before. The other is the first version of
+the gate, before three dials were turned:
+
+- **Background filings 3 → 1.** Three reached back two extra reporting periods,
+  which a Daily Mover doesn't use — the prior-period figures it needs for a
+  comparison are printed in the current report's own comparative columns.
+- **Background budget 45k → 25k characters.** Roughly the first 15 pages, which
+  is the whole of the operating review, the segment note and the cash flow
+  statement. The other 20k was buying remuneration tables.
+- **The rewrite is selective** (`warrantsRewrite`). One wrong figure or a
+  misdescribed share-price move is rewritten; one over-reaching sentence is
+  flagged for the analyst instead. Every finding reaches the review card either
+  way — the rule only decides whether the pipeline pays to fix it.
+
+Figures below the measured FRS row are computed from it, not observed —
+re-measure once a draft has run through the gate.
 
 The quality signal is in what got cited: the 25-filing version drew facts from
 12 of 26 documents, the 15-filing version from **15 of 16**. Fewer filings, read

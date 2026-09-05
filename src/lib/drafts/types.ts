@@ -71,6 +71,43 @@ export type AccuracyFinding = {
   fix: string;
 };
 
+/**
+ * Blocking categories where a single finding is enough to rewrite the report.
+ *
+ * These are the ones that put a *wrong fact* on a client document — a figure
+ * that isn't in the filings, a move described as a close when it was intraday,
+ * a conditional contract value presented as committed, or anything that reads as
+ * advice. There is no version of those a reviewer can leave standing, and the
+ * review UI does not allow editing the report body, so the alternative to a
+ * rewrite is a rejection and no Daily Mover that day.
+ *
+ * The categories deliberately *not* here — `unsupported-claim`,
+ * `future-certainty`, `organic-vs-acquired`, `structure` — are over-reach in
+ * the wording rather than a wrong number. One of those on its own is a judgment
+ * call worth an analyst's eye, not $0.16 of rewrite; two or more of anything
+ * blocking says the draft has a pattern and gets rewritten regardless.
+ */
+const HARD_FACT_CATEGORIES = new Set([
+  "figure",
+  "share-price-wording",
+  "contract-terms",
+  "compliance",
+]);
+
+/**
+ * Whether the Accuracy Gate's findings justify spending a rewrite.
+ *
+ * Every blocking finding still reaches the reviewer either way; this only
+ * decides whether the pipeline pays to fix them itself. See
+ * `HARD_FACT_CATEGORIES` for where the line sits and why.
+ */
+export function warrantsRewrite(findings: AccuracyFinding[]): boolean {
+  const blocking = findings.filter((finding) => finding.severity === "blocking");
+  if (blocking.length === 0) return false;
+  if (blocking.length >= 2) return true;
+  return HARD_FACT_CATEGORIES.has(blocking[0].category);
+}
+
 /** The Accuracy Gate's verdict on a draft, as stored on the row. */
 export type AccuracyReview = {
   verdict: "pass" | "revise";

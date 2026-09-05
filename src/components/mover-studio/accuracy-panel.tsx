@@ -73,6 +73,17 @@ export function AccuracyPanel({ review }: { review: AccuracyReview }) {
             written again to correct them, so check the fixes landed rather than
             reading the list as outstanding problems.
           </p>
+        ) : blocking.length > 0 ? (
+          /**
+           * The other half of the same question. A blocking list with no
+           * rewrite is the ambiguous case — it could mean the fix was applied or
+           * that nothing happened — so it says which, and the badge above
+           * already carries the count.
+           */
+          <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+            No automatic rewrite was run, so these stand against the report
+            below. Fix them before publishing, or reject the draft.
+          </p>
         ) : null}
 
         {clean ? (
