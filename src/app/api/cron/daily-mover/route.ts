@@ -72,13 +72,16 @@ const WINDOW_END_MINUTES = 15 * 60;
  * rather than failing at runtime, which is how it should be found.
  *
  * A measured end-to-end run (screen ~1,200 tickers, shortlist, select, download
- * and read 25 announcement PDFs, generate, render, upload) took about 120
- * seconds before the Accuracy Gate was added. The gate is one more model call
- * over the same corpus, and a blocking finding adds a rewrite on top of that, so
- * the worst case is now roughly 240-280 seconds — inside the ceiling, but no
- * longer comfortably. The headroom is gone, not the margin: if runs start
- * timing out, the thing to cut is the rewrite (leave the findings on the draft
- * and let the reviewer act on them), not the check.
+ * and read the filings, generate, render, upload) took about 120 seconds before
+ * the Accuracy Gate was added. The gate is one more model call over the same
+ * corpus — cheap in wall-clock because the corpus is served from cache — and a
+ * rewrite, when `warrantsRewrite` calls for one, adds another pass. Typical is
+ * now around 200 seconds and the worst case around 250.
+ *
+ * The margin is real but no longer generous, so both optional stages are
+ * budgeted rather than assumed: see `CHECK_DEADLINE_MS` and
+ * `REWRITE_DEADLINE_MS` in `lib/drafts/generate.ts`. The rewrite is dropped
+ * before the check, because the findings are useful to a human on their own.
  */
 export const maxDuration = 300;
 
