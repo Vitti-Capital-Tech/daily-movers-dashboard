@@ -49,6 +49,42 @@ export type ReportEntity = {
   comment?: string | null;
 };
 
+/**
+ * One plotted point. `display` is what prints, because the number that explains
+ * the story is rarely the number that formats itself well: -0.5 plots as a
+ * downward column and prints as "-0.5%".
+ */
+export type ReportChartPoint = {
+  /** Axis label: "Q1 FY26", "New Zealand", "Jul-26". */
+  label: string;
+  /** The plotted magnitude. Signed — negatives plot below the baseline. */
+  value: number;
+  /** How the figure prints. Falls back to the raw value. */
+  display?: string | null;
+  /** Draws this point in the accent colour: the one the conclusion is about. */
+  highlight?: boolean;
+};
+
+/**
+ * A chart, in the only two forms the page has room for.
+ *
+ * `columns` is the trend — quarterly growth, margin by half, production by
+ * period — and reads left to right as time. `bars` is the comparison, where the
+ * labels are names rather than dates and are too long to sit under a column.
+ *
+ * Deliberately not a general charting layer. Instruction 32 asks for charts that
+ * carry an insight, and every insight the desk has needed is one series of
+ * labelled magnitudes with a conclusion under it. A second series, a secondary
+ * axis or a scatter would all be new ways for a model to produce a chart nobody
+ * can read.
+ */
+export type ReportChart = {
+  type: "columns" | "bars";
+  points: ReportChartPoint[];
+  /** Optional axis note: "% change on prior corresponding period". */
+  unit?: string | null;
+};
+
 export type ReportPage =
   /**
    * Page 1. `kpis` is capped at two by the layout — the hero row is a pair of
@@ -92,12 +128,102 @@ export type ReportPage =
       title: string;
       items: ReportCallout[];
     }
-  /** "Where the Story Stands": a few standalone statements, then the by-line. */
+  /**
+   * A chart with the one-line conclusion that says what to notice in it.
+   *
+   * The conclusion is required, not optional. A chart without it is decoration,
+   * which is the thing instruction 32 rules out.
+   */
+  | {
+      kind: "chart";
+      title: string;
+      intro?: string | null;
+      chart: ReportChart;
+      conclusion: string;
+      callouts?: ReportCallout[];
+    }
+  /**
+   * The three-way split of instruction 28: what was announced, what the market
+   * actually reacted to, and the thing that decides the story from here.
+   *
+   * Its own page kind rather than three callouts because the gap between the
+   * headline and the reaction is the whole point of a Daily Mover on a day when
+   * a record result sells off, and a fixed three-block layout is what stops it
+   * being written as another narrative page.
+   */
+  | {
+      kind: "market-vs-reality";
+      title: string;
+      headline: string;
+      marketFocus: string;
+      whatMatters: string;
+    }
+  /**
+   * "What changed since the last update" (29) and "expectations vs actual" (30)
+   * are the same shape: a metric, two figures, and the delta between them.
+   * `columns` names what the two figures are, so one layout serves both.
+   */
+  | {
+      kind: "comparison";
+      title: string;
+      intro?: string | null;
+      /** Column headings: ["Metric", "Before", "Now"] or ["Metric", "Consensus", "Actual"]. */
+      columns: [string, string, string];
+      rows: ReportComparisonRow[];
+      conclusion?: string | null;
+    }
+  /** The Vitti View scorecard (33). Not a recommendation — a read of the setup. */
+  | {
+      kind: "vitti-view";
+      title: string;
+      ratings: ReportRating[];
+      keyDebate: string;
+      nextCatalyst: string;
+      /** The one question for management, from instruction 34. */
+      managementQuestion?: string | null;
+    }
+  /** "What would change the story" (35): the two lists, company-specific. */
+  | {
+      kind: "outlook";
+      title: string;
+      intro?: string | null;
+      improve: string[];
+      worsen: string[];
+    }
+  /**
+   * "Where the Story Stands": a few standalone statements, then the by-line.
+   *
+   * `signOff` is not a field — the renderer appends the house line verbatim, for
+   * the same reason the disclaimer is not in the schema.
+   */
   | {
       kind: "closing";
       title: string;
       statements: string[];
+      /** Instruction 34, when it hasn't already been asked on the Vitti View page. */
+      managementQuestion?: string | null;
     };
+
+/** One row of a `comparison` page. */
+export type ReportComparisonRow = {
+  metric: string;
+  before: string;
+  now: string;
+  /** "Beat"/"Miss", "+2.1pp", "Growth to contraction". Short — it is a column. */
+  change: string;
+  /** Colours the change cell. `neutral` when the direction isn't a verdict. */
+  direction?: "better" | "worse" | "neutral" | null;
+};
+
+/** One line of the Vitti View scorecard. */
+export type ReportRating = {
+  /** "Business Quality", "Balance Sheet", "Current Momentum". */
+  label: string;
+  /** "Strong", "Neutral", "Weak", "Improving", "Stable", "Weakening". */
+  value: string;
+  /** Optional one-line justification. */
+  note?: string | null;
+};
 
 export type ReportDoc = {
   /** ASX code, rendered letter-spaced as "A S X : S P Z". */
@@ -117,7 +243,12 @@ export const REPORT_PAGE_KINDS = [
   "narrative",
   "kpis",
   "entities",
+  "chart",
+  "market-vs-reality",
+  "comparison",
   "risks",
+  "vitti-view",
+  "outlook",
   "closing",
 ] as const;
 
@@ -137,8 +268,31 @@ export const DISCLAIMER_PARAGRAPHS: readonly string[] = [
   "If you have not previously received a copy of our Financial Services Guide (FSG), it is available free of charge from our website (https://vitti.capital/fsg/) or by contacting us. Vitti Capital and its representatives may hold or have exposure to securities mentioned. Any such interest is managed under our Conflicts of Interest Policy (https://vitti.capital/privacy-policy-2/).",
 ];
 
-/** How many content pages a report should run to, matching the house style. */
-export const REPORT_PAGE_TARGET = { min: 7, max: 11 } as const;
+/**
+ * How many content pages a report should run to.
+ *
+ * Instruction 22 sets the house length at roughly four to six content sections
+ * plus a closing page, which with the cover is six to eight. Nine is the ceiling
+ * rather than eight because the analyst-first pages added for instructions
+ * 28-35 — market-vs-reality, the comparison, the Vitti View — replace prose
+ * rather than adding to it, and a company with both a result and a transaction
+ * to explain legitimately needs the extra sheet. Above that it is padding, which
+ * the same instruction rules out.
+ */
+export const REPORT_PAGE_TARGET = { min: 6, max: 9 } as const;
+
+/**
+ * The house sign-off (instruction 37), appended by the renderer.
+ *
+ * Out of the schema for the same reason as the disclaimer: it is fixed text,
+ * and a model asked to end on a set phrase will paraphrase it about one time in
+ * five. Appending it means it is either exactly right or absent, never
+ * "That is where things stand today."
+ */
+export const CLOSING_SIGN_OFF = "That's where the story stands today.";
+
+/** Heading above the management question (instruction 34), wherever it appears. */
+export const MANAGEMENT_QUESTION_HEADING = "Question for management";
 
 /** "2026-08-18" -> "18 August 2026", as the footer prints it. */
 export function formatReportDate(isoDate: string): string {
@@ -201,6 +355,27 @@ export function validateReportDoc(doc: ReportDoc): string[] {
   const cover = doc.pages[0];
   if (cover.kind === "cover" && cover.kpis.length === 0) {
     problems.push("cover page has no KPI cards");
+  }
+
+  /**
+   * Instruction 17: every report carries real risks. This is the one editorial
+   * rule enforced structurally, because a missing risks page is the failure that
+   * turns explanatory research into promotional material — the reputational
+   * problem, not merely a thin note.
+   */
+  if (!doc.pages.some((page) => page.kind === "risks")) {
+    problems.push("report has no risks page");
+  }
+
+  /** Instruction 32: a chart without its conclusion is decoration. */
+  for (const [index, page] of doc.pages.entries()) {
+    if (page.kind !== "chart") continue;
+    if (!page.conclusion?.trim()) {
+      problems.push(`chart on page ${index + 1} has no conclusion line`);
+    }
+    if (page.chart.points.length < 2) {
+      problems.push(`chart on page ${index + 1} has fewer than two points`);
+    }
   }
 
   if (doc.pages.length < REPORT_PAGE_TARGET.min) {

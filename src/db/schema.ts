@@ -364,6 +364,18 @@ export const moverDrafts = pgTable(
     /** The typed page blocks the PDF was rendered from. See `lib/report/types`. */
     report: jsonb("report"),
 
+    /**
+     * The Accuracy Gate result: the verdict, its summary, every finding, and
+     * whether a rewrite was run against them.
+     *
+     * Stored rather than discarded once the rewrite is done, because the two
+     * questions a reviewer asks about an AI-written report are "was this
+     * checked?" and "what did the check find?", and a corrected report answers
+     * neither. It is also the honest record when the gate itself failed and the
+     * draft reached review unverified.
+     */
+    accuracy: jsonb("accuracy"),
+
     /** Key under the `drafts/` prefix, until approval moves it. */
     draftStoragePath: text("draft_storage_path"),
 

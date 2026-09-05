@@ -17,6 +17,7 @@ import {
   rejectDraftAction,
   type DraftActionState,
 } from "@/actions/drafts";
+import { AccuracyPanel } from "@/components/mover-studio/accuracy-panel";
 import { ReportPreview } from "@/components/mover-studio/report-preview";
 import { SelectionNotes } from "@/components/mover-studio/selection-notes";
 import { SourceList } from "@/components/mover-studio/source-list";
@@ -404,6 +405,7 @@ export function DraftReview({
         </CardContent>
       </Card>
 
+      {draft.accuracy ? <AccuracyPanel review={draft.accuracy} /> : null}
       {draft.report ? <ReportPreview report={draft.report} /> : null}
       {draft.sources ? (
         <SourceList sources={draft.sources} cited={draft.report?.citedIdsIds} />

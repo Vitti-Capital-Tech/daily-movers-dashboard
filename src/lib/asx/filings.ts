@@ -69,7 +69,63 @@ const LEGAL_INSTRUMENT_PATTERNS: RegExp[] = [
   /constitution/i,
 ];
 
-export type FilingClass = "substantive" | "series" | "legal-instrument";
+/**
+ * Filings the desk reads even when the ASX did not flag them price-sensitive.
+ *
+ * The price-sensitive flag answers "did this move the stock", which is the right
+ * filter for *today's* announcement and the wrong one for the company's
+ * background. Instruction 2 puts annual reports, half-year reports, quarterlies
+ * and investor presentations near the top of the source hierarchy, and on the
+ * ASX those routinely arrive unflagged: the market already knows the result from
+ * the Appendix 4E lodged minutes earlier, so the full report that follows it —
+ * the document with the segment note, the cash flow statement and the debt
+ * maturity table — carries no asterisk.
+ *
+ * Reading only flagged filings therefore left the report writing about a
+ * business from its announcements rather than its accounts. These headline
+ * patterns bring the accounts back in without opening the gate to the daily
+ * Appendix 3Y and change-of-address notices.
+ */
+const BACKGROUND_PATTERNS: RegExp[] = [
+  /annual report/i,
+  /half[- ]?year(ly)? (report|accounts|results)/i,
+  /(interim|full[- ]?year|preliminary final) (report|results)/i,
+  /appendix 4[cde]/i,
+  /appendix 5b/i,
+  /quarterly (activities|cash ?flow|report|update)/i,
+  /(investor|results|company|corporate|market|analyst) (presentation|briefing|day|update)/i,
+  /(fy|hy|1h|2h|h1|h2)\s?\d{2,4}\s+(results|report|presentation)/i,
+  /operational update/i,
+  /annual general meeting.*(presentation|address)/i,
+  /(chair(man)?'?s|ceo'?s|managing director'?s) address/i,
+];
+
+/**
+ * Whether an unflagged filing is worth reading for background.
+ *
+ * Applied only to announcements that are *not* price-sensitive — the flagged
+ * ones are already in. Legal instruments and series members are excluded here
+ * rather than admitted and then budgeted down: an unflagged notice of meeting is
+ * background the report has never used, and the point of this pass is to add
+ * accounts, not volume.
+ */
+export function isBackgroundFiling(announcement: Announcement): boolean {
+  if (announcement.isPriceSensitive) return false;
+  const headline = announcement.headline;
+  if (LEGAL_INSTRUMENT_PATTERNS.some((pattern) => pattern.test(headline))) {
+    return false;
+  }
+  if (SERIES_PATTERNS.some(({ pattern }) => pattern.test(headline))) {
+    return false;
+  }
+  return BACKGROUND_PATTERNS.some((pattern) => pattern.test(headline));
+}
+
+export type FilingClass =
+  | "substantive"
+  | "series"
+  | "legal-instrument"
+  | "background";
 
 export type ClassifiedAnnouncement = Announcement & {
   filingClass: FilingClass;
@@ -96,6 +152,10 @@ export function classifyAnnouncement(
     };
   }
 
+  if (isBackgroundFiling(announcement)) {
+    return { ...announcement, filingClass: "background", seriesKey: null };
+  }
+
   return { ...announcement, filingClass: "substantive", seriesKey: null };
 }
 
@@ -111,6 +171,18 @@ export const CHAR_BUDGET: Record<FilingClass, number> = {
   substantive: 90_000,
   series: 12_000,
   "legal-instrument": 14_000,
+  /**
+   * Background filings are read for context, so they get roughly half a results
+   * pack's budget.
+   *
+   * An annual report is the largest document a listed company files, and it is
+   * in the corpus for its front half: the operating and financial review, the
+   * segment note, the cash flow statement and the debt disclosures all sit ahead
+   * of the auditor's report and the remuneration tables. Head-truncating at 45k
+   * characters keeps that and drops the rest, which is the difference between
+   * adding the accounts and doubling the bill for them.
+   */
+  background: 45_000,
 };
 
 export type PrioritiseResult = {

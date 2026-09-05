@@ -40,7 +40,9 @@ export const dynamic = "force-dynamic";
  * the ceiling has to be the pipeline's, not a page render's.
  *
  * 300 is the Hobby plan's ceiling and every plan's default; a higher value fails
- * the build there rather than at runtime. A measured run takes about 120s.
+ * the build there rather than at runtime. A measured run took about 120s before
+ * the Accuracy Gate; with the check and a possible rewrite the worst case is
+ * roughly 240-280s. See the note on `maxDuration` in the cron route.
  */
 export const maxDuration = 300;
 

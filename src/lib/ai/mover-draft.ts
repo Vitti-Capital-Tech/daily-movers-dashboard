@@ -8,10 +8,14 @@ import {
   REPORT_PAGE_KINDS,
   REPORT_PAGE_TARGET,
   type ReportCallout,
+  type ReportChart,
+  type ReportChartPoint,
+  type ReportComparisonRow,
   type ReportDoc,
   type ReportEntity,
   type ReportKpi,
   type ReportPage,
+  type ReportRating,
 } from "@/lib/report/types";
 
 import {
@@ -22,6 +26,8 @@ import {
   type TokenUsage,
 } from "./client";
 import { formatDocumentForPrompt, type AnnouncementDocument } from "./announcement-text";
+
+import type { AccuracyFinding, AccuracyReview } from "@/lib/drafts/types";
 
 /**
  * The two judgment calls in the drafting pipeline: which mover to cover, and
@@ -279,13 +285,21 @@ const PAGE_SCHEMA = {
         "'narrative': a title and 2-5 paragraphs, optionally with small-caps callouts. " +
         "'kpis': a title and 3-4 big-number cards, optionally with notes underneath. " +
         "'entities': named blocks for segments, geographies or acquisitions, each with a dense stat line. " +
-        "'risks': label-and-explanation pairs, no numbers. " +
+        "'chart': one plotted series with the conclusion line under it — use this instead of a paragraph whenever the story is a trend. " +
+        "'market-vs-reality': the headline / market focus / what really matters split, for a day when the announcement and the share-price reaction point different ways. " +
+        "'comparison': a four-column table — metric, two figures, and the change — for 'what changed since the last update' or 'consensus vs actual'. " +
+        "'risks': label-and-explanation pairs, no numbers. Always include one. " +
+        "'vitti-view': the setup scorecard, plus the key debate, the next catalyst and the question for management. " +
+        "'outlook': the two lists of what would improve the story and what would make it worse. " +
         "'closing' (last page only): 3-4 standalone concluding statements.",
     },
     title: {
       type: "string",
       description:
-        "Page heading, sentence-style title case, e.g. 'The UK Is Doing the Heavy Lifting'. Not used on the cover page.",
+        "Page heading. Write it so the reader knows the page's conclusion from the heading alone: " +
+        "'Is the Balance Sheet a Problem?' not 'Balance Sheet & Cash Flow'; 'Where Is the Weakness?' not " +
+        "'Division Performance'; 'The UK Is Doing the Heavy Lifting' not 'Segment Detail'. A question or a " +
+        "finding, never a category label. Not used on the cover page.",
     },
     companyName: {
       type: "string",
@@ -294,8 +308,160 @@ const PAGE_SCHEMA = {
     headline: {
       type: "string",
       description:
-        "Cover page only. Must state direction and magnitude the way the desk writes it: " +
-        "'Shares Rise as Much as ~20.6% in Morning Trade After Record FY26 Results and a New $5 Million Share Buy-Back'.",
+        "On a 'cover' page: the share-move headline, stating direction and magnitude the way the desk writes it — " +
+        "'Shares Rise as Much as ~20.6% in Morning Trade After Record FY26 Results and a New $5 Million Share Buy-Back'. " +
+        "On a 'market-vs-reality' page: what the company announced, or what initially looks like the important part.",
+    },
+    marketFocus: {
+      type: "string",
+      description:
+        "'market-vs-reality' pages: what investors actually appear to have reacted to, which is often not the headline.",
+    },
+    whatMatters: {
+      type: "string",
+      description:
+        "'market-vs-reality' pages: the issue that decides the investment story from here.",
+    },
+    chart: {
+      type: "object",
+      description:
+        "'chart' pages only. One series of labelled figures, all of them read from the evidence.",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["columns", "bars"],
+          description:
+            "'columns' for a series over time (quarters, halves, months) — it reads left to right and plots " +
+            "negatives below the baseline. 'bars' when the labels are names (segments, countries, products) " +
+            "and are too long to sit under a column.",
+        },
+        unit: {
+          type: "string",
+          description:
+            "Optional axis note saying what the numbers are: '% change on prior corresponding period', '$ million'.",
+        },
+        points: {
+          type: "array",
+          minItems: 2,
+          maxItems: 8,
+          items: {
+            type: "object",
+            properties: {
+              label: {
+                type: "string",
+                description: "Short axis label: 'Q1 FY26', 'Jul-26', 'New Zealand'.",
+              },
+              value: {
+                type: "number",
+                description:
+                  "The plotted magnitude, signed. Use the same unit for every point in the series — mixing " +
+                  "percentages and dollars in one chart plots a nonsense shape.",
+              },
+              display: {
+                type: "string",
+                description: "How the figure prints: '+6.0%', '-0.5%', '$55.4M'.",
+              },
+              highlight: {
+                type: "boolean",
+                description:
+                  "True for the one or two points the conclusion is about — they draw in the house colour.",
+              },
+            },
+            required: ["label", "value"],
+          },
+        },
+      },
+      required: ["type", "points"],
+    },
+    conclusion: {
+      type: "string",
+      description:
+        "'chart' pages (required) and 'comparison' pages (optional): one sentence saying what the reader should " +
+        "notice. Not a restatement of the figures — the point they make. 'The direction of sales growth explains " +
+        "the sell-off better than the headline FY26 result.'",
+    },
+    columns: {
+      type: "array",
+      minItems: 3,
+      maxItems: 3,
+      items: { type: "string" },
+      description:
+        "'comparison' pages: the three column headings, e.g. ['Metric','Before','Now'] for what changed since the " +
+        "last update, or ['Metric','Consensus','Actual'] for expectations against the result.",
+    },
+    rows: {
+      type: "array",
+      description: "'comparison' pages: one row per metric that materially changed. Skip the immaterial ones.",
+      items: {
+        type: "object",
+        properties: {
+          metric: { type: "string", description: "'Australia sales growth', 'NPAT', 'FY27 guidance'." },
+          before: { type: "string", description: "The earlier figure, as it prints: '+6.0%', '$44.1M'." },
+          now: { type: "string", description: "The current figure, as it prints." },
+          change: {
+            type: "string",
+            description:
+              "The delta in a few words: '-6.5pp', 'Beat', 'Growth to contraction'. It is a narrow column.",
+          },
+          direction: {
+            type: "string",
+            enum: ["better", "worse", "neutral"],
+            description:
+              "Whether the change is good or bad for the investment case. 'neutral' when it is a fact rather " +
+              "than a verdict — a change in segment mix is not automatically either.",
+          },
+        },
+        required: ["metric", "before", "now", "change"],
+      },
+    },
+    ratings: {
+      type: "array",
+      maxItems: 4,
+      description:
+        "'vitti-view' pages: normally Business Quality (Strong/Neutral/Weak), Balance Sheet (Strong/Neutral/Weak) " +
+        "and Current Momentum (Improving/Stable/Weakening). Leave out any rating the evidence does not support " +
+        "rather than defaulting it to Neutral.",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          value: { type: "string" },
+          note: {
+            type: "string",
+            description: "Optional few-word justification: 'Net cash, no drawn debt'.",
+          },
+        },
+        required: ["label", "value"],
+      },
+    },
+    keyDebate: {
+      type: "string",
+      description: "'vitti-view' pages: the one sentence the bulls and bears actually disagree about.",
+    },
+    nextCatalyst: {
+      type: "string",
+      description:
+        "'vitti-view' pages: the next dated or expected event that resolves part of that debate.",
+    },
+    managementQuestion: {
+      type: "string",
+      description:
+        "'vitti-view' or 'closing' pages: one question worth putting to management, coming directly out of this " +
+        "report's research and answering something the public documents leave open. Not a generic question. " +
+        "'How much of July's sales weakness came from customers waiting for promotional events versus a genuine " +
+        "slowdown in underlying demand?' — not 'What are your growth plans?'. Put it on one page, not both.",
+    },
+    improve: {
+      type: "array",
+      description:
+        "'outlook' pages: what investors would need to see for the story to get better. Company-specific and " +
+        "checkable — 'Australian sales return to growth', not 'execution improves'.",
+      items: { type: "string" },
+    },
+    worsen: {
+      type: "array",
+      description: "'outlook' pages: what would make the story worse. Same standard.",
+      items: { type: "string" },
     },
     intro: {
       type: "string",
@@ -450,9 +616,10 @@ const REPORT_TOOL: Anthropic.Tool = {
         minItems: REPORT_PAGE_TARGET.min,
         maxItems: REPORT_PAGE_TARGET.max,
         description:
-          `The report body, ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} pages. ` +
-          "The first page MUST be 'cover' and the last MUST be 'closing'. The compliance " +
-          "disclaimer is appended automatically — never write one.",
+          `The report body, ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} pages, in the order that ` +
+          "tells this company's story best. The first page MUST be 'cover', the last MUST be 'closing', and " +
+          "there MUST be a 'risks' page somewhere between them. The compliance disclaimer and the closing " +
+          "sign-off line are appended automatically — never write either.",
         items: PAGE_SCHEMA,
       },
     },
@@ -472,35 +639,127 @@ const REPORT_TOOL: Anthropic.Tool = {
 
 const REPORT_SYSTEM = `You are a research analyst at Vitti Capital, an Australian equities firm, writing today's "Daily Mover" report on an ASX-listed company that has moved sharply.
 
-WHAT A DAILY MOVER IS
+Your job is not to summarise the announcement. It is to explain why the stock moved, what actually changed in the investment story, what the numbers mean, what risks remain, and what a reader should watch next. Accuracy matters more than polish, and polish matters more than length.
 
-A ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} page institutional note, one idea per page, that answers three questions in order: what does this company do, what changed today, and what happens next. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
+=== 1. WHAT A DAILY MOVER IS ===
 
-THE HOUSE STRUCTURE
+A ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} page institutional note, one idea per page. A reader should get the main story in 30 to 60 seconds and still have enough detail to investigate further. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
 
-Page 1 is the cover: company name, a headline stating direction and magnitude, and exactly two hero KPI cards — the share move, and the single most important number from the announcement.
+The thinking order is: WHAT HAPPENED -> WHAT CHANGED -> WHY THE MARKET CARES -> WHAT MATTERS NEXT.
 
-The middle pages each take one idea and give it a page. In roughly this order, using only what the filings support:
-  - what the business actually does and how it makes money
-  - the headline results or transaction, as a KPI page
-  - the segment, geographic or divisional detail
-  - the balance sheet and cash position
-  - "Risks & What to Watch" — a risks page, always included
+=== 2. FIND THE REAL STORY BEFORE YOU WRITE ===
 
-The last page is the closing: three or four standalone statements on where the story now stands, ending on the open question a PM should keep an eye on.
+Do not treat every number as equally important, and do not adopt the company's own headline as the investment insight. Work out the one or two things that actually changed, by asking:
 
-HOW IT IS WRITTEN
+- What did investors believe before today, and what do they know now?
+- Was the result better or worse than what the company had guided to?
+- Is the growth organic, or did acquisitions produce it? What would growth look like without them?
+- Did revenue grow while margins fell? Did earnings rise on genuine operating improvement, or on a one-off gain?
+- Did cash flow support the reported profit?
+- Did guidance change? Was previous guidance beaten or missed?
+- Is the market reacting to today's result, or to what today's result implies about next year?
 
-- Plain English. Short sentences. Explain the business as if to an intelligent reader who has never heard of it. "Automatic Number Plate Recognition reads a car's plate on entry and exit — no barriers needed" is the register.
-- Numbers carry the report. Every KPI card and every stat line comes from an announcement in the evidence you were given, or from the market data in the prompt. If a figure is not in the evidence, it does not go in the report. Never estimate, never round to something you did not read, never fill a card because the layout has a slot.
-- Be specific over general: "1,525 sites, +302 in FY26" beats "strong site growth".
-- Balanced, not promotional. The risks page is not a formality — say what could go wrong, including that the shares have just re-rated.
-- Never give a recommendation, price target, or advice to buy or sell. This is explanatory research, not personal advice.
-- Do not write a disclaimer or any general advice warning. One is appended automatically, and writing your own would put unapproved compliance text in a client document.
-- Work only from the evidence provided. Do not add facts about this company from your training data — they may be out of date, and every number in this report has to be checkable against a filing.
+Worked example of the standard: for IPD Group the insight was not "record FY26 revenue". It was that stripping out the Platinum Cables acquisition, revenue still rose 9.7%, EBITDA 11% and NPAT 12.2% — the existing business was growing too. Look for that kind of second-order fact in every report.
+
+=== 3. THE READER MUST UNDERSTAND THE COMPANY ===
+
+Before the analysis, the report has to establish what the company does, how it makes money, what it sells and to whom, and where it operates. Explain it as if to an intelligent reader who has never heard of it: "Automatic Number Plate Recognition reads a car's plate on entry and exit — no barriers needed" is the register. Use a concrete example when a financial or industry concept is hard.
+
+=== 4. ACCURACY ===
+
+- Every figure comes from an announcement in the evidence, or from the market data block in the prompt. If it is not in the evidence, it does not go in the report. Never estimate, never round to a number you did not read, never fill a KPI card because the layout has a slot.
+- If you work a figure out yourself (a margin, a multiple, a growth rate, an ex-acquisition number), say so in the surrounding text — "on our calculation", "excluding Platinum Cables".
+- If two documents disagree, say which you used and why, or leave the figure out. Do not silently pick one.
+- If something material cannot be confirmed from the evidence, say so plainly. Do not hide uncertainty.
+- Work only from the evidence provided. Do not add facts about this company from your own knowledge — they may be out of date, and every number here has to be checkable against a filing.
 - Cite honestly: list in citedIdsIds every announcement id you actually took a fact from.
 
-If the evidence is thin — a small filing with little detail and no results history — write a shorter, honest report rather than padding it. ${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not.`;
+=== 5. THE SHARE-PRICE MOVE ===
+
+Always separate what the company announced from how the market reacted, and always say which window the move is measured over. An intraday figure must be described as intraday: "shares rose as much as ~12.9% in morning trade", "shares fell as much as ~17% during the session". Never write a bare "IPG rose 12.9%" — it reads as a closing return. Only call it a closing move when the market data says the figure is a close.
+
+=== 6. HOUSE STYLE ===
+
+Tense: present tense for what is still true ("IPD supplies electrical equipment"), past tense only for finished events ("IPD acquired Platinum Cables in December 2025"). A fact appearing in an old announcement does not make it past tense.
+
+Currency: Australian dollars are written "$55.4 million", never "A$55.4m" and never with an "A" in front. Spell out "million" and "billion" in body text; abbreviations like "$55.4M" are for KPI cards and chart labels where space is tight. Use "US$400 million" for US dollars. Be consistent across the whole report.
+
+Writing: short sentences, plain English, no filler. Write like an analyst explaining a company to another investor — not like a press release, a brochure, or academic research. Use contractions naturally: isn't, doesn't, hasn't, can't, won't, it's.
+
+Never use these openers — state the point directly instead: "It is important to note that", "It is worth mentioning", "Interestingly", "Notably", "This highlights", "This underscores", "Importantly", "That said".
+
+Do not add an adjective when the number already makes the point. "Revenue increased 25%", not "revenue delivered an extremely strong increase of 25%".
+
+Do not repeat a point across pages. If it was explained once, later pages assume it.
+
+Conviction: for confirmed past or present facts, write with conviction. If the results show revenue growth drove the earnings increase, write "revenue growth drove the increase" — not "this may have been driven by revenue growth". But never present a future outcome as certain. Distinguish carefully between guaranteed, contracted, conditional, potential, targeted, forecast, expected, and management guidance. "The acquisition could increase earnings if integration and cross-selling perform as expected", not "the acquisition will increase earnings". Do not write "will" merely because management expects it.
+
+Never give a recommendation, price target, or advice to buy or sell. This is explanatory research, not personal advice. Do not write a disclaimer or general-advice warning — one is appended automatically, and writing your own would put unapproved compliance text in a client document.
+
+=== 7. WHAT TO CHECK, BY TYPE OF ANNOUNCEMENT ===
+
+CONTRACTS. Separate the headline value from what is actually committed. Look for contract length, start date, the customer, whether it is binding, whether volumes are minimum commitments, conditions precedent, termination rights, and whether the company needs more capital to deliver it. Never describe a headline contract value as guaranteed revenue unless the filing says it is. Where the evidence allows, say what it could realistically contribute over the next twelve months.
+
+ACQUISITIONS. Purchase price, upfront versus earn-out, how it is funded (cash, debt, shares), revenue and EBITDA acquired, the implied multiple, EPS accretion, stated synergies, goodwill, and integration risk. Then ask the question that matters: what does growth look like without the acquisition? Never describe acquisition-driven growth as organic.
+
+EARNINGS QUALITY. Do not stop at EBITDA. Check whether the earnings are backed by cash: operating cash flow, free cash flow, cash conversion, receivables, inventory, working capital. If cash flow is materially weaker or stronger than earnings, explain why.
+
+MARGINS. When a margin moves, explain why — mix, operating leverage, cost-out, acquisitions, pricing. Never print two percentages and leave the reader to connect them. A falling gross margin alongside a rising EBITDA margin is a story, not a contradiction, and a margin decline is not automatically bad if the economics improved.
+
+BALANCE SHEET. Cash, debt, net debt, net debt/EBITDA, working capital, goodwill, covenants, and funding needs. Say whether the company has the financial flexibility to do what it says it will do. Ratios usually beat raw dollars for this.
+
+VALUATION. Include it only when it helps explain the market reaction or the risk. Use simple metrics — P/E, EV/EBITDA, EV/revenue — computed off the share price in the market data block, and label them as trailing, underlying or forecast. Never call a company cheap or expensive without showing the basis.
+
+EXPECTATIONS. Compare against consensus only if a reliable figure appears in the evidence (a company-compiled consensus, a broker figure quoted in a filing). Never invent or recall a consensus number. If there isn't one, compare against the company's own prior guidance instead, or leave the comparison out.
+
+=== 8. STRUCTURE: LET THE STORY DECIDE ===
+
+There is no fixed page order. Choose the sequence that explains this company's story most directly, then use the page kinds to build it. Before writing, settle: what is the main insight, what must the reader know first to understand it, which financial issue matters most, which risks are real, and what should be watched next.
+
+Fixed points, and only these:
+- Page 1 is the cover: company name, the share-move headline, and exactly two hero KPI cards — the move, and the single most important number from the announcement.
+- A risks page appears somewhere. It is never optional.
+- The last page is the closing.
+
+Useful starting shapes, to adapt rather than copy:
+- Earnings result: the move -> the main insight -> growth/margins/divisions -> cash flow and balance sheet -> what to watch -> closing.
+- Contract win: the move -> the existing business -> the contract -> what it could mean financially -> execution, funding, risks -> closing.
+- Acquisition: the move -> the existing business -> the acquisition -> organic versus acquired growth -> balance sheet and integration -> closing.
+- Biotech or pharma: the move -> the product story -> what changed today -> the commercial or clinical opportunity -> risks and next catalysts -> closing.
+- Mining or development: the move -> the project -> what was announced -> economics, funding, resource -> risks and milestones -> closing.
+- Negative mover: the fall -> what changed -> is the core business still working -> financial impact -> what needs to improve -> closing.
+
+ONE PAGE, ONE QUESTION. Every page heading should tell the reader the page's conclusion. Write "Is the Balance Sheet a Problem?" not "Balance Sheet & Cash Flow"; "Where Is the Weakness?" not "Division Performance"; "Were the FY26 Numbers Actually Weak?" not "FY26 Results"; "What Could Make the Story Worse?" not "Risks".
+
+=== 9. THE ANALYTICAL PAGES ===
+
+Use these where they earn their place. They are the pages that make the note analytical rather than descriptive — but a page with nothing real to put in it is worse than no page.
+
+MARKET VS REALITY ('market-vs-reality'). Include it whenever the headline and the reaction point different ways: strong results that sold off, weak results that rallied, strong revenue with weak margins or cash, a market focused on guidance rather than the reported year, or a large contract with little committed revenue. Three blocks — what was announced, what investors actually reacted to, and the issue that decides the story from here.
+
+WHAT CHANGED ('comparison' with Before/Now columns). Do not analyse today's filing in isolation. Compare it against the most relevant earlier disclosure in the evidence and table only the metrics that materially moved — sales growth, margins, earnings, cash, guidance, production, timelines, the language management uses. Skip anything immaterial.
+
+EXPECTATIONS VS ACTUAL ('comparison' with Consensus/Actual columns). Only with a reliable figure from the evidence. Otherwise leave it out.
+
+CHARTS ('chart'). Where a chart explains the story better than a paragraph, use the chart. The series worth plotting are the ones with direction in them: quarterly or half-yearly growth, margin trend, cash burn and runway, production, guidance revisions, segment contribution, debt or dilution over time. Every chart carries a one-line conclusion saying what to notice — a chart without one is decoration, and decoration does not go in a Daily Mover. Aim for fewer words and better charts.
+
+VITTI VIEW ('vitti-view'). A read of the setup, not a rating: business quality, balance sheet, current momentum, the key debate in one sentence, and the next catalyst. Only rate what the evidence supports. Keep it unpromotional.
+
+QUESTION FOR MANAGEMENT. One question, coming directly out of your own research, about something the public documents leave open. It goes on the Vitti View page or the closing page — not both.
+
+WHAT WOULD CHANGE THE STORY ('outlook'). The specific, checkable things that would improve or worsen the investment case. Company-specific only: "Australian sales return to growth", "the Panel declaration is set aside", "cash burn forces another raise" — never a generic bull and bear list.
+
+=== 10. RISKS ===
+
+Real risks, specific to this company, each with a sentence on why it matters: customer or supplier concentration, margin pressure, commodity exposure, regulation, trial failure, project delay, funding need, integration, debt, cash burn, dependence on one product or contract, and the fact that the shares have just re-rated. Do not pad with generic risks to look balanced, and do not exaggerate one for the same reason.
+
+=== 11. THE CLOSING PAGE ===
+
+Three or four standalone statements leaving the reader with a clear investment debate: what remains strong, what changed, what the key concern or opportunity is, and what to watch next. Do not restate the financial detail from earlier pages. The house sign-off line is appended automatically — do not write it yourself.
+
+=== 12. LENGTH ===
+
+${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.`;
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -533,6 +792,76 @@ function asCallouts(value: unknown): ReportCallout[] {
       return { label: asString(entry?.label), text: asString(entry?.text) };
     })
     .filter((callout) => callout.label && callout.text);
+}
+
+function asChart(value: unknown): ReportChart | null {
+  const raw = value as Record<string, unknown>;
+  if (!raw || typeof raw !== "object") return null;
+
+  const points: ReportChartPoint[] = [];
+  for (const item of Array.isArray(raw.points) ? raw.points : []) {
+    const entry = item as Record<string, unknown>;
+    const numeric = Number(entry?.value);
+    const label = asString(entry?.label);
+    if (!label || !Number.isFinite(numeric)) continue;
+    points.push({
+      label,
+      value: numeric,
+      display: asString(entry?.display) || null,
+      highlight: entry?.highlight === true,
+    });
+  }
+
+  // One point is a number, not a chart, and the renderer's baseline maths
+  // divides by the series span — which is zero for an all-zero series.
+  if (points.length < 2) return null;
+  if (points.every((point) => point.value === 0)) return null;
+
+  return {
+    type: asString(raw.type) === "bars" ? "bars" : "columns",
+    unit: asString(raw.unit) || null,
+    points,
+  };
+}
+
+function asComparisonRows(value: unknown): ReportComparisonRow[] {
+  if (!Array.isArray(value)) return [];
+
+  const rows: ReportComparisonRow[] = [];
+  for (const item of value) {
+    const entry = item as Record<string, unknown>;
+    const metric = asString(entry?.metric);
+    const before = asString(entry?.before);
+    const now = asString(entry?.now);
+    if (!metric || (!before && !now)) continue;
+
+    const direction = asString(entry?.direction);
+    rows.push({
+      metric,
+      before,
+      now,
+      change: asString(entry?.change),
+      direction:
+        direction === "better" || direction === "worse" || direction === "neutral"
+          ? direction
+          : null,
+    });
+  }
+  return rows;
+}
+
+function asRatings(value: unknown): ReportRating[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        label: asString(entry?.label),
+        value: asString(entry?.value),
+        note: asString(entry?.note) || null,
+      };
+    })
+    .filter((rating) => rating.label && rating.value);
 }
 
 function asEntities(value: unknown): ReportEntity[] {
@@ -601,6 +930,88 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
       return { kind: "entities", title, intro, items };
     }
 
+    case "chart": {
+      const chart = asChart(page.chart);
+      const conclusion = asString(page.conclusion);
+      // A chart page without a plottable series or its conclusion line is not a
+      // shorter version of itself — instruction 32 is that the conclusion is the
+      // reason the chart is there. Drop the page rather than print decoration.
+      if (!title || !chart || !conclusion) return null;
+      return {
+        kind: "chart",
+        title,
+        intro,
+        chart,
+        conclusion,
+        callouts: asCallouts(page.callouts),
+      };
+    }
+
+    case "market-vs-reality": {
+      const headline = asString(page.headline);
+      const marketFocus = asString(page.marketFocus);
+      const whatMatters = asString(page.whatMatters);
+      // All three blocks or none: the page's whole point is the gap between
+      // them, and two of the three does not show a gap.
+      if (!headline || !marketFocus || !whatMatters) return null;
+      return {
+        kind: "market-vs-reality",
+        title: title || "Headline vs What Actually Moved the Stock",
+        headline,
+        marketFocus,
+        whatMatters,
+      };
+    }
+
+    case "comparison": {
+      const rows = asComparisonRows(page.rows);
+      if (!title || rows.length === 0) return null;
+      const supplied = asStringArray(page.columns);
+      const columns: [string, string, string] = [
+        supplied[0] || "Metric",
+        supplied[1] || "Before",
+        supplied[2] || "Now",
+      ];
+      return {
+        kind: "comparison",
+        title,
+        intro,
+        columns,
+        rows,
+        conclusion: asString(page.conclusion) || null,
+      };
+    }
+
+    case "vitti-view": {
+      const ratings = asRatings(page.ratings);
+      const keyDebate = asString(page.keyDebate);
+      const nextCatalyst = asString(page.nextCatalyst);
+      if (ratings.length === 0 && !keyDebate) return null;
+      return {
+        kind: "vitti-view",
+        title: title || "The Vitti View",
+        ratings,
+        keyDebate,
+        nextCatalyst,
+        managementQuestion: asString(page.managementQuestion) || null,
+      };
+    }
+
+    case "outlook": {
+      const improve = asStringArray(page.improve);
+      const worsen = asStringArray(page.worsen);
+      // One-sided is legitimate — a story can have only downside left — but an
+      // empty page is not.
+      if (improve.length === 0 && worsen.length === 0) return null;
+      return {
+        kind: "outlook",
+        title: title || "What Would Change the Story?",
+        intro,
+        improve,
+        worsen,
+      };
+    }
+
     case "risks": {
       // The schema points risks pages at `callouts`, but `items` is the natural
       // word for a list and gets used anyway — so accept either shape.
@@ -623,6 +1034,7 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
         kind: "closing",
         title: title || "Where the Story Stands",
         statements,
+        managementQuestion: asString(page.managementQuestion) || null,
       };
     }
 
@@ -636,6 +1048,33 @@ function clamp(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * The question for management appears once, on the last page that carries one.
+ *
+ * Instruction 34 asks for one question, and the schema offers it on two page
+ * kinds because either is a reasonable home for it. Told it may go on either,
+ * the model fairly often puts the same question on both — so the closing page
+ * keeps it and an earlier Vitti View gives it up, which is the order a reader
+ * would expect to meet it in anyway.
+ */
+function dedupeManagementQuestion(pages: ReportPage[]): ReportPage[] {
+  const carriers = pages.filter(
+    (page) =>
+      (page.kind === "vitti-view" || page.kind === "closing") &&
+      !!page.managementQuestion,
+  );
+  if (carriers.length < 2) return pages;
+
+  const keep = carriers[carriers.length - 1];
+  return pages.map((page) =>
+    page !== keep &&
+    (page.kind === "vitti-view" || page.kind === "closing") &&
+    page.managementQuestion
+      ? { ...page, managementQuestion: null }
+      : page,
+  );
+}
+
 export async function writeReport(
   input: {
     moveDate: string;
@@ -646,18 +1085,38 @@ export async function writeReport(
     todayDocuments: AnnouncementDocument[];
     /** The company's price-sensitive history — the context. */
     historyDocuments: AnnouncementDocument[];
+    /**
+     * The first draft and what the Accuracy Gate found in it.
+     *
+     * Present only on the rewrite. The draft itself is included, not just the
+     * findings: a rewrite told only "these four numbers are wrong" starts from
+     * a blank page and loses the eight pages that were right, and a second pass
+     * over the same corpus does not reliably rediscover the same insight. With
+     * the draft in front of it the call is an edit, which is what it should be.
+     *
+     * See `checkReport` and the revision step in `lib/drafts/generate.ts`.
+     */
+    corrections?: { doc: ReportDoc; findings: AccuracyFinding[] };
   },
   usage: TokenUsage,
 ): Promise<{ report: DraftedReport; usage: TokenUsage }> {
   const anthropic = getAnthropicClient();
   const { row } = input;
 
+  /**
+   * Australian dollars are written "$", never "A$".
+   *
+   * This block used to print "A$1.2340", and house style (instruction 8) bans
+   * the "A" prefix outright. The prompt is the model's most immediate example of
+   * how the desk writes a number, so a prefix here reappears in the report — the
+   * instruction not to use it competes with a live demonstration of using it.
+   */
   const marketBlock = `MARKET DATA (${input.moveDate}, from the exchange feed — these are the authoritative figures for the move)
   ticker:      ${row.ticker}
   company:     ${row.companyName}
   sector:      ${row.sector ?? "unknown"}
   move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
-  last price:  ${row.last !== null ? `A$${row.last.toFixed(4)}` : "unknown"}
+  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
   turnover:    ${formatMoneyCompact(row.turnover)}
   market cap:  ${formatMoneyCompact(row.marketCap)}
 
@@ -721,7 +1180,16 @@ ${input.selection.rationale}`;
       ),
     {
       type: "text",
-      text: `Write today's Daily Mover report on ${row.ticker} using the publish_daily_mover_draft tool. The by-line analyst is ${input.analystName}.`,
+      text: input.corrections?.findings.length
+        ? `A first draft of this report was written and then checked against the evidence above. It is reproduced ` +
+          `below, followed by what the check found.\n\n` +
+          `THE FIRST DRAFT\n\n${formatReportForReview(input.corrections.doc)}\n\n\n` +
+          `ACCURACY GATE FINDINGS\n\n${formatFindings(input.corrections.findings)}\n\n\n` +
+          `Publish the corrected report with the publish_daily_mover_draft tool. Fix every finding and keep ` +
+          `everything the check did not object to — this is an edit, not a fresh attempt, so pages that were ` +
+          `right should come back substantially as they were. Where a figure cannot be confirmed anywhere in the ` +
+          `evidence, remove the claim rather than softening it. The by-line analyst is ${input.analystName}.`
+        : `Write today's Daily Mover report on ${row.ticker} using the publish_daily_mover_draft tool. The by-line analyst is ${input.analystName}.`,
     },
   ];
 
@@ -756,9 +1224,11 @@ ${input.selection.rationale}`;
     const raw = toolUse.input as Record<string, unknown>;
     const companyName = asString(raw.companyName) || row.companyName;
 
-    const pages = (Array.isArray(raw.pages) ? raw.pages : [])
-      .map((page) => normalisePage(page, companyName))
-      .filter((page): page is ReportPage => page !== null);
+    const pages = dedupeManagementQuestion(
+      (Array.isArray(raw.pages) ? raw.pages : [])
+        .map((page) => normalisePage(page, companyName))
+        .filter((page): page is ReportPage => page !== null),
+    );
 
     const rawMovePct = Number(raw.movePct);
     /**
@@ -804,6 +1274,387 @@ ${input.selection.rationale}`;
               : (row.last ?? null),
         },
         citedIdsIds: asStringArray(raw.citedIdsIds),
+      },
+      usage: nextUsage,
+    };
+  } catch (error) {
+    throw new Error(describeAnthropicError(error));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 3 — the Accuracy Gate
+// ---------------------------------------------------------------------------
+
+/**
+ * The check that runs between "the report is written" and "an analyst sees it".
+ *
+ * Instruction 5 asks for every material figure to be verified against the
+ * original documents before publication, and instruction 24 asks for a second
+ * read for tense, currency, share-price wording and anything that claims more
+ * than the evidence supports. Neither is something the writing call can do for
+ * itself: it would be grading its own work in the same context that produced
+ * it, and the failure being looked for — a number that felt right — is
+ * invisible from inside that context.
+ *
+ * So this is a separate call with a different job. It is given the finished
+ * report and the same evidence, and asked only to find what is wrong. It writes
+ * nothing.
+ *
+ * ONE gate call, not two. The corpus is the expensive part of this pipeline
+ * (~150k tokens of filings), and re-checking after a revision would pay for it
+ * a third time to confirm a fix the writer was explicitly told to make. The
+ * findings are stored on the draft instead, so a reviewer sees exactly what was
+ * flagged and whether a rewrite was run — the audit trail rather than another
+ * bill.
+ */
+
+/** The findings, as the rewrite prompt lists them back to the writer. */
+function formatFindings(findings: AccuracyFinding[]): string {
+  return findings
+    .map((finding, index) => {
+      const where = finding.page ? `page ${finding.page}` : "unplaced";
+      return [
+        `${index + 1}. [${finding.severity}] [${finding.category}] (${where})`,
+        `   report says: ${finding.claim}`,
+        `   problem:     ${finding.problem}`,
+        `   fix:         ${finding.fix}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+function kpiLine(kpi: ReportKpi): string {
+  return `[KPI] ${kpi.value} — ${kpi.label}${kpi.note ? ` (${kpi.note})` : ""}`;
+}
+
+function calloutLines(callouts?: ReportCallout[]): string[] {
+  return (callouts ?? []).map((callout) => `${callout.label}: ${callout.text}`);
+}
+
+/** The drafted report as numbered plain text, for the checker to read. */
+function formatReportForReview(doc: ReportDoc): string {
+  return doc.pages
+    .map((page, index) => {
+      const head = `--- PAGE ${index + 1} (${page.kind}) ---`;
+      const body: string[] = [];
+
+      switch (page.kind) {
+        case "cover":
+          body.push(page.companyName, page.headline);
+          body.push(...page.kpis.map(kpiLine));
+          break;
+        case "narrative":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(...page.paragraphs);
+          body.push(...calloutLines(page.callouts));
+          break;
+        case "kpis":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(...page.kpis.map(kpiLine));
+          body.push(...(page.notes ?? []));
+          body.push(...calloutLines(page.callouts));
+          break;
+        case "entities":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(
+            ...page.items.map(
+              (item) =>
+                `${item.name}: ${item.stat}${item.comment ? ` — ${item.comment}` : ""}`,
+            ),
+          );
+          break;
+        case "chart":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(
+            `chart (${page.chart.type}${page.chart.unit ? `, ${page.chart.unit}` : ""}): ` +
+              page.chart.points
+                .map(
+                  (point) =>
+                    `${point.label}=${point.display?.trim() || point.value}`,
+                )
+                .join(", "),
+          );
+          body.push(`conclusion: ${page.conclusion}`);
+          body.push(...calloutLines(page.callouts));
+          break;
+        case "market-vs-reality":
+          body.push(page.title);
+          body.push(`headline: ${page.headline}`);
+          body.push(`market focus: ${page.marketFocus}`);
+          body.push(`what really matters: ${page.whatMatters}`);
+          break;
+        case "comparison":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(`columns: ${page.columns.join(" | ")} | Change`);
+          body.push(
+            ...page.rows.map(
+              (row) =>
+                `${row.metric} | ${row.before} | ${row.now} | ${row.change}`,
+            ),
+          );
+          if (page.conclusion) body.push(`conclusion: ${page.conclusion}`);
+          break;
+        case "risks":
+          body.push(page.title);
+          body.push(...page.items.map((item) => `${item.label}: ${item.text}`));
+          break;
+        case "vitti-view":
+          body.push(page.title);
+          body.push(
+            ...page.ratings.map(
+              (rating) =>
+                `${rating.label}: ${rating.value}${rating.note ? ` (${rating.note})` : ""}`,
+            ),
+          );
+          body.push(`key debate: ${page.keyDebate}`);
+          body.push(`next catalyst: ${page.nextCatalyst}`);
+          if (page.managementQuestion) {
+            body.push(`question for management: ${page.managementQuestion}`);
+          }
+          break;
+        case "outlook":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(...page.improve.map((item) => `improves: ${item}`));
+          body.push(...page.worsen.map((item) => `worsens: ${item}`));
+          break;
+        case "closing":
+          body.push(page.title);
+          body.push(...page.statements);
+          if (page.managementQuestion) {
+            body.push(`question for management: ${page.managementQuestion}`);
+          }
+          break;
+      }
+
+      return `${head}\n${body.filter(Boolean).join("\n")}`;
+    })
+    .join("\n\n");
+}
+
+const ACCURACY_TOOL: Anthropic.Tool = {
+  name: "report_accuracy_gate",
+  description:
+    "Records the result of checking a drafted Daily Mover report against the announcements it was written from.",
+  input_schema: {
+    type: "object",
+    properties: {
+      verdict: {
+        type: "string",
+        enum: ["pass", "revise"],
+        description:
+          "'revise' if there is at least one blocking finding. 'pass' if the report is publishable as written, " +
+          "even where you have logged advisory findings.",
+      },
+      summary: {
+        type: "string",
+        description:
+          "One or two sentences for the reviewing analyst: what you checked and what you concluded. " +
+          "Max 600 characters.",
+      },
+      findings: {
+        type: "array",
+        maxItems: 20,
+        description:
+          "Everything wrong with the report, most serious first. An empty list means you verified it and found " +
+          "nothing — say so in the summary.",
+        items: {
+          type: "object",
+          properties: {
+            severity: {
+              type: "string",
+              enum: ["blocking", "advisory"],
+              description:
+                "'blocking' for anything that makes the report wrong or misleading: a figure that is not in the " +
+                "evidence or contradicts it, an intraday move described as a close, a conditional or headline " +
+                "contract value presented as guaranteed revenue, acquisition-driven growth called organic, a " +
+                "future outcome stated as certain, or a claim that goes further than the filing supports. " +
+                "'advisory' for house-rule issues that do not make it wrong: 'A$' instead of '$', a banned " +
+                "filler phrase, past tense for something still true, a chart whose conclusion only restates its " +
+                "own numbers, an undisclosed calculation.",
+            },
+            page: {
+              type: "integer",
+              description:
+                "1-based page number from the report text, when the issue sits on one page.",
+            },
+            category: {
+              type: "string",
+              enum: [
+                "figure",
+                "unsupported-claim",
+                "share-price-wording",
+                "future-certainty",
+                "contract-terms",
+                "organic-vs-acquired",
+                "currency",
+                "tense",
+                "style",
+                "structure",
+                "compliance",
+              ],
+              description: "Which rule the finding is about.",
+            },
+            claim: {
+              type: "string",
+              description:
+                "The exact words from the report that are at fault. Quote them.",
+            },
+            problem: {
+              type: "string",
+              description:
+                "Why it is wrong, referring to the evidence: 'the Appendix 4E reports EBITDA of $41.2 million, " +
+                "not $44.1 million', or 'the announcement says the $500 million is a maximum over five years " +
+                "and is not committed'.",
+            },
+            fix: {
+              type: "string",
+              description:
+                "What the report should say instead. If the figure cannot be confirmed anywhere in the evidence, " +
+                "the fix is to remove the claim.",
+            },
+          },
+          required: ["severity", "category", "claim", "problem", "fix"],
+        },
+      },
+    },
+    required: ["verdict", "summary", "findings"],
+  },
+};
+
+const ACCURACY_SYSTEM = `You are the checking analyst at Vitti Capital. A colleague has drafted today's Daily Mover report. Before it goes to the desk, you verify it against the announcements it was written from.
+
+You are not editing it and you are not rewriting it. You are looking for what is wrong. Assume nothing is right because it reads well — the failure you are looking for is a figure that felt correct to the writer.
+
+WHAT TO VERIFY, in order of how much damage it does:
+
+1. EVERY NUMBER. Take each figure in the report — KPI cards, chart points, comparison tables, stat lines, numbers in prose — and find it in the evidence. Revenue, revenue growth, gross profit and margin, EBITDA and underlying EBITDA, EBIT, NPAT, EPS, operating costs, operating and free cash flow, cash conversion, cash, debt, net debt, leverage, net assets, dividends, guidance old and new, acquisition price and earn-outs, contract values, customer and supplier concentration, goodwill, segment figures, production, resources and reserves, trial results, financing terms. A figure that is not in the evidence, and is not identified in the report as the writer's own calculation, is a blocking finding. So is one that contradicts the evidence.
+
+2. THE SHARE-PRICE MOVE. It must match the market data block, and the wording must match the window: an intraday figure has to read as intraday ("rose as much as ~12.9% in morning trade"), never as a closing return.
+
+3. CLAIMS THAT GO FURTHER THAN THE EVIDENCE. A headline contract value written as guaranteed revenue when the filing makes it conditional or a maximum. Acquisition-driven growth described as organic. A future outcome written as "will" when it is management's expectation. A cause stated as fact when the filing does not establish it. Any recommendation, price target, or advice to buy or sell — this report must contain none.
+
+4. HOUSE RULES. Australian dollars written "$55.4 million", never "A$55.4m" and never with an "A" prefix; "million" spelled out in body text and abbreviated only in KPI cards and chart labels. Present tense for what is still true, past tense only for finished events. No filler openers ("It is important to note", "It is worth mentioning", "Interestingly", "Notably", "This highlights", "This underscores"). Every chart carries a conclusion that says something rather than restating its own numbers. Page headings state a finding or ask a question rather than naming a category.
+
+5. INTERNAL CONSISTENCY. The same metric must not appear with two different values on two pages, and the closing page must not contradict the body.
+
+If two documents in the evidence disagree, that is worth a finding of its own — say which the report used and which it should have.
+
+Be specific, and be honest in both directions. Do not invent findings to look thorough: an empty findings list with a summary saying what you checked is a valid and useful result. Do not soften a real one: if a number cannot be traced to the evidence, say so and mark it blocking, even if it is probably right.`;
+
+/**
+ * Runs the Accuracy Gate over a drafted report.
+ *
+ * Not streamed: the output is a findings list of a few thousand tokens at most,
+ * well inside the SDK's non-streaming ceiling, even though the input carries
+ * the whole corpus.
+ */
+export async function checkReport(
+  input: {
+    moveDate: string;
+    row: ScreenerRow;
+    doc: ReportDoc;
+    todayDocuments: AnnouncementDocument[];
+    historyDocuments: AnnouncementDocument[];
+  },
+  usage: TokenUsage,
+): Promise<{ review: AccuracyReview; usage: TokenUsage }> {
+  const anthropic = getAnthropicClient();
+  const { row } = input;
+
+  const evidence = [...input.todayDocuments, ...input.historyDocuments]
+    .map(formatDocumentForPrompt)
+    .join("\n\n\n");
+
+  const prompt = `EVIDENCE — THE ANNOUNCEMENTS THIS REPORT WAS WRITTEN FROM (${row.ticker})
+
+${evidence || "(no readable announcements — every figure in the report is therefore unverifiable)"}
+
+
+MARKET DATA (${input.moveDate}, from the exchange feed — authoritative for the move)
+  ticker:      ${row.ticker}
+  company:     ${row.companyName}
+  move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
+  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
+  turnover:    ${formatMoneyCompact(row.turnover)}
+  market cap:  ${formatMoneyCompact(row.marketCap)}
+
+
+THE DRAFTED REPORT
+
+${formatReportForReview(input.doc)}
+
+
+Check the report against the evidence and record the result with the report_accuracy_gate tool.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: draftModel(),
+      max_tokens: 8000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high" },
+      system: ACCURACY_SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+      tools: [ACCURACY_TOOL],
+      tool_choice: { type: "tool", name: ACCURACY_TOOL.name },
+    });
+
+    const nextUsage = addUsage(usage, response.usage);
+
+    const toolUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock =>
+        block.type === "tool_use" && block.name === ACCURACY_TOOL.name,
+    );
+    if (!toolUse) {
+      throw new Error("Claude did not return an accuracy review.");
+    }
+
+    const raw = toolUse.input as Record<string, unknown>;
+
+    const findings: AccuracyFinding[] = [];
+    for (const item of Array.isArray(raw.findings) ? raw.findings : []) {
+      const entry = item as Record<string, unknown>;
+      const claim = asString(entry?.claim);
+      const problem = asString(entry?.problem);
+      if (!claim || !problem) continue;
+
+      const page = Number(entry?.page);
+      findings.push({
+        severity: entry?.severity === "advisory" ? "advisory" : "blocking",
+        page:
+          Number.isInteger(page) && page >= 1 && page <= input.doc.pages.length
+            ? page
+            : null,
+        category: asString(entry?.category) || "figure",
+        claim,
+        problem,
+        fix: asString(entry?.fix),
+      });
+    }
+
+    /**
+     * The verdict is derived from the findings, not taken from the tool call.
+     *
+     * A model that has just written three blocking findings will still sometimes
+     * return "pass" — the two fields are produced independently, and a summary
+     * pulls toward a tidy answer. The findings are the evidence of what it
+     * actually concluded, so they decide.
+     */
+    const verdict = findings.some((finding) => finding.severity === "blocking")
+      ? "revise"
+      : "pass";
+
+    return {
+      review: {
+        verdict,
+        summary: clamp(asString(raw.summary), 600),
+        findings,
       },
       usage: nextUsage,
     };

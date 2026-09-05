@@ -14,9 +14,10 @@ import {
   type ScreenerRow,
 } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
-import { prioritiseAnnouncements } from "@/lib/asx/filings";
+import { isBackgroundFiling, prioritiseAnnouncements } from "@/lib/asx/filings";
 import { loadAnnouncementDocuments } from "@/lib/ai/announcement-text";
 import {
+  checkReport,
   selectMover,
   writeReport,
   type MoverCandidate,
@@ -28,6 +29,7 @@ import { REPORTS_BUCKET } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 import { exchangeDate, tradedOn } from "./trading-day";
+import type { AccuracyReview } from "./types";
 
 /**
  * The drafting pipeline: board -> pick -> read -> write -> PDF -> pending row.
@@ -49,6 +51,8 @@ const STAGES = {
   readingToday: "Reading today's announcements",
   readingHistory: "Reading announcement history",
   writing: "Writing the report",
+  checking: "Checking every figure against the filings",
+  revising: "Rewriting to fix what the check found",
   rendering: "Rendering the PDF",
   uploading: "Saving the draft",
 } as const;
@@ -82,6 +86,17 @@ export type SkipReason =
  */
 const CANDIDATE_LOOKUP_LIMIT = 40;
 const CANDIDATE_LOOKUP_CONCURRENCY = 6;
+
+/**
+ * How many unflagged background filings to add to the corpus.
+ *
+ * Three reaches the last annual report and the two most recent halves or
+ * quarterlies for almost every company, which is the accounting history a Daily
+ * Mover draws on. A fourth is usually the year-before-last's annual report —
+ * the largest document on the list and the one the report is least likely to
+ * cite. See `isBackgroundFiling` for why these are not simply in the main list.
+ */
+const BACKGROUND_TARGET = 3;
 
 async function setProgress(draftId: number, progress: string): Promise<void> {
   try {
@@ -410,7 +425,28 @@ async function runPipeline(
     ),
     { target: ANNOUNCEMENTS_TARGET },
   );
-  const historyAnnouncements = priority.keep;
+
+  /**
+   * The accounts, on top of the announcements.
+   *
+   * The price-sensitive flag is the right filter for the filing that caused the
+   * move and the wrong one for the company's background: the Appendix 4E is
+   * flagged, the annual report that follows it usually isn't, and the annual
+   * report is where the segment note, the cash flow statement and the debt
+   * maturities are. Instruction 2 ranks those sources second and third, above
+   * anything else here, so a corpus of flagged announcements alone was writing
+   * about the business without reading its accounts.
+   *
+   * Capped at `BACKGROUND_TARGET` and read on a smaller character budget (see
+   * `CHAR_BUDGET.background`), because these are the longest documents a company
+   * files and the report needs their front halves, not their appendices.
+   */
+  const backgroundAnnouncements = allAnnouncements
+    .filter((item) => item.date !== moveDate && isBackgroundFiling(item))
+    .slice(0, BACKGROUND_TARGET);
+
+  const historyAnnouncements = [...priority.keep, ...backgroundAnnouncements]
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   const todayDocuments = await loadAnnouncementDocuments(todayAnnouncements);
 
@@ -466,7 +502,74 @@ async function runPipeline(
     usage,
   );
   usage = written.usage;
-  const { report } = written;
+  let report = written.report;
+
+  /**
+   * The Accuracy Gate (instructions 5 and 24), and one rewrite if it fails.
+   *
+   * The gate is advisory to the pipeline and mandatory for the reviewer: a
+   * blocking finding triggers exactly one rewrite, and the findings are stored
+   * on the draft either way. Deliberately not a hard failure — a draft with two
+   * unverifiable figures and eight good pages is worth an analyst's ten minutes,
+   * while a `failed` row with the reason "a figure could not be traced" throws
+   * that away and leaves the desk with nothing to publish.
+   *
+   * The gate is skipped when there was nothing to check against. With no
+   * readable filing the report already says so, and running a verifier over an
+   * empty corpus produces a page of findings that all say the same thing.
+   */
+  let accuracy: AccuracyReview | null = null;
+  const evidenceCount = todayDocuments.length + historyDocuments.length;
+
+  if (evidenceCount > 0) {
+    await setProgress(draftId, STAGES.checking);
+    try {
+      const checked = await checkReport(
+        {
+          moveDate,
+          row,
+          doc: report.doc,
+          todayDocuments,
+          historyDocuments,
+        },
+        usage,
+      );
+      usage = checked.usage;
+      accuracy = checked.review;
+
+      if (accuracy.verdict === "revise") {
+        await setProgress(draftId, STAGES.revising);
+        const rewritten = await writeReport(
+          {
+            moveDate,
+            row,
+            selection,
+            analystName: analyst.name,
+            todayDocuments,
+            historyDocuments,
+            corrections: { doc: report.doc, findings: accuracy.findings },
+          },
+          usage,
+        );
+        usage = rewritten.usage;
+        report = rewritten.report;
+        accuracy = { ...accuracy, revised: true };
+      }
+    } catch (error) {
+      // A failed gate must not cost the day's report. The draft goes to review
+      // unchecked, and the reviewer is told that is what happened rather than
+      // being shown a clean bill of health that was never issued.
+      console.warn(`accuracy gate failed for draft ${draftId}`, error);
+      accuracy = {
+        verdict: "pass",
+        summary:
+          "The accuracy check could not be completed, so no figure in this " +
+          "draft has been verified against the filings. Check the numbers " +
+          `manually. (${error instanceof Error ? error.message : "unknown error"})`,
+        findings: [],
+      };
+    }
+  }
 
   await setProgress(draftId, STAGES.rendering);
   const pdf = await renderReportPdf(report.doc);
@@ -488,6 +591,7 @@ async function runPipeline(
       sector: report.mover.sector,
       companyName: report.mover.companyName,
       report: { ...report.doc, citedIdsIds: report.citedIdsIds },
+      accuracy,
       draftStoragePath: storagePath,
       model: draftModel(),
       inputTokens: usage.inputTokens,

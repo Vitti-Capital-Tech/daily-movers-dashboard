@@ -57,6 +57,13 @@
       "when": 1788515646605,
       "tag": "0007_linkedin_posts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788596823149,
+      "tag": "0008_draft_accuracy_gate",
+      "breakpoints": true
     }
   ]
 }

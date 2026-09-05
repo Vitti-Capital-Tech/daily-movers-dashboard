@@ -370,7 +370,8 @@ src/
     ai/
       client.ts          shared Anthropic client, model choices, token accounting
       anthropic.ts       PDF tool extraction client (uploaded reports)
-      mover-draft.ts     the two drafting calls: pick a mover, write the report
+      mover-draft.ts     the three drafting calls: pick a mover, write the
+                         report, check every figure against the filings
       linkedin-post.ts   judges whether a call was borne out, then drafts the copy
       announcement-text.ts  announcement PDFs -> text for the prompt
     asx/                 provider interface, company directory, announcements, computed movers board
@@ -454,7 +455,28 @@ day the raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover,
 **The disclaimer is never model-generated.** It carries an AFSL number and an FSG
 link, and a model asked to write a disclaimer will paraphrase one. It is a
 constant in `lib/report/types.ts` that the renderer appends, so there is no path
-by which it can vary.
+by which it can vary. The closing sign-off — "That's where the story
+stands today." — is appended the same way and for the same reason: a model asked
+to end on a set phrase will paraphrase it about one time in five.
+
+**Every figure is checked by a second call before an analyst sees it.** The
+Accuracy Gate re-reads the finished report against the same filings and reports
+only what is wrong — a number that isn't in the evidence, an intraday move
+written as a close, a conditional contract value presented as revenue. The
+writing call cannot do this for itself: it would be grading its own work in the
+context that produced it, and the failure being looked for is a figure that
+*felt* right. A blocking finding triggers one rewrite, with the first draft and
+the findings both in the prompt so the call is an edit rather than a fresh
+attempt. The findings are kept on the draft either way — "was this checked, and
+what did it find" is the first thing a reviewer asks, and a corrected report
+cannot answer it.
+
+**Charts carry a conclusion or they don't ship.** A `chart` page is invalid
+without the one-line "what to notice" under it, enforced in `validateReportDoc`.
+The column chart plots a real zero baseline rather than bare magnitudes, because
+the series these pages exist for are growth series — +6.0, +6.5, +4.0, +0.3,
+**-0.5** — where the crossing into negative territory *is* the insight, and a
+magnitude-only chart shows five similar bars and hides it.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

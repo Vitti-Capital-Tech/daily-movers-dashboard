@@ -81,6 +81,7 @@ export async function getDraftById(id: number): Promise<DraftRow | null> {
       selection: moverDrafts.selection,
       sources: moverDrafts.sources,
       report: moverDrafts.report,
+      accuracy: moverDrafts.accuracy,
       screen: moverDrafts.screen,
       model: moverDrafts.model,
       inputTokens: moverDrafts.inputTokens,

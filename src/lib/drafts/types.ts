@@ -45,6 +45,45 @@ export type DraftSources = {
   readHistory: number;
 };
 
+/**
+ * One thing the Accuracy Gate found wrong with a drafted report.
+ *
+ * Declared here rather than beside the model call that produces it because the
+ * review card renders these, and `lib/ai/mover-draft.ts` is `server-only`.
+ */
+export type AccuracyFinding = {
+  /**
+   * `blocking` triggers a rewrite: a wrong or unsupported number, an intraday
+   * move written as a close, a conditional contract value presented as revenue.
+   * `advisory` is what a reviewer should know but that does not make the report
+   * wrong — house-style slips, an undisclosed calculation.
+   */
+  severity: "blocking" | "advisory";
+  /** 1-based page the problem is on, when it can be pinned to one. */
+  page: number | null;
+  /** Which rule it breaks: "figure", "tense", "currency", "contract-terms". */
+  category: string;
+  /** The words in the report that are wrong. */
+  claim: string;
+  /** Why they are wrong, against the evidence. */
+  problem: string;
+  /** What the report should say instead. */
+  fix: string;
+};
+
+/** The Accuracy Gate's verdict on a draft, as stored on the row. */
+export type AccuracyReview = {
+  verdict: "pass" | "revise";
+  /** One or two sentences for the review card. */
+  summary: string;
+  findings: AccuracyFinding[];
+  /**
+   * True once the pipeline has rewritten the report against these findings —
+   * so the list describes the draft that *was*, not the PDF on the row.
+   */
+  revised?: boolean;
+};
+
 /** The full row the review card renders. */
 export type DraftRow = {
   id: number;
@@ -72,6 +111,8 @@ export type DraftRow = {
   sources: DraftSources | null;
   /** Stored with the cited ids attached alongside the renderable document. */
   report: (ReportDoc & { citedIdsIds?: string[] }) | null;
+  /** Null on drafts made before the gate existed, or with nothing to check. */
+  accuracy: AccuracyReview | null;
   screen: ScreenResult | null;
 
   model: string | null;

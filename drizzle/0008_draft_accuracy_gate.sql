@@ -1,0 +1,15 @@
+-- The Accuracy Gate result for a drafted Daily Mover.
+--
+-- Instructions 5 and 24 of the desk's Daily Mover brief require every material
+-- figure to be verified against the original filings before a report can be
+-- called publishable. The pipeline now runs that check as a separate model call
+-- and rewrites the report once if anything blocking comes back.
+--
+-- The result is kept rather than thrown away after the rewrite: "was this
+-- checked, and what did the check find" is the first thing a reviewer asks about
+-- an AI-written report, and a corrected report cannot answer it. Null on rows
+-- drafted before this column existed, and on drafts with no readable evidence
+-- to check against.
+--
+-- Apply with:  npm run db:apply drizzle/0008_draft_accuracy_gate.sql
+ALTER TABLE "mover_drafts" ADD COLUMN IF NOT EXISTS "accuracy" jsonb;
