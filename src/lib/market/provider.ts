@@ -19,6 +19,23 @@ export type DailyClose = {
   close: number;
 };
 
+/**
+ * One trading day's close *and* volume.
+ *
+ * Separate from `DailyClose` rather than an extra nullable field on it, because
+ * the two are wanted by different callers for different reasons and the price
+ * cache has no column for volume. `DailyClose` backfills `daily_movers`
+ * post-event returns; this answers "was today's turnover unusual for this
+ * company", which needs the history a single session's figure cannot give.
+ */
+export type DailyBar = {
+  /** YYYY-MM-DD, ASX local date. */
+  date: string;
+  close: number;
+  /** Shares traded. Null when the provider reported the bar without one. */
+  volume: number | null;
+};
+
 export type Quote = {
   price: number;
   currency: string | null;
@@ -89,6 +106,19 @@ export interface MarketDataProvider {
    * treats that differently from a network blip, since retrying won't help.
    */
   fetchCloses(ticker: string, from: string): Promise<DailyClose[]>;
+
+  /**
+   * Daily closes *and* volumes for one ticker, ascending, gaps absent.
+   *
+   * One ticker rather than many on purpose: this is called once per draft, for
+   * the company that was already chosen, to work out whether the session's
+   * turnover was unusual for it. Batching would mean a history request for all
+   * ~1,200 screened tickers to answer a question about one of them.
+   *
+   * Throws `UnknownSymbolError` on an unrecognised ticker, same as
+   * `fetchCloses`.
+   */
+  fetchDailyBars(ticker: string, from: string): Promise<DailyBar[]>;
 }
 
 /** The ticker isn't on the exchange (delisted, renamed, or a typo). */

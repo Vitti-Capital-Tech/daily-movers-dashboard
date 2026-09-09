@@ -2,6 +2,7 @@ import YahooFinance from "yahoo-finance2";
 
 import {
   UnknownSymbolError,
+  type DailyBar,
   type DailyClose,
   type MarketDataProvider,
   type Quote,
@@ -309,5 +310,41 @@ export const yahooProvider: MarketDataProvider = {
     }
 
     return [...byDate].map(([date, close]) => ({ date, close }));
+  },
+
+  async fetchDailyBars(ticker: string, from: string): Promise<DailyBar[]> {
+    const symbol = symbolFor(ticker);
+
+    const chart = await yahoo
+      .chart(symbol, { period1: from, interval: "1d" })
+      .catch((error: unknown) => {
+        if (isUnknownSymbol(error)) throw new UnknownSymbolError(symbol);
+        throw error;
+      });
+
+    const gmtOffset =
+      typeof chart.meta?.gmtoffset === "number" ? chart.meta.gmtoffset : 0;
+
+    // Same last-write-wins dedupe as `fetchCloses`: the in-progress bar shares
+    // its date with nothing else, but a halted session can repeat one.
+    const byDate = new Map<string, DailyBar>();
+
+    for (const bar of chart.quotes) {
+      const close = bar?.close;
+      if (typeof close !== "number" || !Number.isFinite(close) || close <= 0) {
+        continue;
+      }
+      if (!(bar.date instanceof Date)) continue;
+
+      const volume =
+        typeof bar.volume === "number" && Number.isFinite(bar.volume)
+          ? bar.volume
+          : null;
+
+      const date = exchangeDate(bar.date, gmtOffset);
+      byDate.set(date, { date, close, volume });
+    }
+
+    return [...byDate.values()];
   },
 };

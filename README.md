@@ -94,12 +94,16 @@ reject. Approving files it in the archive exactly as a manual upload would.
    move the public record doesn't explain is not a report.
 3. **Pick one.** Claude chooses from the shortlist and says why, with the
    runners-up recorded so a reviewer can see what was passed over.
-4. **Read the filings.** The last ~25 price-sensitive announcements are
-   downloaded and extracted to text (a results pack runs to 36 pages and 2.6 MB;
-   ~235k tokens of input is normal).
+4. **Read the filings.** The last ~15 price-sensitive announcements plus the most
+   recent annual, half-year or quarterly report are downloaded and extracted to
+   text (a results pack runs to 36 pages and 2.6 MB). The prompt also gets the
+   session's volume against a 30-session average, and a date-and-headline index
+   of every filing in the window.
 5. **Write it.** One call returns both the report's typed page blocks *and* the
    `daily_movers` columns, so the archive row and the PDF cannot disagree.
-6. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
+6. **Check every figure.** A second call verifies the report against the same
+   filings and triggers one rewrite when it finds a wrong fact.
+7. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
    prefix, and the row goes to `pending`.
 
 Two to three minutes and roughly **US$0.55** per draft at list price
@@ -473,7 +477,21 @@ screen runs over the whole universe instead of someone else's page one.
 
 **The liquidity screen runs before Claude sees anything.** On a representative
 day the raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover,
-+27% on **$2,451**. No prompt fixes a shortlist made of those.
++27% on **$2,451**. No prompt fixes a shortlist made of those. The floors are now
+$1m turnover and $75m market cap, up from $500k/$20m: the old pair was a pure
+liquidity filter and still let through $30m explorers whose entire move was one
+drill hole. The selection prompt weighs the same thing from the other side —
+each candidate's turnover is printed as a share of its market capitalisation,
+because a 30% move on 8% of the register changing hands is a speculative
+blow-off while the same move on 0.4% is a re-rate — and it applies one test:
+would this report still be worth reading in a month?
+
+**Volume is the evidence, not the move.** A Daily Mover's central claim is that
+an announcement moved the stock, and the session's raw share count cannot support
+it — two million shares is a quiet day for one company and five times normal for
+another. One history request per draft turns it into the ratio a research note
+has always printed: 6.2x the 30-session average is the market transacting on the
+news, 1.1x is a thin market re-pricing itself, and those are different reports.
 
 **The disclaimer is never model-generated.** It carries an AFSL number and an FSG
 link, and a model asked to write a disclaimer will paraphrase one. It is a
@@ -517,6 +535,25 @@ The column chart plots a real zero baseline rather than bare magnitudes, because
 the series these pages exist for are growth series — +6.0, +6.5, +4.0, +0.3,
 **-0.5** — where the crossing into negative territory *is* the insight, and a
 magnitude-only chart shows five similar bars and hides it.
+
+**A dropped page is logged, not swallowed.** The page schema has exactly one
+failure mode — a page whose `kind` is right and whose body is empty — and
+discarding those silently hid it for a week: the model emitted chart pages
+without their conclusion line, `normalisePage` threw them away, and the reports
+simply had no charts with nothing anywhere saying why.
+
+**Colour carries meaning, never decoration.** Teal marks the analytical pages,
+gold the pages about people and process, and green and wine-red are reserved for
+direction — the cover's hero card, a comparison verdict, a chart column below
+the baseline. All of them survive a greyscale printer as distinguishable tones,
+and none is the saturated red/green of a trading screen, which would read as a
+house view on a document that must not carry one. Body type stays black on white.
+
+**The layout is checked by reading the PDF back.** Baselines and font sizes come
+out through `pdfjs` and get asserted, because a spacing bug looks plausible in
+the style object and wrong on the page: the KPI card inherited the page's 1.5
+line height and put a label's baseline 8pt below a 21pt number's — inside its
+descender depth.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

@@ -114,7 +114,7 @@ graph TD
 | **Theming System** | **next-themes** | Client-side Light / Midnight Navy Dark / System theme switching with hydration safety and local storage persistence. |
 | **Typography** | **Plus Jakarta Sans + JetBrains Mono** | High-legibility geometric UI typography paired with developer/financial-grade monospace figures for tickers and percentage metrics. |
 | **AI Extraction Engine** | **Anthropic Claude 3.5 Sonnet** | Native multimodal document parser extracting structured equity research metadata from raw PDF bytes. |
-| **Market Data & Discovery** | **`yahoo-finance2`** | Maintained client for Yahoo Finance: owns cookie/crumb handshake and rate-limiting. Used for batch quote refreshes, daily closes backfilling, and automatic corporate website discovery for company logo resolution. |
+| **Market Data & Discovery** | **`yahoo-finance2`** | Maintained client for Yahoo Finance: owns cookie/crumb handshake and rate-limiting. Used for batch quote refreshes, daily closes backfilling, per-ticker daily volume history for the volume profile, and automatic corporate website discovery for company logo resolution. |
 | **Archive Compression** | **`jszip`** | High-speed, in-memory DEFLATE compression engine for bundling dozens of research PDFs into a single ZIP stream. |
 | **Database** | **PostgreSQL (Supabase)** | Relational integrity (FK constraints), JSONB support for raw extractions, performant B-Tree indexes, transaction pooling. |
 | **Object-Relational Mapping (ORM)** | **Drizzle ORM + postgres.js** | Type-safe SQL builder with minimal runtime overhead, explicit query composition, seamless migration tooling. |
@@ -292,9 +292,12 @@ graph LR
 4. **AI-Powered PDF Extraction**:
    - Claude Sonnet 4.6 multimodal extraction pre-populating company, ticker, catalyst, analyst, and percentage move in the Add Mover dialog.
 5. **Mover Studio — Autonomous Daily Mover Drafting (`/mover-studio`, admin only)**:
-   - Scheduled each weekday around midday Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change; `maxDuration` is 300s, the Hobby ceiling, since a measured run takes ~120s).
-   - Computes both sides of the ASX movers board from the exchange's company directory plus the market provider's session moves, applies a dollar-turnover and market-cap liquidity screen, and drops any mover with no price-sensitive filing that session.
-   - Claude Sonnet 5 selects the subject with a recorded rationale, confidence score and runners-up, reads the company's last ~25 price-sensitive announcements, and emits both the report's typed page blocks and the `daily_movers` columns in one structured call.
+   - Scheduled each weekday around midday Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change; `maxDuration` is 300s, the Hobby ceiling, and the optional stages are budgeted against it — see `CHECK_DEADLINE_MS`).
+   - Computes both sides of the ASX movers board from the exchange's company directory plus the market provider's session moves, applies a dollar-turnover and market-cap liquidity screen ($1m / $75m by default, set to favour companies with accounts over single-catalyst explorers), and drops any mover with no price-sensitive filing that session.
+   - Claude Sonnet 5 selects the subject with a recorded rationale, confidence score and runners-up, weighing established businesses over speculative ones and reading each candidate's session turnover as a share of market capitalisation.
+   - Reads the company's last ~15 price-sensitive announcements plus its most recent annual, half-year or quarterly report, and is given a session volume profile (turnover against a 30-session average) and a date-and-headline index of every filing in the window.
+   - Emits the report's typed page blocks and the `daily_movers` columns in one structured call. Page kinds cover prose, KPI grids, segment blocks, charts, a headline-versus-reaction split, before/after comparison tables, management and board, risks, a setup scorecard, and the closing statements.
+   - A second model call — the **Accuracy Gate** — verifies every figure against the same filings and triggers one rewrite when it finds a wrong fact. Its findings are stored on the draft and shown above the report.
    - Renders the report to PDF with `@react-pdf/renderer` into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.
    - Approval projects the draft into `daily_movers` and *moves* the PDF into the manual-upload key scheme, so every downstream consumer is unchanged.
    - Declines without erroring when the market did not trade, when an analyst has already published for the day, or when a scheduled draft already exists.

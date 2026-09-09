@@ -137,6 +137,55 @@ function PageBlock({ page }: { page: ReportPage }) {
         </div>
       );
 
+    case "management":
+      return (
+        <div className="space-y-3">
+          <h3 className="text-base font-semibold text-foreground">
+            {page.title}
+          </h3>
+          {page.intro ? (
+            <p className="text-sm text-muted-foreground">{page.intro}</p>
+          ) : null}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {page.people.map((person, index) => (
+              <div
+                key={index}
+                className="rounded-lg border-l-2 border-amber-600/70 bg-muted/20 p-2.5"
+              >
+                <p className="text-sm font-medium text-foreground">
+                  {person.name}
+                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-500">
+                  {person.role}
+                </p>
+                {person.tenure || person.holding ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {[person.tenure, person.holding].filter(Boolean).join(" · ")}
+                  </p>
+                ) : null}
+                {person.note ? (
+                  <p className="mt-1 text-xs text-foreground/80">{person.note}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          {page.changes?.length ? (
+            <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Recent changes
+              </p>
+              <ul className="space-y-1">
+                {page.changes.map((change, index) => (
+                  <li key={index} className="text-sm text-foreground">
+                    {`• ${change}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      );
+
     case "risks":
       return (
         <div className="space-y-2">

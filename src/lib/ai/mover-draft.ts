@@ -15,6 +15,7 @@ import {
   type ReportEntity,
   type ReportKpi,
   type ReportPage,
+  type ReportPerson,
   type ReportRating,
 } from "@/lib/report/types";
 
@@ -26,6 +27,10 @@ import {
   type TokenUsage,
 } from "./client";
 import { formatDocumentForPrompt, type AnnouncementDocument } from "./announcement-text";
+import {
+  formatVolumeProfile,
+  type VolumeProfile,
+} from "@/lib/market/volume";
 
 import type { AccuracyFinding, AccuracyReview } from "@/lib/drafts/types";
 
@@ -113,10 +118,20 @@ Your job is to pick the subject. You are given both sides of today's board — t
 What makes a good Daily Mover subject, in priority order:
 
 1. THE MOVE IS EXPLAINED BY THE FILING. The report's whole purpose is "here is what happened and why". A 30% move with no announcement that accounts for it is unwritable — and a company that filed a substantive result or transaction beats one that filed a one-line clarification.
-2. THE COMPANY IS WORTH A CLIENT'S ATTENTION. Prefer recognisable names, real businesses, and companies with enough disclosure history to write a substantive report about. A larger and more liquid name beats a smaller one at a similar quality of story.
+2. PREFER THE ESTABLISHED BUSINESS OVER THE SPECULATIVE ONE. This is the criterion most often got wrong, so be deliberate about it. Favour companies with revenue, a reporting history and accounts a report can be checked against. Bigger and more liquid beats smaller and thinner at a similar quality of story, and a $2 billion industrial beats a $90 million explorer even when the explorer moved three times as far.
+
+   Treat these as low quality regardless of how large the move is:
+     - a single drill hole, assay or exploration result
+     - one datapoint from a clinical or field trial, especially early phase
+     - takeover or bid *speculation* that is not a binding or disclosed proposal
+     - a move that is mostly a re-rating of hope rather than a change in the numbers
+
+   The test to apply: would this report still be worth reading in a month? A result, a guidance change, a contract, a completed transaction or a regulatory decision passes. A drill hole does not.
 3. THE STORY HAS DEPTH. Full-year or half-year results, guidance changes, major contracts, M&A, and regulatory or clinical milestones all give a report something to say across several pages. Index rebalances, minor administrative filings and "response to ASX query" notices do not, however large the move.
-4. THE MOVE IS LARGE ENOUGH TO BE NEWS, but size alone is not the criterion — a well-explained 9% fall at a mid-cap is a far better report than a 40% spike in a micro-cap on a single drilling hole.
+4. THE MOVE IS LARGE ENOUGH TO BE NEWS, but size is close to irrelevant beyond that. A well-explained 6% fall at a mid-cap is a better report than a 40% spike in a micro-cap. Do not rank the board by percentage — rank it by how much there is to say.
 5. FALLERS ARE AS INTERESTING AS RISERS. Do not bias toward gainers. A sharp fall on a results miss is often the more useful note.
+
+The candidate table prints each company's turnover as a share of its market capitalisation. A high figure on a large move — say turnover above 5% of market cap — usually marks a speculative blow-off rather than institutional repositioning, and is a reason to look further down the list.
 
 Judge only from the evidence given. Do not use recollections about these companies from your training data — the market data and headlines in the prompt are the facts. If none of the candidates is a good subject, still pick the least-bad one and say so honestly in the rationale with a low confidence score.`;
 
@@ -133,10 +148,24 @@ function formatCandidateTable(candidates: MoverCandidate[]): string {
             )
             .join("\n");
 
+    /**
+     * Turnover as a share of market cap — the cheap tell for a blow-off.
+     *
+     * Both figures are already on the row, and the ratio says something neither
+     * does alone: a 30% move on 8% of the company changing hands in a session is
+     * a speculative crowd, while the same move on 0.4% is a re-rate the register
+     * mostly sat through. It costs nothing to print and it is the signal the
+     * selection prompt asks the model to weigh.
+     */
+    const churn =
+      row.turnover !== null && row.marketCap !== null && row.marketCap > 0
+        ? `${((row.turnover / row.marketCap) * 100).toFixed(2)}% of mcap`
+        : "unknown";
+
     return [
       `${row.ticker} — ${row.companyName}`,
       `    side: ${candidate.side}  move: ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%  ` +
-        `last: $${row.last?.toFixed(3) ?? "?"}  turnover: ${formatMoneyCompact(row.turnover)}  ` +
+        `last: $${row.last?.toFixed(3) ?? "?"}  turnover: ${formatMoneyCompact(row.turnover)} (${churn})  ` +
         `market cap: ${formatMoneyCompact(row.marketCap)}  sector: ${row.sector ?? "unknown"}`,
       headlines,
     ].join("\n");
@@ -288,6 +317,7 @@ const PAGE_SCHEMA = {
         "'chart': one plotted series with the conclusion line under it — use this instead of a paragraph whenever the story is a trend. " +
         "'market-vs-reality': the headline / market focus / what really matters split, for a day when the announcement and the share-price reaction point different ways. " +
         "'comparison': a four-column table — metric, two figures, and the change — for 'what changed since the last update' or 'consensus vs actual'. " +
+        "'management': who runs the company, with tenure and shareholdings where the filings give them, plus recent board or executive changes. " +
         "'risks': label-and-explanation pairs, no numbers. Always include one. " +
         "'vitti-view': the setup scorecard, plus the key debate, the next catalyst and the question for management. " +
         "'outlook': the two lists of what would improve the story and what would make it worse. " +
@@ -450,6 +480,50 @@ const PAGE_SCHEMA = {
         "report's research and answering something the public documents leave open. Not a generic question. " +
         "'How much of July's sales weakness came from customers waiting for promotional events versus a genuine " +
         "slowdown in underlying demand?' — not 'What are your growth plans?'. Put it on one page, not both.",
+    },
+    people: {
+      type: "array",
+      maxItems: 5,
+      description:
+        "'management' pages: the people who actually run the company, most senior first — normally the CEO or " +
+        "managing director, the chair, and the CFO. Only people the evidence names. Never recall a name from " +
+        "elsewhere: a wrong executive on a client note is the worst error in this report.",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          role: {
+            type: "string",
+            description: "'Managing Director & CEO', 'Chair', 'Chief Financial Officer'.",
+          },
+          tenure: {
+            type: "string",
+            description:
+              "Optional: 'Appointed March 2024', 'With the company 12 years'. Only from the evidence.",
+          },
+          holding: {
+            type: "string",
+            description:
+              "Optional shareholding, if a directors' report or Appendix 3Y in the evidence gives it: " +
+              "'2.1 million shares (0.4%)'.",
+          },
+          note: {
+            type: "string",
+            description:
+              "Optional single line of relevant background — prior role, what they were hired to do.",
+          },
+        },
+        required: ["name", "role"],
+      },
+    },
+    changes: {
+      type: "array",
+      description:
+        "'management' pages: board or executive changes visible in the filings or the filing timeline, newest " +
+        "first — 'CFO resigned June 2026, replaced August 2026'. Churn at the top is a finding, not a footnote: " +
+        "three CFOs in two years belongs in this list and probably on the risks page too. Leave empty if the " +
+        "evidence shows a stable board.",
+      items: { type: "string" },
     },
     improve: {
       type: "array",
@@ -760,7 +834,24 @@ WHAT CHANGED ('comparison' with Before/Now columns). Do not analyse today's fili
 
 EXPECTATIONS VS ACTUAL ('comparison' with Consensus/Actual columns). Only with a reliable figure from the evidence. Otherwise leave it out.
 
-CHARTS ('chart'). Where a chart explains the story better than a paragraph, use the chart. The series worth plotting are the ones with direction in them: quarterly or half-yearly growth, margin trend, cash burn and runway, production, guidance revisions, segment contribution, debt or dilution over time. Every chart carries a one-line conclusion saying what to notice — a chart without one is decoration, and decoration does not go in a Daily Mover. Aim for fewer words and better charts.
+CHARTS ('chart'). **Include at least one chart page.** This is close to a rule: almost every company in this evidence has a plottable series in it, and a report that is nine pages of prose and cards is the thing instruction 38 exists to prevent. Leave the chart out only if you genuinely cannot find two comparable figures anywhere in the filings — and if that is the case, say so on the closing page, because it is unusual.
+
+Two figures are a chart. FY25 revenue against FY26 revenue is a two-column chart and it beats the same two numbers in a sentence. You do not need a long series.
+
+Where to look, in rough order of how often it is there:
+  - revenue, EBITDA, EBIT or NPAT by half or by year — every results pack has this, including in its comparative columns
+  - the segment or geographic split, as 'bars' — if you are writing an 'entities' page, ask first whether it is a chart
+  - margin by period, when the margin moved
+  - production, shipments, sites, customers or subscribers by quarter
+  - cash and quarterly cash burn, for anything pre-revenue — with the runway in the conclusion
+  - the volume profile in the market data block, when the session's turnover was unusual
+  - guidance revisions over time; debt or share count over time, where dilution is the story
+
+Every chart carries a one-line conclusion saying what to notice — a chart without one is decoration, and decoration does not go in a Daily Mover. Aim for fewer words and better charts.
+
+VOLUME ('chart' or a KPI). The market data block gives the session's volume against the company's trailing average. Use it: a large move on three or more times average volume is the market transacting on the news, while the same move on ordinary turnover is a thin market re-pricing itself. Those are different reports. If the multiple is unusual, it belongs on the cover or in a chart; if it is close to normal and the move was large, that is worth a sentence too.
+
+MANAGEMENT ('management'). Include this when the evidence names the people running the company — a directors' report, an appointment announcement, an Appendix 3Y. A PM meeting the name for the first time asks who runs it and whether they own any of it, and the answer changes how the rest reads: a turnaround under a chief executive appointed four months ago is a different proposition from the same turnaround under a fifteen-year founder. List only people the evidence names, with tenure and shareholding only where a filing gives them. Never supply a name, a date or a holding from your own knowledge — a wrong executive on a client note is the worst error this report can contain. Board and executive churn goes in the 'changes' list, and if it is severe it belongs on the risks page as well. If the filings name nobody, leave the page out.
 
 VITTI VIEW ('vitti-view'). A read of the setup, not a rating: business quality, balance sheet, current momentum, the key debate in one sentence, and the next catalyst. Only rate what the evidence supports. Keep it unpromotional.
 
@@ -887,6 +978,22 @@ function asComparisonRows(value: unknown): ReportComparisonRow[] {
     });
   }
   return rows;
+}
+
+function asPeople(value: unknown): ReportPerson[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        name: asString(entry?.name),
+        role: asString(entry?.role),
+        tenure: asString(entry?.tenure) || null,
+        holding: asString(entry?.holding) || null,
+        note: asString(entry?.note) || null,
+      };
+    })
+    .filter((person) => person.name && person.role);
 }
 
 function asRatings(value: unknown): ReportRating[] {
@@ -1021,6 +1128,21 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
       };
     }
 
+    case "management": {
+      const people = asPeople(page.people);
+      const changes = asStringArray(page.changes);
+      // A page with no named person is not a management page, whatever changes
+      // it lists — the changes belong in the risks or narrative pages instead.
+      if (people.length === 0) return null;
+      return {
+        kind: "management",
+        title: title || "Who Is Running the Company?",
+        intro,
+        people,
+        changes,
+      };
+    }
+
     case "vitti-view": {
       const ratings = asRatings(page.ratings);
       const keyDebate = asString(page.keyDebate);
@@ -1121,6 +1243,21 @@ type EvidenceInput = {
   selection: MoverSelection;
   todayDocuments: AnnouncementDocument[];
   historyDocuments: AnnouncementDocument[];
+  /** Session volume against the company's trailing average. Null if unavailable. */
+  volumeProfile: VolumeProfile | null;
+  /**
+   * Every filing the company has lodged in the fetched window, as date and
+   * headline only.
+   *
+   * The corpus is 16 documents read in full; this is the *index* to all of them,
+   * at a few hundred tokens. It exists because the two things a Daily Mover most
+   * often needs are not in any single document: when something happened relative
+   * to everything else, and whether a name at the top has changed. "Appointment
+   * of Chief Financial Officer" in March followed by "Resignation of Chief
+   * Financial Officer" in August is a finding that is invisible if you only read
+   * the fifteen most substantive filings, and it costs almost nothing to see.
+   */
+  filingTimeline: { date: string; isPriceSensitive: boolean; headline: string }[];
 };
 
 /**
@@ -1182,7 +1319,30 @@ function buildEvidenceContent(
   market cap:  ${formatMoneyCompact(row.marketCap)}
 
 WHY THE DESK PICKED THIS ONE
-${input.selection.rationale}`;
+${input.selection.rationale}${
+    formatVolumeProfile(input.volumeProfile)
+      ? `\n\n${formatVolumeProfile(input.volumeProfile)}`
+      : ""
+  }`;
+
+  /**
+   * The filing index, newest first.
+   *
+   * Capped at 60 entries, which reaches back a year or more for a normal
+   * company and keeps a serial filer from spending two thousand tokens on
+   * buy-back notifications. `*` marks price-sensitive, so the model can see at a
+   * glance which of these it has actually read in full.
+   */
+  const timelineBlock =
+    input.filingTimeline.length > 0
+      ? input.filingTimeline
+          .slice(0, 60)
+          .map(
+            (entry) =>
+              `${entry.date}  ${entry.isPriceSensitive ? "*" : " "}  ${entry.headline}`,
+          )
+          .join("\n")
+      : "(no filing history available)";
 
   const todayBlock =
     input.todayDocuments.length > 0
@@ -1202,6 +1362,13 @@ ${input.selection.rationale}`;
     {
       type: "text",
       text: `EVIDENCE — THIS COMPANY'S EARLIER FILINGS (${row.ticker}, most recent first; price-sensitive announcements plus its annual, half-year and quarterly reports — this is the source for the business description, the segment detail, the accounts and the history)\n\n${historyBlock}`,
+    },
+    {
+      type: "text",
+      text:
+        `FILING TIMELINE FOR ${row.ticker} (every announcement lodged in the fetched window, newest first; ` +
+        `"*" marks price-sensitive. This is the index — the documents above are the ones read in full. Use it ` +
+        `for dates, for management changes, and for what came before today.)\n\n${timelineBlock}`,
     },
     { type: "text", text: marketBlock },
     ...input.todayDocuments
@@ -1235,6 +1402,10 @@ export async function writeReport(
     todayDocuments: AnnouncementDocument[];
     /** The company's price-sensitive history — the context. */
     historyDocuments: AnnouncementDocument[];
+    /** Session volume against the trailing average. Null when unavailable. */
+    volumeProfile: VolumeProfile | null;
+    /** Date-and-headline index of every filing fetched. See `EvidenceInput`. */
+    filingTimeline: EvidenceInput["filingTimeline"];
     /**
      * The first draft and what the Accuracy Gate found in it.
      *
@@ -1306,7 +1477,25 @@ export async function writeReport(
 
     const pages = dedupeManagementQuestion(
       (Array.isArray(raw.pages) ? raw.pages : [])
-        .map((page) => normalisePage(page, companyName))
+        .map((page, index) => {
+          const normalised = normalisePage(page, companyName);
+          if (!normalised) {
+            /**
+             * A dropped page used to be silent, which hid the one failure this
+             * schema can produce: a page whose kind is right and whose body is
+             * empty. Chart pages went missing this way for a week — the model
+             * emitted them without a conclusion line and `normalisePage`
+             * discarded them, so the reports simply had no charts and nothing
+             * anywhere said why.
+             */
+            console.warn(
+              `draft ${row.ticker}: dropped page ${index + 1} ` +
+                `(kind "${asString((page as Record<string, unknown>)?.kind) || "?"}") ` +
+                `— it had no renderable content`,
+            );
+          }
+          return normalised;
+        })
         .filter((page): page is ReportPage => page !== null),
     );
 
@@ -1336,6 +1525,9 @@ export async function writeReport(
           companyName,
           moveDate: input.moveDate,
           analystName: input.analystName,
+          // The resolved figure, not the model's — see the note below. The
+          // renderer colours the cover's hero card from it.
+          movePct,
           pages,
         },
         mover: {
@@ -1479,6 +1671,21 @@ function formatReportForReview(doc: ReportDoc): string {
             ),
           );
           if (page.conclusion) body.push(`conclusion: ${page.conclusion}`);
+          break;
+        case "management":
+          body.push(page.title);
+          if (page.intro) body.push(page.intro);
+          body.push(
+            ...page.people.map(
+              (person) =>
+                `${person.name} — ${person.role}` +
+                [person.tenure, person.holding, person.note]
+                  .filter(Boolean)
+                  .map((part) => ` | ${part}`)
+                  .join(""),
+            ),
+          );
+          body.push(...(page.changes ?? []).map((change) => `change: ${change}`));
           break;
         case "risks":
           body.push(page.title);
@@ -1635,6 +1842,8 @@ export async function checkReport(
     doc: ReportDoc;
     todayDocuments: AnnouncementDocument[];
     historyDocuments: AnnouncementDocument[];
+    volumeProfile: VolumeProfile | null;
+    filingTimeline: EvidenceInput["filingTimeline"];
   },
   usage: TokenUsage,
 ): Promise<{ review: AccuracyReview; usage: TokenUsage }> {

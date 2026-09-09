@@ -16,6 +16,7 @@ import {
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
 import { isBackgroundFiling, prioritiseAnnouncements } from "@/lib/asx/filings";
 import { loadAnnouncementDocuments } from "@/lib/ai/announcement-text";
+import { fetchVolumeProfile } from "@/lib/market/volume";
 import {
   checkReport,
   selectMover,
@@ -494,12 +495,33 @@ async function runPipeline(
     },
   );
 
+  /**
+   * The volume profile and the filing index.
+   *
+   * Both are cheap and both answer a question the corpus cannot. The profile is
+   * one history request for the company already chosen — see `fetchVolumeProfile`
+   * for why "8x average volume" is the figure that matters rather than the raw
+   * share count. The timeline is free: these announcements were already fetched
+   * to build the shortlist, and passing their dates and headlines costs a few
+   * hundred tokens for a view of management changes and event sequence that no
+   * single document carries.
+   */
+  const volumeProfile = await fetchVolumeProfile(row.ticker, moveDate);
+
+  const filingTimeline = allAnnouncements.map((item) => ({
+    date: item.date,
+    isPriceSensitive: item.isPriceSensitive,
+    headline: item.headline,
+  }));
+
   await db
     .update(moverDrafts)
     .set({
       sources: {
         today: todayAnnouncements,
         history: historyAnnouncements,
+        /** Kept so a reviewer can check a volume claim in the report. */
+        volumeProfile,
         readToday: todayDocuments.length,
         readHistory: historyDocuments.length,
         /**
@@ -527,6 +549,8 @@ async function runPipeline(
       analystName: analyst.name,
       todayDocuments,
       historyDocuments,
+      volumeProfile,
+      filingTimeline,
     },
     usage,
   );
@@ -572,6 +596,8 @@ async function runPipeline(
           doc: report.doc,
           todayDocuments,
           historyDocuments,
+          volumeProfile,
+          filingTimeline,
         },
         usage,
       );
@@ -610,6 +636,8 @@ async function runPipeline(
             analystName: analyst.name,
             todayDocuments,
             historyDocuments,
+            volumeProfile,
+            filingTimeline,
             corrections: { doc: report.doc, findings: accuracy.findings },
           },
           usage,

@@ -43,6 +43,21 @@ export type DraftSources = {
   /** How many were actually readable — the rest were withdrawn or image-only. */
   readToday: number;
   readHistory: number;
+  /**
+   * The session's volume against the company's trailing average, as the report
+   * was told it. Stored so a reviewer checking "traded on 6x average volume"
+   * can see the figures behind it rather than re-deriving them.
+   *
+   * Optional: null when the provider had no usable history, and absent on
+   * drafts made before the profile existed.
+   */
+  volumeProfile?: {
+    sessionVolume: number | null;
+    averageVolume: number | null;
+    multiple: number | null;
+    averagedSessions: number;
+    recent: { date: string; volume: number }[];
+  } | null;
 };
 
 /**

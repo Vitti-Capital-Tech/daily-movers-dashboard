@@ -51,6 +51,28 @@ import {
  */
 Font.registerHyphenationCallback((word) => [word]);
 
+/**
+ * The document's colour.
+ *
+ * The first version of this template was navy on white and nothing else, which
+ * is defensible for a printed note and reads as unfinished on a screen — every
+ * page identical, nothing to tell a reader where they are or what kind of page
+ * they are looking at. This adds colour on three rules:
+ *
+ * 1. **Colour carries meaning, never decoration.** `teal` marks the cover and
+ *    the analytical pages; `gold` marks the pages about people and process;
+ *    `positive`/`negative` are reserved for direction and appear only where
+ *    direction is the point — the hero card, a comparison verdict, a chart
+ *    column below the baseline. A reader who learns the code once can navigate
+ *    by it.
+ * 2. **Print-safe and forwardable.** These are all deep enough to survive a
+ *    greyscale office printer as distinguishable tones, and none of them is the
+ *    saturated red/green of a trading screen, which would read as a house view
+ *    on a document that must not carry one.
+ * 3. **The type stays black on white.** Colour goes into rules, bands, card
+ *    borders and tinted panels — never body text, which has to stay readable at
+ *    9.5pt after two photocopies.
+ */
 const PALETTE = {
   navy: "#1B2A4A",
   ink: "#111827",
@@ -60,20 +82,51 @@ const PALETTE = {
   wash: "#F8FAFC",
   paper: "#FFFFFF",
 
+  /** The accent. Analytical pages: charts, comparisons, market-vs-reality. */
+  teal: "#0F766E",
+  tealWash: "#F0FBF9",
+
+  /** The secondary accent. People, process, questions, what-to-watch. */
+  gold: "#92610C",
+  goldWash: "#FEFAF0",
+
   /**
-   * Chart and verdict colours.
-   *
-   * Deliberately desaturated. A Daily Mover is printed and forwarded, and the
-   * saturated red/green of a trading screen reads as an opinion on the page —
-   * which is exactly what these charts must not be. `steel` is the default bar;
-   * `navy` is the highlighted one the conclusion is about, so emphasis comes
-   * from the house colour rather than from a second hue.
+   * Direction. Deliberately desaturated — deep green and a wine red rather than
+   * the pure hues of a screen, so a fall reads as a fact and not as alarm.
    */
-  steel: "#94A3B8",
   positive: "#166534",
+  positiveWash: "#F2FAF4",
   negative: "#9F1239",
+  negativeWash: "#FFF5F7",
+
+  /** Default chart bar: present, unemphasised, and clearly not a verdict. */
+  steel: "#94A3B8",
   track: "#EEF2F7",
 } as const;
+
+/**
+ * The accent a page is drawn in, by kind.
+ *
+ * Centralised so the code stays consistent as pages are added — the alternative
+ * is a colour chosen at each render site, which is how a document ends up with
+ * four greens.
+ */
+function pageAccent(kind: ReportPage["kind"]): string {
+  switch (kind) {
+    case "chart":
+    case "comparison":
+    case "market-vs-reality":
+      return PALETTE.teal;
+    case "management":
+    case "vitti-view":
+    case "outlook":
+      return PALETTE.gold;
+    case "risks":
+      return PALETTE.negative;
+    default:
+      return PALETTE.navy;
+  }
+}
 
 const styles = StyleSheet.create({
   page: {
@@ -113,25 +166,60 @@ const styles = StyleSheet.create({
     color: PALETTE.faint,
   },
 
+  /**
+   * The cover's full-bleed band.
+   *
+   * Absolutely positioned against the page rather than laid out in the flow, so
+   * it can ignore the page's 52pt horizontal padding and run edge to edge. A
+   * band is the one piece of the document that has to look deliberate at a
+   * glance — it is what a reader sees before reading anything.
+   */
+  coverBand: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 232,
+    backgroundColor: PALETTE.navy,
+    paddingTop: 44,
+    paddingHorizontal: 52,
+  },
+  coverBandRule: {
+    height: 4,
+    width: 48,
+    backgroundColor: PALETTE.teal,
+    marginBottom: 20,
+  },
+  coverEyebrow: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+    letterSpacing: 1.6,
+    color: PALETTE.faint,
+    marginBottom: 18,
+  },
   coverCompany: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 30,
+    fontSize: 27,
     lineHeight: 1.15,
-    color: PALETTE.navy,
-    marginBottom: 16,
+    color: PALETTE.paper,
+  },
+  /** Sits below the band, so the flow starts where the band ends. */
+  coverBody: {
+    marginTop: 232 - 44,
   },
   coverHeadline: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 14,
-    lineHeight: 1.4,
+    fontSize: 13.5,
+    lineHeight: 1.45,
     color: PALETTE.ink,
-    marginBottom: 30,
-  },
-  coverRule: {
-    borderBottomWidth: 2,
-    borderBottomColor: PALETTE.navy,
-    width: 56,
+    marginTop: 26,
     marginBottom: 26,
+  },
+  coverMeta: {
+    fontSize: 8,
+    letterSpacing: 1.1,
+    color: PALETTE.muted,
+    fontFamily: "Helvetica-Bold",
   },
 
   pageTitle: {
@@ -139,7 +227,13 @@ const styles = StyleSheet.create({
     fontSize: 19,
     lineHeight: 1.2,
     color: PALETTE.navy,
-    marginBottom: 14,
+    marginBottom: 8,
+  },
+  /** The accent bar under a page heading — see `pageAccent`. */
+  titleRule: {
+    height: 2.5,
+    width: 40,
+    marginBottom: 16,
   },
   intro: {
     fontSize: 10.5,
@@ -180,11 +274,23 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     minHeight: 74,
   },
+  /**
+   * `lineHeight` and `marginBottom` are set explicitly, and measured rather
+   * than guessed.
+   *
+   * Inheriting the page's 1.5 line height put the label's baseline **8pt**
+   * below a 21pt number's baseline — inside its descender depth, so the two
+   * almost touched. Any value with a descender ("9-10 months") collided
+   * outright. Reading the baselines back out of the rendered PDF is the only
+   * reliable way to check this: it looks plausible in the style object and
+   * wrong on the page.
+   */
   kpiValue: {
     fontFamily: "Helvetica-Bold",
     fontSize: 21,
+    lineHeight: 1.15,
     color: PALETTE.navy,
-    marginBottom: 4,
+    marginBottom: 9,
   },
   kpiLabel: {
     fontFamily: "Helvetica-Bold",
@@ -317,8 +423,8 @@ const styles = StyleSheet.create({
   /** The "what to notice" line. Instruction 32 makes it part of the chart. */
   chartConclusion: {
     borderLeftWidth: 2,
-    borderLeftColor: PALETTE.navy,
-    backgroundColor: PALETTE.wash,
+    borderLeftColor: PALETTE.teal,
+    backgroundColor: PALETTE.tealWash,
     paddingVertical: 9,
     paddingHorizontal: 12,
     fontSize: 10,
@@ -482,6 +588,56 @@ const styles = StyleSheet.create({
     color: PALETTE.navy,
     marginTop: 20,
   },
+
+  // --- management and board ----------------------------------------------
+  person: {
+    borderLeftWidth: 2,
+    borderLeftColor: PALETTE.gold,
+    paddingLeft: 11,
+    marginBottom: 13,
+  },
+  personName: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 11.5,
+    color: PALETTE.navy,
+  },
+  personRole: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 0.9,
+    color: PALETTE.gold,
+    marginTop: 2,
+    marginBottom: 3,
+  },
+  personDetail: {
+    fontSize: 9,
+    color: PALETTE.muted,
+  },
+  personNote: {
+    fontSize: 9.5,
+    color: PALETTE.ink,
+    marginTop: 2,
+  },
+  changesPanel: {
+    marginTop: 14,
+    backgroundColor: PALETTE.goldWash,
+    borderLeftWidth: 2,
+    borderLeftColor: PALETTE.gold,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  changesHeading: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+    letterSpacing: 1.2,
+    color: PALETTE.gold,
+    marginBottom: 6,
+  },
+  changeItem: {
+    fontSize: 9.5,
+    lineHeight: 1.45,
+    marginBottom: 4,
+  },
 });
 
 /**
@@ -499,18 +655,63 @@ function kpiWidth(count: number): string {
   return "47%";
 }
 
-function KpiCards({ kpis }: { kpis: ReportKpi[] }) {
+/**
+ * The colour of a share-price move.
+ *
+ * Falls back to navy rather than guessing when the move is unknown — reports
+ * stored before `movePct` was carried on the document have no direction, and a
+ * green card on a fall would be worse than a neutral one.
+ */
+function directionAccent(movePct: number | null | undefined): string {
+  if (typeof movePct !== "number" || movePct === 0) return PALETTE.navy;
+  return movePct > 0 ? PALETTE.positive : PALETTE.negative;
+}
+
+/** The wash that goes with an accent, for a tinted card. */
+function accentWash(accent: string): string {
+  if (accent === PALETTE.positive) return PALETTE.positiveWash;
+  if (accent === PALETTE.negative) return PALETTE.negativeWash;
+  if (accent === PALETTE.teal) return PALETTE.tealWash;
+  if (accent === PALETTE.gold) return PALETTE.goldWash;
+  return PALETTE.wash;
+}
+
+function KpiCards({
+  kpis,
+  accent,
+  accentFirstOnly = false,
+}: {
+  kpis: ReportKpi[];
+  /** Overrides the navy card border and wash. Defaults to the house navy. */
+  accent?: string;
+  /** Colour only the first card — used on the cover, where card one is the move. */
+  accentFirstOnly?: boolean;
+}) {
   const width = kpiWidth(kpis.length);
 
   return (
     <View style={styles.kpiRow}>
-      {kpis.map((kpi, index) => (
-        <View key={index} style={[styles.kpiCard, { width }]}>
-          <Text style={styles.kpiValue}>{kpi.value}</Text>
-          <Text style={styles.kpiLabel}>{kpi.label.toUpperCase()}</Text>
-          {kpi.note ? <Text style={styles.kpiNote}>{kpi.note}</Text> : null}
-        </View>
-      ))}
+      {kpis.map((kpi, index) => {
+        const tint =
+          accent && (!accentFirstOnly || index === 0) ? accent : PALETTE.navy;
+        return (
+          <View
+            key={index}
+            style={[
+              styles.kpiCard,
+              {
+                width,
+                borderLeftColor: tint,
+                backgroundColor: accentWash(tint),
+              },
+            ]}
+          >
+            <Text style={[styles.kpiValue, { color: tint }]}>{kpi.value}</Text>
+            <Text style={styles.kpiLabel}>{kpi.label.toUpperCase()}</Text>
+            {kpi.note ? <Text style={styles.kpiNote}>{kpi.note}</Text> : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -704,36 +905,108 @@ function Footer({ doc }: { doc: ReportDoc }) {
 
 function PageFrame({
   doc,
+  accent,
   children,
 }: {
   doc: ReportDoc;
+  /** The page's accent, tinting the eyebrow. See `pageAccent`. */
+  accent?: string;
   children: React.ReactNode;
 }) {
   return (
     <Page size="A4" style={styles.page}>
-      <Text style={styles.eyebrow}>{formatEyebrow(doc.ticker)}</Text>
+      <Text style={[styles.eyebrow, accent ? { color: accent } : {}]}>
+        {formatEyebrow(doc.ticker)}
+      </Text>
       {children}
       <Footer doc={doc} />
     </Page>
   );
 }
 
+/** A page heading and the accent bar under it. */
+function PageHeading({ title, accent }: { title: string; accent: string }) {
+  return (
+    <>
+      <Text style={styles.pageTitle}>{title}</Text>
+      <View style={[styles.titleRule, { backgroundColor: accent }]} />
+    </>
+  );
+}
+
 function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
+  const accent = pageAccent(page.kind);
+
   switch (page.kind) {
     case "cover":
+      /**
+       * The cover does not use `PageFrame`: it carries a full-bleed band
+       * instead of the running eyebrow, and the eyebrow lives inside the band
+       * in white. Everything below the band is ordinary page flow.
+       */
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.coverCompany}>{page.companyName}</Text>
-          <View style={styles.coverRule} />
-          <Text style={styles.coverHeadline}>{page.headline}</Text>
-          <KpiCards kpis={page.kpis.slice(0, 2)} />
+        <Page size="A4" style={styles.page}>
+          <View style={styles.coverBand}>
+            <Text style={styles.coverEyebrow}>{formatEyebrow(doc.ticker)}</Text>
+            <View style={styles.coverBandRule} />
+            <Text style={styles.coverCompany}>{page.companyName}</Text>
+          </View>
+
+          <View style={styles.coverBody}>
+            <Text style={styles.coverHeadline}>{page.headline}</Text>
+            <KpiCards
+              kpis={page.kpis.slice(0, 2)}
+              // The move card takes the direction's colour. It is the one number
+              // on the page whose sign is the story, and it is where the reader
+              // looks first.
+              accent={directionAccent(doc.movePct)}
+              accentFirstOnly
+            />
+            <Text style={styles.coverMeta}>
+              {formatReportDate(doc.moveDate).toUpperCase()}
+            </Text>
+          </View>
+
+          <Footer doc={doc} />
+        </Page>
+      );
+
+    case "management":
+      return (
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
+          {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
+          {page.people.map((person, index) => (
+            <View key={index} style={styles.person} wrap={false}>
+              <Text style={styles.personName}>{person.name}</Text>
+              <Text style={styles.personRole}>{person.role.toUpperCase()}</Text>
+              {person.tenure || person.holding ? (
+                <Text style={styles.personDetail}>
+                  {[person.tenure, person.holding].filter(Boolean).join("  ·  ")}
+                </Text>
+              ) : null}
+              {person.note ? (
+                <Text style={styles.personNote}>{person.note}</Text>
+              ) : null}
+            </View>
+          ))}
+          {page.changes?.length ? (
+            <View style={styles.changesPanel} wrap={false}>
+              <Text style={styles.changesHeading}>RECENT CHANGES</Text>
+              {page.changes.map((change, index) => (
+                <Text key={index} style={styles.changeItem}>
+                  {`•  ${change}`}
+                </Text>
+              ))}
+            </View>
+          ) : null}
         </PageFrame>
       );
 
     case "narrative":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           {page.paragraphs.map((paragraph, index) => (
             <Text key={index} style={styles.paragraph}>
@@ -750,8 +1023,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "kpis":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <KpiCards kpis={page.kpis} />
           {page.notes?.map((note, index) => (
@@ -769,8 +1042,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "entities":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           {page.items.map((item, index) => (
             <View key={index} style={styles.entity} wrap={false}>
@@ -786,8 +1059,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "risks":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.items.map((item, index) => (
             <View key={index} style={styles.riskItem} wrap={false}>
               <Text style={styles.riskLabel}>{item.label}</Text>
@@ -799,8 +1072,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "chart":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <ChartBlock chart={page.chart} />
           <Text style={styles.chartConclusion}>{page.conclusion}</Text>
@@ -814,8 +1087,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "market-vs-reality":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           <View style={[styles.mvrBlock, { borderLeftColor: PALETTE.faint }]}>
             <Text style={styles.mvrLabel}>HEADLINE</Text>
             <Text style={styles.mvrText}>{page.headline}</Text>
@@ -833,8 +1106,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "comparison":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <View style={styles.tableHead}>
             <Text style={[styles.tableMetric, styles.tableHeadCell]}>
@@ -872,8 +1145,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "vitti-view":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.ratings.map((rating, index) => (
             <View key={index} style={styles.ratingRow} wrap={false}>
               <Text style={styles.ratingLabel}>
@@ -897,8 +1170,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "outlook":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <View style={styles.outlookColumns}>
             <View style={styles.outlookColumn}>
@@ -927,8 +1200,8 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "closing":
       return (
-        <PageFrame doc={doc}>
-          <Text style={styles.pageTitle}>{page.title}</Text>
+        <PageFrame doc={doc} accent={accent}>
+          <PageHeading title={page.title} accent={accent} />
           {page.statements.map((statement, index) => (
             <Text key={index} style={styles.statement}>
               {statement}

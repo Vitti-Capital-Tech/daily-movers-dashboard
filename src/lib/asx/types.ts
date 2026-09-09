@@ -48,11 +48,27 @@ export type ScreenCriteria = {
  * client-safe module, so the form's default values and the server's fallback
  * are the same numbers and cannot drift.
  */
+/**
+ * The default screen, tuned toward companies a Daily Mover can say something
+ * durable about.
+ *
+ * The floors were $500k turnover and $20m market cap, which is a liquidity
+ * screen and nothing more — it kept out the +47%-on-$107k nano-caps and let
+ * through plenty of $30m explorers whose move was one drill hole. Those produce
+ * a report that is unfalsifiable on the day and worthless a month later, and the
+ * desk kept passing over them at the selection stage anyway.
+ *
+ * $1m and $75m instead. On a normal session that still leaves both boards well
+ * populated, and it shifts the shortlist toward companies with revenue, a
+ * disclosure history and a reason to move that survives contact with the
+ * accounts. An analyst who wants the speculative end can lower both in the
+ * Studio — `SCREEN_LIMITS` still allows zero.
+ */
 export const DEFAULT_SCREEN: ScreenCriteria = {
   /** Session dollar turnover. Below this, the move isn't tradeable. */
-  minTurnover: 500_000,
+  minTurnover: 1_000_000,
   /** Market capitalisation floor. */
-  minMarketCap: 20_000_000,
+  minMarketCap: 75_000_000,
   /** Ignore moves too small to be worth a report. */
   minAbsChangePct: 5,
   /** How many rows per side to keep after ranking. */

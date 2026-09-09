@@ -172,6 +172,24 @@ export type ReportPage =
       rows: ReportComparisonRow[];
       conclusion?: string | null;
     }
+  /**
+   * Who runs the company, and what has changed at the top.
+   *
+   * A PM meeting a name for the first time asks who is running it and whether
+   * they own any of it, and the answer changes how the rest of the report reads:
+   * a turnaround under a chief executive appointed four months ago is a
+   * different proposition from the same turnaround under a fifteen-year founder.
+   * Board and executive churn is also a risk in its own right — three CFOs in
+   * two years is a finding, not a footnote.
+   */
+  | {
+      kind: "management";
+      title: string;
+      intro?: string | null;
+      people: ReportPerson[];
+      /** Recent board or executive changes, from the filings. */
+      changes?: string[];
+    }
   /** The Vitti View scorecard (33). Not a recommendation — a read of the setup. */
   | {
       kind: "vitti-view";
@@ -215,6 +233,27 @@ export type ReportComparisonRow = {
   direction?: "better" | "worse" | "neutral" | null;
 };
 
+/**
+ * One person on the management or board page.
+ *
+ * Everything but name and role is optional, because the evidence rarely carries
+ * all of it. A directors' report gives tenure and shareholding; an appointment
+ * announcement gives a start date and a background paragraph; a results pack
+ * gives a name under a signature and nothing else. A page that renders what is
+ * known beats one that needs a full dossier to render at all.
+ */
+export type ReportPerson = {
+  name: string;
+  /** "Managing Director & CEO", "Chair", "Chief Financial Officer". */
+  role: string;
+  /** "Appointed March 2024", "With the company 12 years". */
+  tenure?: string | null;
+  /** "2.1 million shares (0.4%)". */
+  holding?: string | null;
+  /** One line of relevant background, from the filings only. */
+  note?: string | null;
+};
+
 /** One line of the Vitti View scorecard. */
 export type ReportRating = {
   /** "Business Quality", "Balance Sheet", "Current Momentum". */
@@ -234,6 +273,16 @@ export type ReportDoc = {
   moveDate: string;
   /** Footer by-line and the signature on the closing page. */
   analystName: string;
+  /**
+   * The signed move, so the renderer can colour the cover's hero card by
+   * direction.
+   *
+   * Carried on the document rather than parsed out of the cover headline, which
+   * would mean reading "Rise"/"Fall" out of prose the model wrote. Optional
+   * because documents stored before this existed do not have it — the renderer
+   * falls back to the house navy rather than guessing a direction.
+   */
+  movePct?: number | null;
   pages: ReportPage[];
 };
 
@@ -246,6 +295,7 @@ export const REPORT_PAGE_KINDS = [
   "chart",
   "market-vs-reality",
   "comparison",
+  "management",
   "risks",
   "vitti-view",
   "outlook",
