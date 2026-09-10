@@ -5,6 +5,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { CATALYST_SLUGS, isCatalystSlug, type CatalystSlug } from "@/lib/catalysts";
 import { formatMoneyCompact, type ScreenResult, type ScreenerRow } from "@/lib/asx/types";
 import {
+  REPORT_LIMITS,
+  REPORT_MAX_SHEETS,
   REPORT_PAGE_KINDS,
   REPORT_PAGE_TARGET,
   type ReportCallout,
@@ -31,6 +33,8 @@ import {
   formatVolumeProfile,
   type VolumeProfile,
 } from "@/lib/market/volume";
+
+import { fitReportPages } from "@/lib/report/fit";
 
 import type { AccuracyFinding, AccuracyReview } from "@/lib/drafts/types";
 
@@ -325,8 +329,10 @@ const PAGE_SCHEMA = {
     },
     title: {
       type: "string",
+      maxLength: REPORT_LIMITS.titleChars,
       description:
-        "Page heading. Write it so the reader knows the page's conclusion from the heading alone: " +
+        "Page heading, at most 80 characters — it is set at 19pt, and a heading that wraps to three lines eats " +
+        "the page it is introducing. Write it so the reader knows the page's conclusion from the heading alone: " +
         "'Is the Balance Sheet a Problem?' not 'Balance Sheet & Cash Flow'; 'Where Is the Weakness?' not " +
         "'Division Performance'; 'The UK Is Doing the Heavy Lifting' not 'Segment Detail'. A question or a " +
         "finding, never a category label. Not used on the cover page.",
@@ -337,6 +343,7 @@ const PAGE_SCHEMA = {
     },
     headline: {
       type: "string",
+      maxLength: 160,
       description:
         "On a 'cover' page: the share-move headline, stating direction and magnitude the way the desk writes it — " +
         "'Shares Rise as Much as ~20.6% in Morning Trade After Record FY26 Results and a New $5 Million Share Buy-Back'. " +
@@ -344,13 +351,17 @@ const PAGE_SCHEMA = {
     },
     marketFocus: {
       type: "string",
+      maxLength: REPORT_LIMITS.mvrChars,
       description:
-        "'market-vs-reality' pages: what investors actually appear to have reacted to, which is often not the headline.",
+        "'market-vs-reality' pages: what investors actually appear to have reacted to, which is often not the " +
+        "headline. Two or three sentences, 300 characters at the most — the page is three blocks and all three " +
+        "have to sit on one sheet together.",
     },
     whatMatters: {
       type: "string",
+      maxLength: REPORT_LIMITS.mvrChars,
       description:
-        "'market-vs-reality' pages: the issue that decides the investment story from here.",
+        "'market-vs-reality' pages: the issue that decides the investment story from here. Same length as marketFocus.",
     },
     chart: {
       type: "object",
@@ -373,7 +384,7 @@ const PAGE_SCHEMA = {
         points: {
           type: "array",
           minItems: 2,
-          maxItems: 8,
+          maxItems: REPORT_LIMITS.chartPoints,
           items: {
             type: "object",
             properties: {
@@ -405,8 +416,9 @@ const PAGE_SCHEMA = {
     },
     conclusion: {
       type: "string",
+      maxLength: REPORT_LIMITS.conclusionChars,
       description:
-        "'chart' pages (required) and 'comparison' pages (optional): one sentence saying what the reader should " +
+        "'chart' pages (required) and 'comparison' pages (optional): ONE sentence saying what the reader should " +
         "notice. Not a restatement of the figures — the point they make. 'The direction of sales growth explains " +
         "the sell-off better than the headline FY26 result.'",
     },
@@ -421,7 +433,10 @@ const PAGE_SCHEMA = {
     },
     rows: {
       type: "array",
-      description: "'comparison' pages: one row per metric that materially changed. Skip the immaterial ones.",
+      maxItems: REPORT_LIMITS.comparisonRows,
+      description:
+        "'comparison' pages: one row per metric that materially changed, six at the most. Skip the immaterial " +
+        "ones — a table nobody scans is worse than the three rows that carry the change.",
       items: {
         type: "object",
         properties: {
@@ -446,7 +461,7 @@ const PAGE_SCHEMA = {
     },
     ratings: {
       type: "array",
-      maxItems: 4,
+      maxItems: REPORT_LIMITS.ratings,
       description:
         "'vitti-view' pages: normally Business Quality (Strong/Neutral/Weak), Balance Sheet (Strong/Neutral/Weak) " +
         "and Current Momentum (Improving/Stable/Weakening). Leave out any rating the evidence does not support " +
@@ -466,15 +481,19 @@ const PAGE_SCHEMA = {
     },
     keyDebate: {
       type: "string",
-      description: "'vitti-view' pages: the one sentence the bulls and bears actually disagree about.",
+      maxLength: REPORT_LIMITS.debateChars,
+      description:
+        "'vitti-view' pages: the one sentence the bulls and bears actually disagree about. A sentence, not a paragraph.",
     },
     nextCatalyst: {
       type: "string",
+      maxLength: REPORT_LIMITS.debateChars,
       description:
-        "'vitti-view' pages: the next dated or expected event that resolves part of that debate.",
+        "'vitti-view' pages: the next dated or expected event that resolves part of that debate. One sentence.",
     },
     managementQuestion: {
       type: "string",
+      maxLength: REPORT_LIMITS.questionChars,
       description:
         "'vitti-view' or 'closing' pages: one question worth putting to management, coming directly out of this " +
         "report's research and answering something the public documents leave open. Not a generic question. " +
@@ -483,7 +502,7 @@ const PAGE_SCHEMA = {
     },
     people: {
       type: "array",
-      maxItems: 5,
+      maxItems: REPORT_LIMITS.people,
       description:
         "'management' pages: the people who actually run the company, most senior first — normally the CEO or " +
         "managing director, the chair, and the CFO. Only people the evidence names. Never recall a name from " +
@@ -509,8 +528,9 @@ const PAGE_SCHEMA = {
           },
           note: {
             type: "string",
+            maxLength: REPORT_LIMITS.personNoteChars,
             description:
-              "Optional single line of relevant background — prior role, what they were hired to do.",
+              "Optional SINGLE line of relevant background — prior role, what they were hired to do. Not a bio.",
           },
         },
         required: ["name", "role"],
@@ -523,29 +543,42 @@ const PAGE_SCHEMA = {
         "first — 'CFO resigned June 2026, replaced August 2026'. Churn at the top is a finding, not a footnote: " +
         "three CFOs in two years belongs in this list and probably on the risks page too. Leave empty if the " +
         "evidence shows a stable board.",
-      items: { type: "string" },
+      maxItems: REPORT_LIMITS.changes,
+      items: { type: "string", maxLength: REPORT_LIMITS.changeChars },
     },
     improve: {
       type: "array",
       description:
         "'outlook' pages: what investors would need to see for the story to get better. Company-specific and " +
-        "checkable — 'Australian sales return to growth', not 'execution improves'.",
-      items: { type: "string" },
+        "checkable — 'Australian sales return to growth', not 'execution improves'. At most four, each one " +
+        "line: the page sets them in two narrow columns.",
+      maxItems: REPORT_LIMITS.outlookItems,
+      items: { type: "string", maxLength: REPORT_LIMITS.outlookItemChars },
     },
     worsen: {
       type: "array",
-      description: "'outlook' pages: what would make the story worse. Same standard.",
-      items: { type: "string" },
+      description: "'outlook' pages: what would make the story worse. Same standard, same lengths.",
+      maxItems: REPORT_LIMITS.outlookItems,
+      items: { type: "string", maxLength: REPORT_LIMITS.outlookItemChars },
     },
     intro: {
       type: "string",
-      description: "Optional single framing paragraph under the title.",
+      maxLength: REPORT_LIMITS.introChars,
+      description:
+        "Optional single framing SENTENCE under the title — 240 characters at the most. It is not a first " +
+        "paragraph; if what you are writing needs two sentences, it belongs in `paragraphs`.",
     },
     paragraphs: {
       type: "array",
-      items: { type: "string" },
+      maxItems: REPORT_LIMITS.paragraphs,
+      items: { type: "string", maxLength: REPORT_LIMITS.paragraphChars },
       description:
-        "'narrative' pages only: 2-5 paragraphs of plain-English prose, each 2-5 sentences.",
+        "'narrative' pages only: AT MOST THREE paragraphs, each two or three sentences and no more than about " +
+        "55 words. This is a hard limit, not a target to write up to — two tight paragraphs beat three loose " +
+        "ones, and a fourth paragraph means the page is carrying two ideas and should be split or cut. Long " +
+        "paragraphs are the single most common fault in these reports: they push the page onto a second sheet " +
+        "and the reader stops reading. If a point needs more room than that, it is a chart, a comparison table " +
+        "or a set of callouts, not a longer paragraph.",
     },
     kpis: {
       type: "array",
@@ -569,7 +602,10 @@ const PAGE_SCHEMA = {
           },
           note: {
             type: "string",
-            description: "Optional one-line gloss: 'Record result, up 63% on FY25'.",
+            maxLength: REPORT_LIMITS.kpiNoteChars,
+            description:
+              "Optional one-line gloss, 90 characters at the most: 'Record result, up 63% on FY25'. It is set " +
+              "inside the card — a sentence here breaks the card's height and the row wraps.",
           },
         },
         required: ["value", "label"],
@@ -577,26 +613,39 @@ const PAGE_SCHEMA = {
     },
     notes: {
       type: "array",
-      items: { type: "string" },
-      description: "'kpis' pages: one or two lines of context under the cards.",
+      maxItems: REPORT_LIMITS.notes,
+      items: { type: "string", maxLength: REPORT_LIMITS.noteChars },
+      description: "'kpis' pages: one or two LINES of context under the cards. A line each, not a paragraph each.",
     },
     callouts: {
       type: "array",
+      maxItems: REPORT_LIMITS.callouts,
       description:
-        "Small-caps sub-heading plus a paragraph. Used on 'narrative' and 'kpis' pages, and it IS the body of a 'risks' page.",
+        "Small-caps sub-heading plus a SHORT paragraph. Used on 'narrative' and 'kpis' pages, and it IS the body " +
+        "of a 'risks' page. Three at the most on any page, and on a page that already has paragraphs, one or two — " +
+        "callouts sit under the body and are what tips a full page onto a second sheet.",
       items: {
         type: "object",
         properties: {
-          label: { type: "string" },
-          text: { type: "string" },
+          label: {
+            type: "string",
+            maxLength: REPORT_LIMITS.labelChars,
+            description: "A few words, printed in letter-spaced caps: 'CUSTOMER CONCENTRATION'.",
+          },
+          text: {
+            type: "string",
+            maxLength: REPORT_LIMITS.calloutChars,
+            description: "One or two sentences — 240 characters at the most.",
+          },
         },
         required: ["label", "text"],
       },
     },
     items: {
       type: "array",
+      maxItems: REPORT_LIMITS.entities,
       description:
-        "'entities' pages: named blocks. 'risks' pages: use `callouts` instead.",
+        "'entities' pages: named blocks, five at the most. 'risks' pages: use `callouts` instead.",
       items: {
         type: "object",
         properties: {
@@ -611,7 +660,8 @@ const PAGE_SCHEMA = {
           },
           comment: {
             type: "string",
-            description: "Optional single line of interpretation.",
+            maxLength: REPORT_LIMITS.entityCommentChars,
+            description: "Optional SINGLE line of interpretation — 150 characters at the most.",
           },
         },
         required: ["name", "stat"],
@@ -619,9 +669,11 @@ const PAGE_SCHEMA = {
     },
     statements: {
       type: "array",
-      items: { type: "string" },
+      maxItems: REPORT_LIMITS.statements,
+      items: { type: "string", maxLength: REPORT_LIMITS.statementChars },
       description:
-        "'closing' pages only: 3-4 standalone sentences, each a complete thought about where the story now stands.",
+        "'closing' pages only: 3-4 standalone SENTENCES, each a complete thought about where the story now " +
+        "stands. They are set at 12pt against a rule, so one sentence each — 200 characters at the most.",
     },
   },
   required: ["kind"],
@@ -693,7 +745,10 @@ const REPORT_TOOL: Anthropic.Tool = {
           `The report body, ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} pages, in the order that ` +
           "tells this company's story best. The first page MUST be 'cover', the last MUST be 'closing', and " +
           "there MUST be a 'risks' page somewhere between them. The compliance disclaimer and the closing " +
-          "sign-off line are appended automatically — never write either.",
+          "sign-off line are appended automatically — never write either. " +
+          `The disclaimer is a sheet too, so ${REPORT_PAGE_TARGET.max} content pages is a ` +
+          `${REPORT_MAX_SHEETS}-page PDF, which is the desk's hard ceiling. Each page must FIT ON ONE SHEET: ` +
+          "keep every page inside the per-field limits above and do not use the ceiling as a target.",
         items: PAGE_SCHEMA,
       },
     },
@@ -736,7 +791,9 @@ The report's job is not to summarise the announcement. It is to explain why the 
 
 === 1. WHAT A DAILY MOVER IS ===
 
-A ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} page institutional note, one idea per page. A reader should get the main story in 30 to 60 seconds and still have enough detail to investigate further. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
+A ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} page institutional note, one idea per page — a ${REPORT_MAX_SHEETS}-page PDF once the compliance sheet is appended, and that is a hard ceiling. A reader should get the main story in 30 to 60 seconds and still have enough detail to investigate further. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
+
+It is a SLIDE-STYLE document, not an essay. Every page is a heading, a small amount of text, and something visual — cards, a chart, a table, a scorecard, two columns. A page that is four paragraphs of prose is a page that has been written the wrong way.
 
 The thinking order is: WHAT HAPPENED -> WHAT CHANGED -> WHY THE MARKET CARES -> WHAT MATTERS NEXT.
 
@@ -834,7 +891,7 @@ WHAT CHANGED ('comparison' with Before/Now columns). Do not analyse today's fili
 
 EXPECTATIONS VS ACTUAL ('comparison' with Consensus/Actual columns). Only with a reliable figure from the evidence. Otherwise leave it out.
 
-CHARTS ('chart'). **Include at least one chart page.** This is close to a rule: almost every company in this evidence has a plottable series in it, and a report that is nine pages of prose and cards is the thing instruction 38 exists to prevent. Leave the chart out only if you genuinely cannot find two comparable figures anywhere in the filings — and if that is the case, say so on the closing page, because it is unusual.
+CHARTS ('chart'). **Include at least one chart page.** This is close to a rule: almost every company in this evidence has a plottable series in it, and a report that is seven pages of prose and cards is the thing section 12 exists to prevent. Leave the chart out only if you genuinely cannot find two comparable figures anywhere in the filings — and if that is the case, say so on the closing page, because it is unusual.
 
 Two figures are a chart. FY25 revenue against FY26 revenue is a two-column chart and it beats the same two numbers in a sentence. You do not need a long series.
 
@@ -867,9 +924,30 @@ Real risks, specific to this company, each with a sentence on why it matters: cu
 
 Three or four standalone statements leaving the reader with a clear investment debate: what remains strong, what changed, what the key concern or opportunity is, and what to watch next. Do not restate the financial detail from earlier pages. The house sign-off line is appended automatically — do not write it yourself.
 
-=== 12. LENGTH ===
+=== 12. LENGTH — READ THIS TWICE ===
 
-${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.
+The most common fault in these reports is not a wrong number. It is length: long paragraphs, pages carrying two ideas, and a note that runs past its sheet count. Short is the house style, and it is a rule, not a preference.
+
+THE DOCUMENT. ${REPORT_PAGE_TARGET.min} to ${REPORT_PAGE_TARGET.max} content pages. The renderer adds the compliance sheet, so ${REPORT_PAGE_TARGET.max} content pages is a ${REPORT_MAX_SHEETS}-page PDF and there is no way to publish a longer one. ${REPORT_PAGE_TARGET.min} pages of substance is a good note; ${REPORT_PAGE_TARGET.max} pages of filler is not, and ${REPORT_PAGE_TARGET.max} is a ceiling rather than a target. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move, and leave out the rest. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.
+
+THE PAGE. Every page must fit on ONE sheet. The page budget, which the tool schema also enforces:
+
+- narrative: at most 3 paragraphs, each 2-3 sentences and about 55 words. Two is usually better than three. Plus at most 2 callouts if there are paragraphs, 3 if there are not.
+- intro: one sentence. It frames the page; it is not the first paragraph.
+- kpis: 3-4 cards, each with at most a one-line note, and at most 2 lines of context under them.
+- entities: at most 5 blocks, one line of comment each.
+- risks: at most 5, each one or two sentences.
+- market-vs-reality: three blocks, 2-3 sentences each.
+- comparison: at most 6 rows, plus a one-sentence conclusion.
+- chart: 2-8 points and ONE conclusion sentence.
+- management: at most 4 people, one line of background each, at most 4 changes.
+- vitti-view: at most 4 ratings with a few words of justification, one sentence of debate, one of catalyst.
+- outlook: at most 4 items a side, one line each.
+- closing: 3-4 sentences, one sentence each.
+
+THE SENTENCE. Short sentences. If a sentence has three clauses, it is two sentences. Cut every phrase that does not carry a fact: "in terms of", "with respect to", "it is also the case that", "going forward", "as previously mentioned". A paragraph that survives its own last sentence being deleted was one sentence too long.
+
+WHEN A PAGE WILL NOT FIT. That is the signal that the content is the wrong shape, not that the limit is wrong. Three ways out, in order: turn the numbers into a chart or a comparison table; turn the prose into callouts; or cut the second idea and let it be its own page — or no page at all. Never solve it by writing longer paragraphs, and never by adding a page beyond the ceiling.
 
 === 13. WHEN THE JOB IS TO CHECK A DRAFT ===
 
@@ -884,6 +962,8 @@ What to verify, in order of how much damage it does:
 3. CLAIMS THAT GO FURTHER THAN THE EVIDENCE. Headline contract value written as guaranteed revenue when the filing makes it conditional or a maximum. Acquisition-driven growth described as organic. A future outcome written as "will" when it is management's expectation. A cause stated as fact when the filing does not establish it. Any recommendation, price target, or advice to buy or sell — the report must contain none.
 
 4. HOUSE RULES — sections 6 and 8 above. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding.
+
+4a. LENGTH — section 12 above. A narrative page with four or more paragraphs, a paragraph running past about 55 words, a page carrying two ideas rather than one, an "intro" that is really a paragraph, or a report over ${REPORT_PAGE_TARGET.max} content pages. These are findings. They are not blocking on their own — a long report is publishable and a wrong number is not — but say which page and what to cut, because the desk's readers stop reading a page that looks like an essay.
 
 5. INTERNAL CONSISTENCY. The same metric must not carry two different values on two pages, and the closing page must not contradict the body.
 
@@ -1475,28 +1555,38 @@ export async function writeReport(
     const raw = toolUse.input as Record<string, unknown>;
     const companyName = asString(raw.companyName) || row.companyName;
 
-    const pages = dedupeManagementQuestion(
-      (Array.isArray(raw.pages) ? raw.pages : [])
-        .map((page, index) => {
-          const normalised = normalisePage(page, companyName);
-          if (!normalised) {
-            /**
-             * A dropped page used to be silent, which hid the one failure this
-             * schema can produce: a page whose kind is right and whose body is
-             * empty. Chart pages went missing this way for a week — the model
-             * emitted them without a conclusion line and `normalisePage`
-             * discarded them, so the reports simply had no charts and nothing
-             * anywhere said why.
-             */
-            console.warn(
-              `draft ${row.ticker}: dropped page ${index + 1} ` +
-                `(kind "${asString((page as Record<string, unknown>)?.kind) || "?"}") ` +
-                `— it had no renderable content`,
-            );
-          }
-          return normalised;
-        })
-        .filter((page): page is ReportPage => page !== null),
+    /**
+     * The pages, in the order they have to be applied: normalise the raw tool
+     * output to typed blocks, drop the question that got written twice, then
+     * cut what is left to the page budget. `fitReportPages` last, because it
+     * measures against the limits the renderer lays out to — see
+     * `src/lib/report/fit.ts`.
+     */
+    const pages = fitReportPages(
+      dedupeManagementQuestion(
+        (Array.isArray(raw.pages) ? raw.pages : [])
+          .map((page, index) => {
+            const normalised = normalisePage(page, companyName);
+            if (!normalised) {
+              /**
+               * A dropped page used to be silent, which hid the one failure this
+               * schema can produce: a page whose kind is right and whose body is
+               * empty. Chart pages went missing this way for a week — the model
+               * emitted them without a conclusion line and `normalisePage`
+               * discarded them, so the reports simply had no charts and nothing
+               * anywhere said why.
+               */
+              console.warn(
+                `draft ${row.ticker}: dropped page ${index + 1} ` +
+                  `(kind "${asString((page as Record<string, unknown>)?.kind) || "?"}") ` +
+                  `— it had no renderable content`,
+              );
+            }
+            return normalised;
+          })
+          .filter((page): page is ReportPage => page !== null),
+      ),
+      row.ticker,
     );
 
     const rawMovePct = Number(raw.movePct);

@@ -3,10 +3,36 @@ import {
   CLOSING_SIGN_OFF,
   formatEyebrow,
   MANAGEMENT_QUESTION_HEADING,
+  REPORT_MAX_SHEETS,
   type ReportChart,
   type ReportDoc,
   type ReportPage,
 } from "@/lib/report/types";
+
+/**
+ * The same colour code the PDF uses, in Tailwind.
+ *
+ * Kept deliberately in step with `pageAccent` in `src/lib/report/template.tsx`:
+ * explanation is sky, evidence teal, interpretation violet, people and process
+ * amber, risk rose, and the frame of the document slate. A reviewer reading
+ * this panel and a reader opening the PDF should be navigating by the same
+ * colours — if the two ever drift, the panel stops being a preview and becomes
+ * a second opinion.
+ */
+const PAGE_ACCENT: Record<ReportPage["kind"], string> = {
+  cover: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
+  narrative: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  entities: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  kpis: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+  chart: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+  comparison: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+  "market-vs-reality": "bg-violet-500/10 text-violet-700 dark:text-violet-400",
+  "vitti-view": "bg-violet-500/10 text-violet-700 dark:text-violet-400",
+  management: "bg-amber-500/10 text-amber-700 dark:text-amber-500",
+  outlook: "bg-amber-500/10 text-amber-700 dark:text-amber-500",
+  risks: "bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  closing: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
+};
 
 /**
  * The report, rendered inline from the same typed blocks the PDF is built from.
@@ -32,8 +58,17 @@ export function ReportPreview({
           <span className="font-mono text-[10px] font-normal tracking-[0.15em] text-muted-foreground">
             {formatEyebrow(report.ticker)}
           </span>
-          <span className="ml-auto font-normal text-muted-foreground">
-            {report.pages.length} pages + disclaimer
+          <span className="ml-auto font-normal text-muted-foreground tabular-nums">
+            {report.pages.length} pages + disclaimer ={" "}
+            <span
+              className={
+                report.pages.length + 1 > REPORT_MAX_SHEETS
+                  ? "font-semibold text-destructive"
+                  : "font-semibold text-foreground"
+              }
+            >
+              {report.pages.length + 1} sheets
+            </span>
           </span>
         </CardTitle>
       </CardHeader>
@@ -44,8 +79,15 @@ export function ReportPreview({
             key={index}
             className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0"
           >
-            <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-              Page {index + 1} · {page.kind}
+            <p className="mb-2 flex items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PAGE_ACCENT[page.kind]}`}
+              >
+                {page.kind}
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                Page {index + 1}
+              </span>
             </p>
             <PageBlock page={page} />
           </section>

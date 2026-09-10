@@ -319,17 +319,104 @@ export const DISCLAIMER_PARAGRAPHS: readonly string[] = [
 ];
 
 /**
+ * How many sheets the finished PDF is allowed to run to.
+ *
+ * The desk's instruction is a hard eight pages, and eight means eight in the
+ * file a client opens — the compliance page is a sheet like any other, so it
+ * comes out of the same budget rather than sitting outside it. That leaves
+ * seven content pages.
+ */
+export const REPORT_MAX_SHEETS = 8;
+
+/**
  * How many content pages a report should run to.
  *
- * Instruction 22 sets the house length at roughly four to six content sections
- * plus a closing page, which with the cover is six to eight. Nine is the ceiling
- * rather than eight because the analyst-first pages added for instructions
- * 28-35 — market-vs-reality, the comparison, the Vitti View — replace prose
- * rather than adding to it, and a company with both a result and a transaction
- * to explain legitimately needs the extra sheet. Above that it is padding, which
- * the same instruction rules out.
+ * `max` is `REPORT_MAX_SHEETS - 1`: the renderer appends the disclaimer, and
+ * that sheet is counted. The earlier ceiling of nine content pages plus a
+ * disclaimer was already a ten-sheet document before any page overflowed — and
+ * with no length budget on the blocks, a page carrying four long paragraphs and
+ * three callouts wrapped onto a second sheet, so the count a reader saw was not
+ * the count anyone had chosen. `REPORT_LIMITS` fixes the second half of that;
+ * this fixes the first.
+ *
+ * `min` is five rather than six for the same reason the ceiling came down: the
+ * analyst-first pages (market-vs-reality, the comparison, the Vitti View) carry
+ * a page's worth of argument in a third of the words, so a tight report now
+ * genuinely finishes sooner. A thin day should produce a short honest note, not
+ * a padded one.
  */
-export const REPORT_PAGE_TARGET = { min: 6, max: 9 } as const;
+export const REPORT_PAGE_TARGET = { min: 5, max: REPORT_MAX_SHEETS - 1 } as const;
+
+/**
+ * The per-block length budget, in characters.
+ *
+ * These exist because "one idea per page" is a layout promise, and the layout
+ * only keeps it if the text fits. An A4 sheet at the template's metrics gives
+ * about 650pt of body height once the eyebrow, heading and footer are taken
+ * out; at 10.5pt on a 1.5 line height that is roughly 41 lines, and at the
+ * page's measure roughly 100 characters a line — call it 4,000 characters of
+ * plain prose before react-pdf wraps the page onto a second sheet and the
+ * document quietly grows.
+ *
+ * So every page kind is budgeted well inside that, and the budget is enforced
+ * twice: as `maxLength`/`maxItems` in the tool schema, so the model writes to
+ * length rather than being cut, and again in `normalisePage`, which trims at a
+ * sentence boundary if it overruns anyway. The schema alone is not enough —
+ * models treat `maxLength` on a nested string as advice.
+ *
+ * The numbers are deliberately generous against the prompt's own word counts
+ * (the prompt asks for ~55 words a paragraph; the trim fires at ~400
+ * characters, about 65). The trim is a guard rail, not the editor: a report
+ * where it fires on every paragraph is a prompt problem, and it logs so.
+ */
+export const REPORT_LIMITS = {
+  /** 'narrative': three paragraphs of about 55 words is a full page with air. */
+  paragraphs: 3,
+  paragraphChars: 400,
+  /** The framing line under a heading. One sentence, not a first paragraph. */
+  introChars: 240,
+  /** Callouts sit under the body, so they are budgeted tighter than it. */
+  callouts: 3,
+  calloutChars: 240,
+  /** 'kpis': four cards is two rows; the note under a card is one line. */
+  kpis: 4,
+  kpiNoteChars: 90,
+  noteChars: 170,
+  notes: 2,
+  /** 'entities': five named blocks at three lines each. */
+  entities: 5,
+  entityCommentChars: 150,
+  /** 'risks': five is already more real risk than most filings support. */
+  risks: 5,
+  riskChars: 240,
+  /** 'market-vs-reality': three blocks, each a short paragraph. */
+  mvrChars: 300,
+  /** 'comparison': past six rows the table stops being scannable. */
+  comparisonRows: 6,
+  conclusionChars: 220,
+  /** 'chart': eight columns is the most that stays legible at the measure. */
+  chartPoints: 8,
+  /** 'management': the people who actually run it, not the whole board. */
+  people: 4,
+  personNoteChars: 140,
+  changes: 4,
+  changeChars: 160,
+  /** 'vitti-view'. */
+  ratings: 4,
+  ratingNoteChars: 90,
+  debateChars: 260,
+  /** 'outlook': two columns, so each item is a half-measure line or two. */
+  outlookItems: 4,
+  outlookItemChars: 150,
+  /** 'closing': four statements, each set large — they need to be short. */
+  statements: 4,
+  statementChars: 200,
+  /** The question for management. One sentence. */
+  questionChars: 240,
+  /** Headings and labels, which are set large or letter-spaced. */
+  titleChars: 80,
+  labelChars: 40,
+} as const;
 
 /**
  * The house sign-off (instruction 37), appended by the renderer.
@@ -434,5 +521,41 @@ export function validateReportDoc(doc: ReportDoc): string[] {
     );
   }
 
+  /**
+   * The eight-sheet ceiling, enforced rather than asked for.
+   *
+   * `fitReportPages` already trims an over-long report before it gets here, so
+   * this failing means something bypassed it — which is worth a loud error,
+   * because the one thing the desk asked for is a document that does not run
+   * past eight pages.
+   */
+  if (doc.pages.length > REPORT_PAGE_TARGET.max) {
+    problems.push(
+      `report is ${doc.pages.length} content pages, above the ` +
+        `${REPORT_PAGE_TARGET.max}-page ceiling (${REPORT_MAX_SHEETS} sheets including the disclaimer)`,
+    );
+  }
+
   return problems;
+}
+
+/**
+ * The label a page gets in the cover's contents rail and in the PDF outline.
+ *
+ * The cover has no title of its own, and the rail needs one line per page that
+ * a reader can aim at, so the cover borrows the document's own name. Everything
+ * else uses its heading, shortened — the headings are written as findings
+ * ("Is the Balance Sheet a Problem?"), which is exactly what makes them good
+ * navigation and occasionally too long for one line of it.
+ */
+export function pageNavLabel(page: ReportPage): string {
+  if (page.kind === "cover") return "Overview";
+  const title = page.title?.trim();
+  if (!title) return page.kind;
+  return title.length <= 48 ? title : `${title.slice(0, 47).trimEnd()}…`;
+}
+
+/** The PDF anchor a page is linked to: `#page-3`, targeted by the rail. */
+export function pageAnchorId(index: number): string {
+  return `page-${index + 1}`;
 }

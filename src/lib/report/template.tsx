@@ -1,6 +1,7 @@
 import {
   Document,
   Font,
+  Link,
   Page,
   StyleSheet,
   Text,
@@ -14,6 +15,8 @@ import {
   formatEyebrow,
   formatReportDate,
   MANAGEMENT_QUESTION_HEADING,
+  pageAnchorId,
+  pageNavLabel,
   type ReportCallout,
   type ReportChart,
   type ReportComparisonRow,
@@ -82,11 +85,19 @@ const PALETTE = {
   wash: "#F8FAFC",
   paper: "#FFFFFF",
 
-  /** The accent. Analytical pages: charts, comparisons, market-vs-reality. */
+  /** Evidence pages: the cards, the charts, the comparison tables. */
   teal: "#0F766E",
   tealWash: "#F0FBF9",
 
-  /** The secondary accent. People, process, questions, what-to-watch. */
+  /** Explanatory pages: what the company is and what it just did. */
+  sky: "#0369A1",
+  skyWash: "#F0F9FF",
+
+  /** Interpretation: market-vs-reality and the Vitti View. */
+  violet: "#6D28D9",
+  violetWash: "#F6F3FF",
+
+  /** People, process, questions, what-to-watch. */
   gold: "#92610C",
   goldWash: "#FEFAF0",
 
@@ -110,21 +121,75 @@ const PALETTE = {
  * Centralised so the code stays consistent as pages are added — the alternative
  * is a colour chosen at each render site, which is how a document ends up with
  * four greens.
+ *
+ * The grouping is by what the page DOES, not by what it looks like, so a reader
+ * who learns the code once can tell from the colour of a page's rule what kind
+ * of claim is on it: explanation, evidence, interpretation, process, or risk.
+ * Five families is also about the limit of what anyone actually learns — the
+ * point is orientation, not a legend to memorise.
  */
 function pageAccent(kind: ReportPage["kind"]): string {
   switch (kind) {
+    // Explanation: what the company is, and what it just did.
+    case "narrative":
+    case "entities":
+      return PALETTE.sky;
+    // Evidence: the numbers themselves.
+    case "kpis":
     case "chart":
     case "comparison":
-    case "market-vs-reality":
       return PALETTE.teal;
-    case "management":
+    // Interpretation: the desk's read of what the numbers mean.
+    case "market-vs-reality":
     case "vitti-view":
+      return PALETTE.violet;
+    // People and process.
+    case "management":
     case "outlook":
       return PALETTE.gold;
     case "risks":
       return PALETTE.negative;
+    // The frame of the document: cover and closing.
     default:
       return PALETTE.navy;
+  }
+}
+
+/**
+ * The word in the chip at the top right of a page.
+ *
+ * A page's colour tells a reader it has changed register; the chip tells them
+ * what to. Two or three of these repeat across kinds on purpose — "EVIDENCE" on
+ * both a KPI page and a chart page is the honest label for both, and inventing
+ * a distinct word per kind would make the chip a taxonomy rather than a signpost.
+ */
+function pageKindLabel(kind: ReportPage["kind"]): string | null {
+  switch (kind) {
+    case "narrative":
+      return "BACKGROUND";
+    case "entities":
+      return "BREAKDOWN";
+    case "kpis":
+      return "THE NUMBERS";
+    case "chart":
+      return "THE TREND";
+    case "comparison":
+      return "WHAT CHANGED";
+    case "market-vs-reality":
+      return "THE REACTION";
+    case "vitti-view":
+      return "VITTI VIEW";
+    case "management":
+      return "WHO RUNS IT";
+    case "outlook":
+      return "WHAT TO WATCH";
+    case "risks":
+      return "RISKS";
+    case "closing":
+      return "WHERE IT STANDS";
+    // The cover carries the band instead, and the chip would compete with it.
+    default:
+      return null;
   }
 }
 
@@ -140,13 +205,46 @@ const styles = StyleSheet.create({
     lineHeight: 1.5,
   },
 
+  /**
+   * The full-bleed accent stripe across the top of every page.
+   *
+   * Absolutely positioned so it can ignore the page's horizontal padding. It is
+   * the cheapest possible orientation cue: flicking through the PDF, the colour
+   * of the top edge says what kind of page has just gone past without a word
+   * being read.
+   */
+  topRule: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 5,
+  },
+
+  /** Eyebrow on the left, section chip on the right. */
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 22,
+  },
+
   /** The "A S X : S P Z" eyebrow that opens every page. */
   eyebrow: {
     fontFamily: "Helvetica-Bold",
     fontSize: 8,
     letterSpacing: 1.6,
     color: PALETTE.faint,
-    marginBottom: 22,
+  },
+
+  /** The section chip: the page's register, in its own colour. */
+  kindChip: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7,
+    letterSpacing: 1.1,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 2,
   },
 
   /**
@@ -162,8 +260,27 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.75,
     borderTopColor: PALETTE.hairline,
     paddingTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     fontSize: 7.5,
     color: PALETTE.faint,
+  },
+  footerText: {
+    fontSize: 7.5,
+    color: PALETTE.faint,
+  },
+  /** Back to the contents rail on the cover. A link, so it is worth colouring. */
+  footerLink: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    color: PALETTE.faint,
+    textDecoration: "none",
+  },
+  footerPage: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    color: PALETTE.muted,
   },
 
   /**
@@ -184,11 +301,36 @@ const styles = StyleSheet.create({
     paddingTop: 44,
     paddingHorizontal: 52,
   },
+  /**
+   * The cover's rule, in the document's own accent colours rather than one.
+   *
+   * It reads as a deliberate mark on the cover and it is also the legend for
+   * everything that follows: the four segments are the four families in
+   * `pageAccent`, in the order the report normally meets them.
+   */
   coverBandRule: {
+    flexDirection: "row",
     height: 4,
-    width: 48,
-    backgroundColor: PALETTE.teal,
+    width: 96,
     marginBottom: 20,
+  },
+  coverBandSegment: {
+    width: 24,
+    height: 4,
+  },
+  /** The move, as a pill in the band. The first thing a reader sees. */
+  movePill: {
+    alignSelf: "flex-start",
+    marginTop: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 3,
+  },
+  movePillText: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: PALETTE.paper,
   },
   coverEyebrow: {
     fontFamily: "Helvetica-Bold",
@@ -220,6 +362,50 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
     color: PALETTE.muted,
     fontFamily: "Helvetica-Bold",
+  },
+
+  /**
+   * The contents rail: one clickable row per page, on the cover.
+   *
+   * The reports are read on a screen far more often than on paper, and a
+   * seven-page note with no way to jump to the risks page is a scroll. Every
+   * row is an internal link to that page's anchor, and the swatch on the left
+   * is that page's accent — so the rail doubles as the legend for the colour
+   * code without having to explain it.
+   */
+  contents: {
+    marginTop: 26,
+    borderTopWidth: 0.75,
+    borderTopColor: PALETTE.hairline,
+    paddingTop: 14,
+  },
+  contentsHeading: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 1.4,
+    color: PALETTE.faint,
+    marginBottom: 10,
+  },
+  contentsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 7,
+    textDecoration: "none",
+  },
+  contentsSwatch: {
+    width: 3,
+    height: 11,
+    marginRight: 9,
+  },
+  contentsNumber: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+    color: PALETTE.faint,
+    width: 16,
+  },
+  contentsLabel: {
+    fontSize: 9.5,
+    color: PALETTE.ink,
   },
 
   pageTitle: {
@@ -384,6 +570,18 @@ const styles = StyleSheet.create({
     lineHeight: 1.55,
     color: PALETTE.muted,
     marginBottom: 10,
+  },
+  /**
+   * The two URLs in the compliance text, as real links.
+   *
+   * The wording is fixed and cannot be paraphrased, but nothing about it
+   * requires the FSG to be a string the reader retypes. Underlined rather than
+   * only coloured, because this is the one place on the document where the
+   * reader has to be able to tell a link from emphasis in greyscale.
+   */
+  disclaimerLink: {
+    color: PALETTE.teal,
+    textDecoration: "underline",
   },
 
   // --- charts (instruction 32) -------------------------------------------
@@ -672,6 +870,8 @@ function accentWash(accent: string): string {
   if (accent === PALETTE.positive) return PALETTE.positiveWash;
   if (accent === PALETTE.negative) return PALETTE.negativeWash;
   if (accent === PALETTE.teal) return PALETTE.tealWash;
+  if (accent === PALETTE.sky) return PALETTE.skyWash;
+  if (accent === PALETTE.violet) return PALETTE.violetWash;
   if (accent === PALETTE.gold) return PALETTE.goldWash;
   return PALETTE.wash;
 }
@@ -764,7 +964,10 @@ function ColumnChart({ chart }: { chart: ReportChart }) {
   const negativeHeight = CHART_PLOT_HEIGHT - positiveHeight;
 
   const barColour = (point: (typeof points)[number]) => {
-    if (point.highlight) return PALETTE.navy;
+    // Teal is the evidence-page accent, so the highlighted column is drawn in
+    // the same colour as the page's own rule and chip rather than in navy — the
+    // point the conclusion is about should look like it belongs to this page.
+    if (point.highlight) return PALETTE.teal;
     return point.value < 0 ? PALETTE.negative : PALETTE.steel;
   };
 
@@ -851,7 +1054,7 @@ function BarChart({ chart }: { chart: ReportChart }) {
               style={{
                 width: `${Math.max(1, (Math.abs(point.value) / maxAbsolute) * 100)}%`,
                 backgroundColor: point.highlight
-                  ? PALETTE.navy
+                  ? PALETTE.teal
                   : point.value < 0
                     ? PALETTE.negative
                     : PALETTE.steel,
@@ -893,33 +1096,177 @@ function ManagementQuestion({ question }: { question: string }) {
   );
 }
 
-function Footer({ doc }: { doc: ReportDoc }) {
+/**
+ * The move, as a pill in the cover band.
+ *
+ * Redundant with the hero KPI card immediately below it, and deliberately so:
+ * the card is the number in context, this is the number at a glance, in the
+ * direction's colour against the navy. A reader scanning a folder of these
+ * reports on a screen sees which way the stock went before anything else loads
+ * in their head. Absent when the move is unknown, for the same reason
+ * `directionAccent` falls back to navy — a grey pill saying nothing is worse
+ * than no pill.
+ */
+function MovePill({ movePct }: { movePct: number | null | undefined }) {
+  if (typeof movePct !== "number" || movePct === 0) return null;
+
+  const rising = movePct > 0;
   return (
-    <View style={styles.footer} fixed>
-      <Text>
-        {`Daily Mover Report  |  ${formatReportDate(doc.moveDate)}  |  Analyst: ${doc.analystName}`}
+    <View
+      style={[
+        styles.movePill,
+        { backgroundColor: rising ? PALETTE.positive : PALETTE.negative },
+      ]}
+    >
+      {/*
+        * The word, not an arrow. Helvetica is a standard-14 font in WinAnsi
+        * encoding and has no triangle at U+25B2 — react-pdf renders it as a
+        * superscript two, so the cover of a report about a 20.6% rise came out
+        * reading "² +20.6%". Anything outside WinAnsi needs an embedded font,
+        * and the reason this template uses Helvetica at all is not to fetch one
+        * at render time.
+        */}
+      <Text style={styles.movePillText}>
+        {`${rising ? "UP" : "DOWN"}  ${Math.abs(movePct).toFixed(1)}%`}
       </Text>
     </View>
   );
 }
 
+/**
+ * The contents rail on the cover: one clickable row per page.
+ *
+ * Skips the cover itself — a link from the cover to the cover is a dead row —
+ * and skips the compliance sheet, which is appended by the renderer and is not
+ * somewhere anyone navigates to on purpose.
+ */
+function Contents({ doc }: { doc: ReportDoc }) {
+  const rows = doc.pages
+    .map((page, index) => ({ page, index }))
+    .filter(({ page }) => page.kind !== "cover");
+
+  if (rows.length === 0) return null;
+
+  return (
+    <View style={styles.contents}>
+      <Text style={styles.contentsHeading}>IN THIS REPORT</Text>
+      {rows.map(({ page, index }) => (
+        <Link
+          key={index}
+          src={`#${pageAnchorId(index)}`}
+          style={styles.contentsRow}
+        >
+          <View
+            style={[
+              styles.contentsSwatch,
+              { backgroundColor: pageAccent(page.kind) },
+            ]}
+          />
+          <Text style={styles.contentsNumber}>{String(index + 1)}</Text>
+          <Text style={styles.contentsLabel}>{pageNavLabel(page)}</Text>
+        </Link>
+      ))}
+    </View>
+  );
+}
+
+/** Every sheet in the finished PDF: the content pages plus the disclaimer. */
+function sheetCount(doc: ReportDoc): number {
+  return doc.pages.length + 1;
+}
+
+/**
+ * The running footer: the by-line, a link back to the contents, and "3 / 8".
+ *
+ * The counter is computed from the page's own index rather than from
+ * react-pdf's `render`-prop pagination, and that is not a style choice. A
+ * `Text` with a `render` prop anywhere inside this `fixed` subtree silently
+ * drops the whole footer from the rendered page — no error, no warning, just no
+ * by-line on any sheet. Measured on @react-pdf/renderer 4.9.0 and reproducible
+ * in isolation, so it is worth writing down before someone reaches for the
+ * documented idiom again.
+ *
+ * The index is only as honest as the promise that one page is one sheet, which
+ * is the promise `REPORT_LIMITS` and `fitReportPages` exist to keep, and which
+ * `validateReportDoc` refuses to render a document that breaks.
+ */
+function Footer({
+  doc,
+  pageNumber,
+  showHomeLink,
+}: {
+  doc: ReportDoc;
+  pageNumber: number;
+  showHomeLink: boolean;
+}) {
+  return (
+    <View style={styles.footer} fixed>
+      <Text style={styles.footerText}>
+        {`Daily Mover Report  |  ${formatReportDate(doc.moveDate)}  |  Analyst: ${doc.analystName}`}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        {showHomeLink ? (
+          <Link src={`#${pageAnchorId(0)}`} style={styles.footerLink}>
+            {"CONTENTS   "}
+          </Link>
+        ) : null}
+        <Text style={styles.footerPage}>
+          {`${pageNumber} / ${sheetCount(doc)}`}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The chrome every page but the cover carries.
+ *
+ * `anchorId` goes on the header row rather than on the `Page`, because a named
+ * destination is placed at a laid-out box and the header is the top of the
+ * content — a link into it lands where the reader expects, at the eyebrow.
+ */
 function PageFrame({
   doc,
   accent,
+  kind,
+  anchorId,
+  pageNumber,
+  bookmark,
   children,
 }: {
   doc: ReportDoc;
-  /** The page's accent, tinting the eyebrow. See `pageAccent`. */
-  accent?: string;
+  /** The page's accent: the top rule, the eyebrow and the chip. See `pageAccent`. */
+  accent: string;
+  kind: ReportPage["kind"];
+  anchorId: string;
+  /** 1-based sheet number, for the footer counter. */
+  pageNumber: number;
+  /** The entry this page gets in the PDF's outline sidebar. */
+  bookmark: string;
   children: React.ReactNode;
 }) {
+  const label = pageKindLabel(kind);
+
   return (
-    <Page size="A4" style={styles.page}>
-      <Text style={[styles.eyebrow, accent ? { color: accent } : {}]}>
-        {formatEyebrow(doc.ticker)}
-      </Text>
+    <Page size="A4" style={styles.page} bookmark={bookmark}>
+      <View style={[styles.topRule, { backgroundColor: accent }]} fixed />
+      <View style={styles.headerRow} id={anchorId}>
+        <Text style={[styles.eyebrow, { color: accent }]}>
+          {formatEyebrow(doc.ticker)}
+        </Text>
+        {label ? (
+          <Text
+            style={[
+              styles.kindChip,
+              { color: accent, backgroundColor: accentWash(accent) },
+            ]}
+          >
+            {label}
+          </Text>
+        ) : null}
+      </View>
       {children}
-      <Footer doc={doc} />
+      <Footer doc={doc} pageNumber={pageNumber} showHomeLink />
     </Page>
   );
 }
@@ -934,8 +1281,19 @@ function PageHeading({ title, accent }: { title: string; accent: string }) {
   );
 }
 
-function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
+function ContentPage({
+  doc,
+  page,
+  index,
+}: {
+  doc: ReportDoc;
+  page: ReportPage;
+  /** Position in `doc.pages`: the anchor the contents rail links to. */
+  index: number;
+}) {
   const accent = pageAccent(page.kind);
+  const anchorId = pageAnchorId(index);
+  const bookmark = pageNavLabel(page);
 
   switch (page.kind) {
     case "cover":
@@ -945,11 +1303,21 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
        * in white. Everything below the band is ordinary page flow.
        */
       return (
-        <Page size="A4" style={styles.page}>
-          <View style={styles.coverBand}>
+        <Page size="A4" style={styles.page} bookmark={bookmark}>
+          <View style={styles.coverBand} id={anchorId}>
             <Text style={styles.coverEyebrow}>{formatEyebrow(doc.ticker)}</Text>
-            <View style={styles.coverBandRule} />
+            <View style={styles.coverBandRule}>
+              {[PALETTE.sky, PALETTE.teal, PALETTE.violet, PALETTE.gold].map(
+                (colour) => (
+                  <View
+                    key={colour}
+                    style={[styles.coverBandSegment, { backgroundColor: colour }]}
+                  />
+                ),
+              )}
+            </View>
             <Text style={styles.coverCompany}>{page.companyName}</Text>
+            <MovePill movePct={doc.movePct} />
           </View>
 
           <View style={styles.coverBody}>
@@ -965,15 +1333,23 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
             <Text style={styles.coverMeta}>
               {formatReportDate(doc.moveDate).toUpperCase()}
             </Text>
+            <Contents doc={doc} />
           </View>
 
-          <Footer doc={doc} />
+          <Footer doc={doc} pageNumber={1} showHomeLink={false} />
         </Page>
       );
 
     case "management":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           {page.people.map((person, index) => (
@@ -1005,7 +1381,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "narrative":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           {page.paragraphs.map((paragraph, index) => (
@@ -1023,7 +1406,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "kpis":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <KpiCards kpis={page.kpis} />
@@ -1042,7 +1432,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "entities":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           {page.items.map((item, index) => (
@@ -1059,7 +1456,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "risks":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.items.map((item, index) => (
             <View key={index} style={styles.riskItem} wrap={false}>
@@ -1072,7 +1476,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "chart":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <ChartBlock chart={page.chart} />
@@ -1087,7 +1498,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "market-vs-reality":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           <View style={[styles.mvrBlock, { borderLeftColor: PALETTE.faint }]}>
             <Text style={styles.mvrLabel}>HEADLINE</Text>
@@ -1106,7 +1524,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "comparison":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <View style={styles.tableHead}>
@@ -1145,7 +1570,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "vitti-view":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.ratings.map((rating, index) => (
             <View key={index} style={styles.ratingRow} wrap={false}>
@@ -1170,7 +1602,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "outlook":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.intro ? <Text style={styles.intro}>{page.intro}</Text> : null}
           <View style={styles.outlookColumns}>
@@ -1200,7 +1639,14 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 
     case "closing":
       return (
-        <PageFrame doc={doc} accent={accent}>
+        <PageFrame
+          doc={doc}
+          accent={accent}
+          kind={page.kind}
+          anchorId={anchorId}
+          pageNumber={index + 1}
+          bookmark={bookmark}
+        >
           <PageHeading title={page.title} accent={accent} />
           {page.statements.map((statement, index) => (
             <Text key={index} style={styles.statement}>
@@ -1222,18 +1668,69 @@ function ContentPage({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
 }
 
 /**
+ * Splits a compliance paragraph into text and the bare URLs inside it.
+ *
+ * Two patterns rather than one, because `String.split` needs the capturing
+ * global form and `RegExp.test` on a global regex is stateful — it advances
+ * `lastIndex` between calls and would linkify every other URL.
+ */
+const URL_SPLIT = /(https?:\/\/[^\s)]+)/g;
+const IS_URL = /^https?:\/\//;
+
+/**
+ * One compliance paragraph, with its URLs turned into links.
+ *
+ * The text is not touched — it is regulated wording and `DISCLAIMER_PARAGRAPHS`
+ * exists so that nothing can paraphrase it. What changes is only that the two
+ * addresses already printed in it become clickable, which is a rendering
+ * decision about the same characters, not an edit to them. The split runs on
+ * the constant rather than on anything model-generated, so the worst a bad
+ * regex could do is fail to linkify.
+ */
+function DisclaimerParagraph({ text }: { text: string }) {
+  const parts = text.split(URL_SPLIT);
+
+  return (
+    <Text style={styles.disclaimerText}>
+      {parts.map((part, index) =>
+        IS_URL.test(part) ? (
+          <Link key={index} src={part} style={styles.disclaimerLink}>
+            {part}
+          </Link>
+        ) : (
+          part
+        ),
+      )}
+    </Text>
+  );
+}
+
+/**
  * The compliance page. Appended here rather than emitted by the model — see the
  * note on `DISCLAIMER_PARAGRAPHS`.
  */
-function DisclaimerPage() {
+function DisclaimerPage({ doc }: { doc: ReportDoc }) {
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" style={styles.page} bookmark="Disclaimer">
+      <View style={[styles.topRule, { backgroundColor: PALETTE.navy }]} fixed />
+      <View style={styles.headerRow}>
+        <Text style={[styles.eyebrow, { color: PALETTE.navy }]}>
+          {formatEyebrow(doc.ticker)}
+        </Text>
+        <Text
+          style={[
+            styles.kindChip,
+            { color: PALETTE.navy, backgroundColor: PALETTE.wash },
+          ]}
+        >
+          IMPORTANT
+        </Text>
+      </View>
       <Text style={styles.disclaimerHeading}>{DISCLAIMER_HEADING}</Text>
       {DISCLAIMER_PARAGRAPHS.map((paragraph, index) => (
-        <Text key={index} style={styles.disclaimerText}>
-          {paragraph}
-        </Text>
+        <DisclaimerParagraph key={index} text={paragraph} />
       ))}
+      <Footer doc={doc} pageNumber={sheetCount(doc)} showHomeLink />
     </Page>
   );
 }
@@ -1247,9 +1744,9 @@ export function DailyMoverReport({ doc }: { doc: ReportDoc }) {
       creator="Vitti Capital Daily Movers Terminal"
     >
       {doc.pages.map((page, index) => (
-        <ContentPage key={index} doc={doc} page={page} />
+        <ContentPage key={index} doc={doc} page={page} index={index} />
       ))}
-      <DisclaimerPage />
+      <DisclaimerPage doc={doc} />
     </Document>
   );
 }
