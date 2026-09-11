@@ -26,6 +26,7 @@ daily-movers-dashboard/
 │   ├── build-logo.mjs           # public/logo.jpeg -> keyed-out mark inlined as src/lib/report/logo.ts
 │   ├── download-reports.mts     # Batch CLI script to download all attached PDFs to a local folder
 │   ├── preview-report.mts       # Render the report deck to PDF locally (fixture or stored draft), no API call
+│   ├── regenerate-draft.mts     # Re-run a stored draft under the current prompt (dry run by default)
 │   └── storage-setup.mts        # Private Supabase Storage bucket initialization
 ├── src/
 │   ├── actions/                 # Next.js Server Actions (Mutations)
@@ -111,9 +112,10 @@ daily-movers-dashboard/
 │   │   ├── auth.ts              # RBAC & session verification (server-only)
 │   │   ├── catalysts.ts         # The closed catalyst vocabulary, defined once
 │   │   ├── db-error.ts          # Postgres error code parser & credential scrubbing
-│   │   ├── drafts/              # Mover Studio pipeline & reads
-│   │   │   ├── generate.ts      # runDraftPipeline, shouldRunScheduled, reapStaleGenerating
+│   │   ├── drafts/              # Mover Studio pipeline, regeneration & reads
+│   │   │   ├── generate.ts      # runDraftPipeline, finishDraft, shouldRunScheduled, reapStaleGenerating
 │   │   │   ├── queries.ts       # Draft queue reads (server-only)
+│   │   │   ├── regenerate.ts    # planRegeneration, runRegeneration (re-run under the current prompt)
 │   │   │   ├── trading-day.ts   # Australia/Sydney date & session arithmetic (client-safe)
 │   │   │   └── types.ts         # Client-safe draft row shapes & cost estimation
 │   │   ├── format.ts            # Date, percentage & price formatters

@@ -19,6 +19,7 @@ import {
   reapStaleGenerating,
   runDraftPipeline,
 } from "@/lib/drafts/generate";
+import { planRegeneration, runRegeneration } from "@/lib/drafts/regenerate";
 import { getDraftStoragePath } from "@/lib/drafts/queries";
 import { exchangeDate } from "@/lib/drafts/trading-day";
 import { buildReportPath, REPORTS_BUCKET } from "@/lib/storage";
@@ -152,6 +153,54 @@ export async function startDraftAction(
 }
 
 /**
+ * Re-runs an existing draft through the current prompt, template and model.
+ *
+ * The new draft is a `manual` row for the same `move_date`, which the partial
+ * unique index allows — only the cron is held to one draft a day. Both then sit
+ * in the queue and can be read against each other, which is the whole point: it
+ * is the only way to see what a prompt change did to a note the desk has
+ * already reviewed.
+ *
+ * Same two-step as `startDraftAction`, for the same reason: the row is created
+ * inline so the action can return its id, and the pipeline — twenty filings to
+ * download and three model calls — runs in `after`.
+ */
+export async function regenerateDraftAction(
+  sourceDraftId: number,
+): Promise<DraftActionState> {
+  let actor: SessionUser;
+  try {
+    actor = await requireAdmin();
+  } catch (error) {
+    const message = authMessage(error);
+    if (message) return { ok: false, message };
+    throw error;
+  }
+
+  const planned = await planRegeneration({
+    sourceDraftId,
+    actorEmail: actor.email,
+  });
+
+  if (!planned.ok) {
+    return { ok: false, message: planned.reason };
+  }
+
+  after(async () => {
+    await runRegeneration(planned.plan);
+  });
+
+  revalidateStudio();
+  return {
+    ok: true,
+    draftId: planned.plan.draftId,
+    message:
+      `Re-running ${planned.plan.ticker} under the current prompt. ` +
+      `This usually takes a few minutes.`,
+  };
+}
+
+/**
  * Approves a draft: projects it into `daily_movers` and moves its PDF into the
  * archive's own key scheme.
  *
@@ -264,7 +313,12 @@ export async function approveDraftAction(
     const [catalyst] = await db
       .select({ id: catalysts.id })
       .from(catalysts)
-      .where(eq(catalysts.slug, edited.catalystSlug || draft.catalystSlug || "other"));
+      .where(
+        eq(
+          catalysts.slug,
+          edited.catalystSlug || draft.catalystSlug || "other",
+        ),
+      );
 
     let catalystId = catalyst?.id;
     if (!catalystId) {
@@ -430,7 +484,10 @@ export async function rejectDraftAction(
     return { ok: true, draftId, message: "Draft rejected." };
   } catch (error) {
     console.error("rejectDraftAction failed", error);
-    return { ok: false, message: "Could not reject the draft. Check the logs." };
+    return {
+      ok: false,
+      message: "Could not reject the draft. Check the logs.",
+    };
   }
 }
 

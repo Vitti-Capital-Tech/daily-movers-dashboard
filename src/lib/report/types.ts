@@ -528,6 +528,18 @@ export const REPORT_LIMITS = {
   mvrChars: 300,
   /** 'comparison': past six rows the table stops being scannable. */
   comparisonRows: 6,
+  /**
+   * The cells of a comparison row, which had no budget at all until a row read
+   * "1,275koz gold (50% attributable basis; ~1.0Moz on the 40% basis used in
+   * the transaction comparables)".
+   *
+   * Two cells of that length wrapped to a second line each, which pushed a
+   * six-row table past the sheet and spilled its source line onto a page of its
+   * own. 88 characters is about one line at the column measure, so a cell now
+   * either fits or is cut at a sentence boundary.
+   */
+  comparisonCellChars: 88,
+  comparisonChangeChars: 28,
   conclusionChars: 220,
   /** 'chart': eight columns is the most that stays legible at the measure. */
   chartPoints: 8,

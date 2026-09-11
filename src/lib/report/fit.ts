@@ -279,7 +279,31 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
         ...page,
         title,
         intro,
-        rows: trim.list(page.rows, REPORT_LIMITS.comparisonRows, "comparison rows"),
+        rows: trim
+          .list(page.rows, REPORT_LIMITS.comparisonRows, "comparison rows")
+          .map((row) => ({
+            ...row,
+            metric: trim.text(
+              row.metric,
+              REPORT_LIMITS.comparisonCellChars,
+              "comparison metric",
+            ),
+            before: trim.text(
+              row.before,
+              REPORT_LIMITS.comparisonCellChars,
+              "comparison cell",
+            ),
+            now: trim.text(
+              row.now,
+              REPORT_LIMITS.comparisonCellChars,
+              "comparison cell",
+            ),
+            change: trim.text(
+              row.change,
+              REPORT_LIMITS.comparisonChangeChars,
+              "comparison change",
+            ),
+          })),
         conclusion: trim.maybe(
           page.conclusion,
           REPORT_LIMITS.conclusionChars,

@@ -5,15 +5,17 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  RefreshCw,
   TriangleAlert,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
   approveDraftAction,
+  regenerateDraftAction,
   rejectDraftAction,
   type DraftActionState,
 } from "@/actions/drafts";
@@ -81,9 +83,38 @@ export function DraftReview({
 
   const [showReject, setShowReject] = useState(false);
 
+  /**
+   * Regeneration is two clicks, not a dialog.
+   *
+   * It spends a couple of dollars of model time and adds a row to the queue, so
+   * it should not be a single stray click on a card an analyst is reading — and
+   * a confirm step that states the cost is more use than a modal that asks
+   * "are you sure".
+   */
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [regenerating, startRegenerate] = useTransition();
+
+  const regenerate = () => {
+    setConfirmRegenerate(false);
+    startRegenerate(async () => {
+      const result = await regenerateDraftAction(draft.id);
+      if (result?.ok) toast.success(result.message ?? "Re-running.");
+      else if (result?.message) toast.error(result.message);
+    });
+  };
+
   const busy = approving || rejecting;
   const decided = draft.status === "approved" || draft.status === "rejected";
   const cost = estimateDraftCostUsd(draft);
+  /**
+   * What a re-run would cost, priced at the CURRENT tier rather than the one
+   * this draft was written on: the corpus is the bill and the same filings get
+   * read again, so the source draft's own token counts are the best estimate
+   * there is — and pricing them at today's rates is the number the analyst is
+   * about to spend, not the one already spent.
+   */
+  const rerunCost = estimateDraftCostUsd({ ...draft, model: null });
+  const costHint = rerunCost ? `${rerunCost.toFixed(2)}` : "a dollar or two";
   const tokensIn = totalInputTokens(draft);
 
   if (draft.status === "generating") {
@@ -187,6 +218,28 @@ export function DraftReview({
                   View in archive
                 </Button>
               )}
+              <Button
+                variant={confirmRegenerate ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                disabled={regenerating}
+                onClick={
+                  confirmRegenerate
+                    ? regenerate
+                    : () => setConfirmRegenerate(true)
+                }
+                onBlur={() => setConfirmRegenerate(false)}
+                title="Re-run this draft through the current prompt, template and model"
+              >
+                {regenerating ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                {confirmRegenerate
+                  ? `Confirm — spends about ${costHint}`
+                  : "Regenerate"}
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -378,7 +431,9 @@ export function DraftReview({
                 </Button>
               </div>
               {rejectState?.ok === false && rejectState.message ? (
-                <p className="text-xs text-destructive">{rejectState.message}</p>
+                <p className="text-xs text-destructive">
+                  {rejectState.message}
+                </p>
               ) : null}
             </form>
           )}
@@ -400,7 +455,9 @@ export function DraftReview({
               : ""}{" "}
             / {draft.outputTokens?.toLocaleString() ?? "?"} out
             {cost !== null ? ` · ~US$${cost.toFixed(3)} estimated` : ""}
-            {draft.trigger === "cron" ? " · scheduled run" : " · started manually"}
+            {draft.trigger === "cron"
+              ? " · scheduled run"
+              : " · started manually"}
           </p>
         </CardContent>
       </Card>

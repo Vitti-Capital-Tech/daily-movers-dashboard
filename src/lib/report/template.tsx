@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Style } from "@react-pdf/stylesheet";
 
 import {
   Circle,
@@ -249,7 +250,14 @@ const styles = StyleSheet.create({
     fontFamily: "Times-Bold",
     fontSize: 32,
     lineHeight: 1.12,
+    letterSpacing: -0.2,
     color: PALETTE.paper,
+  },
+  /** The short rule under a page heading. The cover has a longer one. */
+  headingRule: {
+    width: 54,
+    height: 2,
+    marginTop: 10,
   },
   intro: {
     fontSize: 12,
@@ -268,6 +276,18 @@ const styles = StyleSheet.create({
    * composed rather than unfinished.
    */
   bodyCentred: { flexGrow: 1, marginTop: 16, justifyContent: "center" },
+
+  /**
+   * The emphasis inside body copy.
+   *
+   * The desk asked for pages that read as a deck rather than as a page of
+   * text, and the cheapest version of that is letting the figure inside a
+   * sentence carry the weight the sentence is about: "$410 million on
+   * completion" in white bold against grey body copy is found in a glance. The
+   * model marks it with `**` and `Rich` renders it — see below for why the
+   * markup is parsed rather than trusted.
+   */
+  strong: { fontFamily: "Helvetica-Bold", color: PALETTE.paper },
 
   paragraph: {
     fontSize: 12,
@@ -419,7 +439,7 @@ const styles = StyleSheet.create({
     fontSize: 8,
     letterSpacing: 1.4,
   },
-  compRow: { flexDirection: "row", marginBottom: 6, alignItems: "stretch" },
+  compRow: { flexDirection: "row", marginBottom: 5, alignItems: "stretch" },
   compMetric: {
     width: 150,
     fontFamily: "Helvetica-Bold",
@@ -431,7 +451,7 @@ const styles = StyleSheet.create({
   compBefore: {
     flex: 1,
     backgroundColor: PALETTE.card,
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 11,
     marginRight: 8,
   },
@@ -439,17 +459,29 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 0.75,
     borderStyle: "solid",
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 11,
   },
-  compText: { fontSize: 10.5, lineHeight: 1.35 },
-  compChange: {
-    width: 74,
+  compText: { fontSize: 10, lineHeight: 1.3 },
+  compChangeCell: { width: 86, paddingLeft: 8, justifyContent: "center" },
+  /**
+   * The verdict, as a chip rather than a word.
+   *
+   * "Worse" set in coral type reads as a typo at 8.5pt; the same word in a
+   * tinted pill reads as a label, which is what it is — and it gives the row a
+   * right-hand edge, so a six-row table scans as a table.
+   */
+  compChip: {
+    borderRadius: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    alignSelf: "flex-end",
+  },
+  compChipText: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 8.5,
-    textAlign: "right",
-    paddingTop: 9,
-    paddingLeft: 8,
+    fontSize: 8,
+    letterSpacing: 0.3,
+    textAlign: "center",
   },
 
   /** Timeline ---------------------------------------------------------- */
@@ -516,6 +548,22 @@ const styles = StyleSheet.create({
     color: PALETTE.body,
     fontFamily: "Helvetica-Oblique",
   },
+  /**
+   * The provenance line, at the end of the page body.
+   *
+   * It was briefly positioned absolutely, to stop the case that produced it:
+   * the SBM comparison page of 10 September 2026 ran about twenty points long
+   * and put its source line — and nothing else — on a sheet of its own. That
+   * fixed the spill and traded it for a worse failure, because a page that is
+   * still slightly too tall then prints its content *underneath* the caption.
+   *
+   * So the caption stays in the flow, and the overflow is fixed where it was
+   * actually caused: comparison cells now have a character budget
+   * (`REPORT_LIMITS.comparisonCellChars`), rows are two points tighter, and
+   * `renderReportPdf` counts the sheets it produced and says so in the log when
+   * a page has wrapped. A spilled sheet is visible and rare; overlapping text
+   * is neither.
+   */
   source: {
     fontSize: 8,
     lineHeight: 1.35,
@@ -713,6 +761,50 @@ function IconDisc({
   );
 }
 
+/**
+ * Body copy with `**figure**` emphasis resolved.
+ *
+ * The model is allowed to mark the one or two figures a block turns on, and
+ * only those. The markup is *parsed*, never trusted: an unbalanced `**` — which
+ * is what a length trim at a sentence boundary can leave behind — would
+ * otherwise bold everything to the end of the page, so an odd number of markers
+ * makes the whole string render plain with the markers stripped. A stray
+ * asterisk on a client document is a smaller failure than half a page in bold,
+ * and printing the literal `**` is not an option either way.
+ */
+function Rich({
+  children,
+  style,
+  strongStyle = styles.strong,
+}: {
+  children?: string | null;
+  style?: Style | Style[];
+  strongStyle?: Style;
+}) {
+  const text = children?.trim() ?? "";
+  if (!text) return null;
+
+  const parts = text.split("**");
+  // An even number of parts means an odd number of markers: unbalanced.
+  if (parts.length % 2 === 0) {
+    return <Text style={style}>{parts.join("")}</Text>;
+  }
+
+  return (
+    <Text style={style}>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? (
+          <Text key={index} style={strongStyle}>
+            {part}
+          </Text>
+        ) : (
+          part
+        ),
+      )}
+    </Text>
+  );
+}
+
 /** How a point prints: its own `display`, or the raw number as a fallback. */
 function pointLabel(value: number, display?: string | null): string {
   return display?.trim() || String(value);
@@ -799,7 +891,9 @@ function ConclusionBand({ text }: { text?: string | null }) {
   if (!text?.trim()) return null;
   return (
     <View style={styles.band} wrap={false}>
-      <Text style={styles.bandText}>{text.trim()}</Text>
+      <Rich style={styles.bandText} strongStyle={{ color: PALETTE.mintInk }}>
+        {text}
+      </Rich>
     </View>
   );
 }
@@ -820,8 +914,9 @@ function PageHeading({
         </Text>
       ) : null}
       <Text style={styles.heading}>{page.title}</Text>
+      <View style={[styles.headingRule, { backgroundColor: accent }]} />
       {"intro" in page && page.intro?.trim() ? (
-        <Text style={styles.intro}>{page.intro.trim()}</Text>
+        <Rich style={styles.intro}>{page.intro}</Rich>
       ) : null}
     </View>
   );
@@ -873,9 +968,12 @@ function Tile({
           {kpi.label.toUpperCase()}
         </Text>
         {kpi.note?.trim() ? (
-          <Text style={[styles.tileNote, { color: noteColour }]}>
-            {kpi.note.trim()}
-          </Text>
+          <Rich
+            style={[styles.tileNote, { color: noteColour }]}
+            strongStyle={{ fontFamily: "Helvetica-Bold" }}
+          >
+            {kpi.note}
+          </Rich>
         ) : null}
       </View>
     </View>
@@ -927,7 +1025,7 @@ function Callouts({
           <Text style={[styles.calloutLabel, { color: accent }]}>
             {callout.label.toUpperCase()}
           </Text>
-          <Text style={styles.calloutText}>{callout.text}</Text>
+          <Rich style={styles.calloutText}>{callout.text}</Rich>
         </View>
       ))}
     </View>
@@ -946,7 +1044,7 @@ function Bullets({
       {items.map((item, index) => (
         <View key={index} style={styles.bulletRow} wrap={false}>
           <Text style={[styles.bulletMark, { color: accent }]}>•</Text>
-          <Text style={styles.bulletText}>{item}</Text>
+          <Rich style={styles.bulletText}>{item}</Rich>
         </View>
       ))}
     </View>
@@ -1198,6 +1296,13 @@ function changeColour(direction: ReportComparisonRow["direction"]): string {
   return PALETTE.muted;
 }
 
+/** The chip behind that verdict: the same hue, at panel strength. */
+function changeTint(direction: ReportComparisonRow["direction"]): string {
+  if (direction === "better") return "#10382C";
+  if (direction === "worse") return "#3B1F1D";
+  return PALETTE.card;
+}
+
 function ManagementQuestion({ question }: { question?: string | null }) {
   if (!question?.trim()) return null;
   return (
@@ -1233,7 +1338,7 @@ function CoverBody({
   return (
     <View style={styles.bodyCentred}>
       <Text style={styles.coverName}>{page.companyName}</Text>
-      <Text style={styles.coverHeadline}>{page.headline}</Text>
+      <Rich style={styles.coverHeadline}>{page.headline}</Rich>
       <View style={styles.coverRule} />
 
       <View style={styles.tileRow}>
@@ -1244,7 +1349,7 @@ function CoverBody({
       </View>
 
       {page.intro?.trim() ? (
-        <Text style={styles.coverNote}>{page.intro.trim()}</Text>
+        <Rich style={styles.coverNote}>{page.intro}</Rich>
       ) : null}
       <SourceLine note={page.sourceNote} />
     </View>
@@ -1273,7 +1378,7 @@ function RisksBody({
               >
                 {item.label}
               </Text>
-              <Text style={styles.tileNote}>{item.text}</Text>
+              <Rich style={styles.tileNote}>{item.text}</Rich>
             </View>
           </View>
         ))}
@@ -1304,16 +1409,17 @@ function EntitiesBody({
             >
               {item.name}
             </Text>
-            <Text
+            <Rich
               style={{
                 fontSize: 9.5,
                 color: PALETTE.mint,
                 marginLeft: 10,
                 flex: 1,
               }}
+              strongStyle={{ fontFamily: "Helvetica-Bold", color: PALETTE.mint }}
             >
               {item.stat}
-            </Text>
+            </Rich>
           </View>
           {item.comment?.trim() ? (
             <Text
@@ -1352,27 +1458,41 @@ function ComparisonBody({
         <Text style={[styles.compHeadCell, { flex: 1, color: PALETTE.mint }]}>
           {page.columns[2].toUpperCase()}
         </Text>
-        <Text style={[styles.compHeadCell, styles.compChange, { paddingTop: 0, color: PALETTE.muted }]}>
-          {""}
-        </Text>
+        <View style={styles.compChangeCell} />
       </View>
 
       {page.rows.map((row, index) => (
         <View key={index} style={styles.compRow} wrap={false}>
           <Text style={styles.compMetric}>{row.metric}</Text>
           <View style={styles.compBefore}>
-            <Text style={[styles.compText, { color: PALETTE.muted }]}>
+            <Rich style={[styles.compText, { color: PALETTE.muted }]}>
               {row.before}
-            </Text>
+            </Rich>
           </View>
           <View style={[styles.compNow, { borderColor: PALETTE.mintDeep }]}>
-            <Text style={[styles.compText, { color: PALETTE.paper }]}>
+            <Rich style={[styles.compText, { color: PALETTE.paper }]}>
               {row.now}
-            </Text>
+            </Rich>
           </View>
-          <Text style={[styles.compChange, { color: changeColour(row.direction) }]}>
-            {row.change}
-          </Text>
+          <View style={styles.compChangeCell}>
+            {row.change?.trim() ? (
+              <View
+                style={[
+                  styles.compChip,
+                  { backgroundColor: changeTint(row.direction) },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.compChipText,
+                    { color: changeColour(row.direction) },
+                  ]}
+                >
+                  {row.change.trim()}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         </View>
       ))}
 
@@ -1405,7 +1525,7 @@ function TimelineBody({
           <View key={index} style={[styles.timelineCell, { width }]}>
             <Text style={styles.timelineDate}>{event.date}</Text>
             <IconDisc name={event.icon} size={28} />
-            <Text style={styles.timelineText}>{event.text}</Text>
+            <Rich style={styles.timelineText}>{event.text}</Rich>
           </View>
         ))}
       </View>
@@ -1440,7 +1560,7 @@ function MarketVsRealityBody({
               <Text style={[styles.calloutLabel, { color: block.tone }]}>
                 {block.label.toUpperCase()}
               </Text>
-              <Text style={styles.calloutText}>{block.text}</Text>
+              <Rich style={styles.calloutText}>{block.text}</Rich>
             </View>
           </View>
         ))}
@@ -1478,9 +1598,9 @@ function VittiViewBody({
 
       <View style={{ marginTop: 6 }}>
         <Text style={styles.sectionLabel}>THE KEY DEBATE</Text>
-        <Text style={styles.paragraph}>{page.keyDebate}</Text>
+        <Rich style={styles.paragraph}>{page.keyDebate}</Rich>
         <Text style={styles.sectionLabel}>NEXT CATALYST</Text>
-        <Text style={styles.paragraph}>{page.nextCatalyst}</Text>
+        <Rich style={styles.paragraph}>{page.nextCatalyst}</Rich>
       </View>
 
       <ManagementQuestion question={page.managementQuestion} />
@@ -1581,9 +1701,9 @@ function ClosingBody({
   return (
     <View style={styles.body}>
       {page.statements.map((statement, index) => (
-        <Text key={index} style={styles.paragraph}>
+        <Rich key={index} style={styles.paragraph}>
           {statement}
-        </Text>
+        </Rich>
       ))}
 
       <View style={styles.coverRule} />
@@ -1627,9 +1747,9 @@ function PageBody({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
       return (
         <View style={styles.body}>
           {page.paragraphs.map((paragraph, index) => (
-            <Text key={index} style={styles.paragraph}>
+            <Rich key={index} style={styles.paragraph}>
               {paragraph}
-            </Text>
+            </Rich>
           ))}
           <Callouts callouts={page.callouts} accent={accent} />
           <SourceLine note={page.sourceNote} />

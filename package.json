@@ -18,7 +18,8 @@
     "storage:setup": "tsx scripts/storage-setup.mts",
     "reports:download": "tsx scripts/download-reports.mts",
     "report:preview": "esbuild scripts/preview-report.mts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/preview-report.mjs --log-level=error && node --env-file-if-exists=.env.local node_modules/.cache/preview-report.mjs",
-    "logo:build": "node scripts/build-logo.mjs"
+    "logo:build": "node scripts/build-logo.mjs",
+    "draft:regenerate": "esbuild scripts/regenerate-draft.mts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --alias:server-only=./node_modules/server-only/empty.js --outfile=node_modules/.cache/regenerate-draft.mjs --log-level=error && node --env-file-if-exists=.env.local node_modules/.cache/regenerate-draft.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

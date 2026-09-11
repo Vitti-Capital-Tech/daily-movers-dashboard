@@ -238,37 +238,54 @@ export function draftSide(movePct: number | null): MoverSide | null {
 /**
  * Rough US-dollar cost of a draft, for the review card's footer.
  *
- * Claude Sonnet 5 list pricing: $3/MTok input, $15/MTok output, cache reads at
- * 0.1x the input rate.
+ * Rates are per model, chosen from the row's own `model` column, because a
+ * single hardcoded pair silently mis-prices every draft the moment the pipeline
+ * moves tiers — which it has done twice. This estimate read $3/$15 while the
+ * pipeline ran Sonnet 5 at $2/$10 and then Opus 5 at $5/$25, so the number on
+ * the review card was wrong for every row in the table.
  *
- * The cache **write** multiplier depends on the TTL, and getting it wrong is
- * how this function once understated a draft by half: a 5-minute-TTL write bills
- * at 1.25x and a one-hour-TTL write at **2x**, and the pipeline used the hour
- * while this estimate assumed the five minutes.
+ * Input and output are the list prices; the cache rates are derived from input,
+ * because that is how they are defined. The cache **write** multiplier depends
+ * on the TTL, and getting it wrong is how this function once understated a
+ * draft by half: a 5-minute-TTL write bills at 1.25x and a one-hour-TTL write
+ * at **2x**. `buildEvidenceContent` caches the corpus on the 5-minute TTL —
+ * the pipeline reads it back two or three times within minutes — so 1.25x is
+ * the rate actually being paid.
  *
- * They now agree. `buildEvidenceContent` caches the announcement corpus on the
- * **5-minute** TTL, because the pipeline reads it back two or three times within
- * minutes — write the report, check it, and rewrite it if the check finds
- * something — rather than once a day as it did when caching was removed. So
- * 1.25x is the rate actually being paid.
- *
- * Historical rows are unaffected either way: `cacheWriteTokens` is 0 on every
- * draft made while there was no breakpoint at all.
+ * A row with no model, or one written by a model that is not listed, is priced
+ * at the current drafting tier: an unknown value almost always means a row
+ * written by code newer than this table, and under-pricing it would be the
+ * failure this map exists to stop.
  */
-const RATE_PER_MTOK = {
-  input: 3,
-  /** 5-minute TTL write, matching the breakpoint the pipeline actually sets. */
-  cacheWrite: 3 * 1.25,
-  cacheRead: 3 * 0.1,
-  output: 15,
-} as const;
+const LIST_PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "claude-opus-5": { input: 5, output: 25 },
+  "claude-sonnet-5": { input: 2, output: 10 },
+  "claude-sonnet-4-6": { input: 3, output: 15 },
+  "claude-haiku-4-5": { input: 1, output: 5 },
+};
+
+const CURRENT_TIER = LIST_PRICE_PER_MTOK["claude-opus-5"];
+
+function ratesFor(model: string | null | undefined) {
+  const list = (model && LIST_PRICE_PER_MTOK[model.trim()]) || CURRENT_TIER;
+  return {
+    input: list.input,
+    /** 5-minute TTL write, matching the breakpoint the pipeline actually sets. */
+    cacheWrite: list.input * 1.25,
+    cacheRead: list.input * 0.1,
+    output: list.output,
+  };
+}
 
 export function estimateDraftCostUsd(usage: {
   inputTokens: number | null;
   cacheWriteTokens?: number | null;
   cacheReadTokens?: number | null;
   outputTokens: number | null;
+  /** The row's own model, so historical drafts keep their own prices. */
+  model?: string | null;
 }): number | null {
+  const RATE_PER_MTOK = ratesFor(usage.model);
   const parts = [
     [usage.inputTokens, RATE_PER_MTOK.input],
     [usage.cacheWriteTokens, RATE_PER_MTOK.cacheWrite],

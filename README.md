@@ -79,6 +79,7 @@ account password.
 | `npm run reports:download` | Batch download all attached PDF reports to a local folder |
 | `npm run report:preview` | Render the report template to a PDF locally — the fixture, or `-- <draftId>` from the database. No API call |
 | `npm run logo:build` | Regenerate `lib/report/logo.ts` from `public/logo.jpeg` after the asset changes |
+| `npm run draft:regenerate -- <id>` | Re-run a stored draft through the current prompt (add `--run` to spend; dry run prints the cost) |
 
 ## Mover Studio
 
@@ -191,6 +192,15 @@ invocation inside the ceiling.
 report rendered inline, and every announcement it read with the cited ones
 marked and linked. The archive fields — move, catalyst, reason, takeaway — are
 **editable before approval**: the model drafts, the analyst is still the author.
+
+**Regenerating a draft.** The card also has a **Regenerate** button, and there
+is `npm run draft:regenerate -- <id>` for the same thing from a terminal. It
+re-runs the stored draft through the current prompt, template and model, reusing
+the subject, the screen row, the rationale and the exact announcement list — so
+the only difference between the two drafts is the code that wrote them. The new
+one is a `manual` row for the same `move_date`, which the cron's unique index
+permits, so both sit in the queue and can be read against each other. Two clicks
+and a stated cost, because it spends a couple of dollars of model time.
 
 **Admin only.** Drafts are machine-written and unreviewed, so they are not Vitti
 research until approved. The nav link is hidden from viewers, and the page and
@@ -365,6 +375,7 @@ scripts/
   build-logo.mjs         public/logo.jpeg -> the keyed-out mark, inlined as lib/report/logo.ts
   download-reports.mts   Batch CLI utility to download all research PDFs to a local folder
   preview-report.mts     Render the report deck to PDF locally, with no API call
+  regenerate-draft.mts   Re-run a stored draft under the current prompt, dry run by default
   storage-setup.mts      Supabase storage bucket initializer
 src/
   actions/
@@ -414,7 +425,8 @@ src/
       announcement-text.ts  announcement PDFs -> text for the prompt
     asx/                 provider interface, company directory, announcements, computed movers board
     catalysts.ts         the closed catalyst vocabulary, in one place
-    drafts/              draft pipeline, queries, trading-day arithmetic
+    drafts/              draft pipeline, regeneration, queries, trading-day
+                         arithmetic
     posts/               track-record reads, post shapes, compliance footer
     report/              typed report blocks, the length budget, the inlined
                          house mark, and the react-pdf 16:9 deck template
@@ -583,6 +595,29 @@ company described as having no production while it still owned the mine. The
 prompt makes the four states explicit (agreed / binding but conditional /
 unconditional / completed), and `conditionality`, `cash-timing` and
 `status-timing` are gate categories that each trigger a rewrite on their own.
+
+**A page that does not fit is counted.** `renderReportPdf` reads the page count
+back out of the PDF it just produced and warns when it exceeds the content pages
+plus the disclaimer. The SBM draft of 10 September 2026 rendered **seven** sheets
+from five content pages: a six-row comparison table whose cells wrapped ran about
+twenty points long and pushed its source line — and nothing else — onto a sheet
+of its own. Nothing anywhere said why, in a document nobody counts the pages of.
+The cause is fixed where it belongs (comparison cells now have a character
+budget, and rows are tighter), and the counter is there so the next one shows up
+in the log rather than in front of a client.
+
+**Emphasis is markup, parsed and not trusted.** The model may mark the one or
+two figures a block turns on with `**`, and the renderer sets them in bold white
+against the grey body copy — which is what makes a page of prose scannable. An
+unbalanced pair, which a length trim at a sentence boundary can leave behind,
+makes the whole block render plain instead of bolding everything to the end of
+the page. Double asterisks are the only markup the renderer understands.
+
+**Every draft is priced at its own model's rates.** `estimateDraftCostUsd` reads
+the row's `model` column rather than a single hardcoded pair, because a
+hardcoded pair silently mis-prices the whole table the moment the pipeline moves
+tiers — which it has now done twice, and the number on the review card was wrong
+for every row in between.
 
 **A dropped page is logged, not swallowed.** The page schema has exactly one
 failure mode — a page whose `kind` is right and whose body is empty — and

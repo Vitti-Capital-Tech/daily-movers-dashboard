@@ -512,13 +512,30 @@ const PAGE_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          metric: { type: "string", description: "'Australia sales growth', 'NPAT', 'FY27 guidance', 'Production'." },
-          before: { type: "string", description: "The earlier figure, as it prints: '+6.0%', '$44.1M'." },
-          now: { type: "string", description: "The current figure, as it prints." },
+          metric: {
+            type: "string",
+            maxLength: REPORT_LIMITS.comparisonCellChars,
+            description: "'Australia sales growth', 'NPAT', 'FY27 guidance', 'Production'.",
+          },
+          before: {
+            type: "string",
+            maxLength: REPORT_LIMITS.comparisonCellChars,
+            description:
+              "The earlier figure, as it prints: '+6.0%', '$44.1M', '41koz FY26'. ONE LINE — 88 characters at " +
+              "the most. A cell that needs a parenthetical explanation is carrying the page text: put the " +
+              "qualification in the conclusion line instead.",
+          },
+          now: {
+            type: "string",
+            maxLength: REPORT_LIMITS.comparisonCellChars,
+            description: "The current figure, as it prints. Same one-line limit.",
+          },
           change: {
             type: "string",
+            maxLength: REPORT_LIMITS.comparisonChangeChars,
             description:
-              "The delta in a few words: '-6.5pp', 'Beat', 'Growth to contraction'. It is a narrow column.",
+              "The delta in a few words: '-6.5pp', 'Beat', 'Growth to contraction'. It is a narrow column — " +
+              "three or four words at the most.",
           },
           direction: {
             type: "string",
@@ -962,6 +979,8 @@ Never use these openers — state the point directly instead: "It is important t
 
 Do not add an adjective when the number already makes the point. "Revenue increased 25%", not "revenue delivered an extremely strong increase of 25%".
 
+EMPHASIS. Mark the one or two figures a block actually turns on with double asterisks — "expected cash proceeds of **$410 million** on completion" — and the renderer sets them in bold white against the grey body copy, so a reader scanning the page finds the number without reading the sentence. Rules: figures and dates only, at most two per block, never a whole sentence or a clause (emphasis that covers everything emphasises nothing), and never in a page heading or a tile value, which are already the largest type on the page. Double asterisks are the ONLY markup the renderer understands: single asterisks, underscores, backticks and hyphenated bullet lists all print literally, and an unbalanced pair makes the whole block print plain.
+
 NO REPETITION. Each point is made ONCE, on the page where it belongs, and later pages assume it. The dividend, the buy-back, the completion conditions and project execution are the four things these reports repeat most — each gets one home. A reader who sees the same sentence on three pages concludes there was only enough material for one.
 
 Never give a recommendation, price target, or advice to buy or sell. This is explanatory research, not personal advice. Do not write a disclaimer or general-advice warning — one is appended automatically, and writing your own would put unapproved compliance text in a client document.
@@ -1026,6 +1045,8 @@ CHARTS ('chart'). **Include at least one chart or tile page in every report, and
 TIMELINE ('timeline'). The dated steps, oldest first, two to eight of them. Use it when the order of events is the point: how a transaction came together, what is still outstanding, what completes when. It is also the honest way to show that something has not happened yet — a step dated "Pending" cannot be misread as done.
 
 COMPARISON ('comparison'). Two figures against a label, at most six rows. Three uses: what changed since the last disclosure; consensus against actual, where the evidence gives a reliable consensus; and what is received against what is given up in a transaction. Table only the rows that materially moved.
+
+  Every cell is ONE LINE — about 88 characters, and the schema cuts it there. A cell that needs a parenthetical to make sense ("1,275koz gold (50% attributable basis; ~1.0Moz on the 40% basis used in the transaction comparables)") is a cell carrying the page's argument: put the figure in the cell and the qualification in the conclusion line. Six rows of two lines each is the one combination that pushes this page onto a second sheet.
 
 MARKET VS REALITY ('market-vs-reality'). Whenever the headline and the reaction point different ways: strong results that sold off, weak results that rallied, a large consideration with conditions attached. Three blocks — what was announced, what investors appear to have reacted to (worded as a reading, not a fact), and the issue that decides the story from here.
 

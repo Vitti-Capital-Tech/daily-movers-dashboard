@@ -29,6 +29,7 @@ import path from "node:path";
 
 import { renderToBuffer } from "@react-pdf/renderer";
 
+import { fitReportPages } from "../src/lib/report/fit";
 import { DailyMoverReport } from "../src/lib/report/template";
 import { validateReportDoc, type ReportDoc } from "../src/lib/report/types";
 
@@ -58,7 +59,7 @@ const FIXTURE: ReportDoc = {
         {
           value: "+17.8%",
           label: "Share move (close)",
-          note: "On 2.9x the 30-day average volume.",
+          note: "On **2.9x** the 30-day average volume.",
         },
         {
           value: "$453M",
@@ -67,7 +68,7 @@ const FIXTURE: ReportDoc = {
         },
       ],
       intro:
-        "Completion is conditional on PNG regulatory approvals, so no cash has changed hands yet.",
+        "Completion is conditional on **PNG regulatory approvals**, so no cash has changed hands yet.",
       sourceNote:
         "Source: St Barbara to Sell Simberi Interest to Lingbao, ASX 10 Sep 2026; exchange feed.",
     },
@@ -204,7 +205,7 @@ const FIXTURE: ReportDoc = {
       kind: "narrative",
       title: "What the Company Looks Like After Completion",
       paragraphs: [
-        "On completion SBM becomes a Nova Scotia-focused developer. Simberi leaves the portfolio, and the royalty is what remains of the sulphide story the company had been funding.",
+        "On completion SBM becomes a **Nova Scotia-focused developer**. Simberi leaves the portfolio, and the royalty is what remains of the sulphide story the company had been funding.",
         "The balance sheet does the work from here. The pro-forma cash position funds 15-Mile and Touquoy without new equity, on the figures the company has disclosed.",
       ],
       callouts: [
@@ -287,7 +288,7 @@ const FIXTURE: ReportDoc = {
       kind: "closing",
       title: "Where the Story Stands",
       statements: [
-        "SBM has agreed to sell its remaining New Simberi stake for $453 million, of which $410 million is cash on completion.",
+        "SBM has agreed to sell its remaining New Simberi stake for **$453 million**, of which **$410 million** is cash on completion.",
         "Completion is conditional on PNG regulatory approvals, so the proceeds are expected rather than received.",
         "After completion the company is a Nova Scotia-focused developer with a funded balance sheet and no producing mine.",
       ],
@@ -310,7 +311,17 @@ async function loadDraft(id: number): Promise<ReportDoc> {
     .limit(1);
 
   if (!row?.report) throw new Error(`draft ${id} has no stored report`);
-  return row.report as ReportDoc;
+
+  /**
+   * Re-fitted on the way in.
+   *
+   * A stored draft was cut to the budget that existed when it was written, so
+   * rendering it as-is answers "how did this look last week" when the question
+   * is "how would this look now". `fitReportPages` is idempotent, so a document
+   * already inside the current budget passes through untouched.
+   */
+  const doc = row.report as ReportDoc;
+  return { ...doc, pages: fitReportPages(doc.pages, `${doc.ticker} (stored)`) };
 }
 
 const [target = "fixture", outArg] = process.argv.slice(2);

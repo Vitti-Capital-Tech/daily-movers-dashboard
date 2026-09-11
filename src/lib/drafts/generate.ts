@@ -15,8 +15,11 @@ import {
 } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
 import { isBackgroundFiling, prioritiseAnnouncements } from "@/lib/asx/filings";
-import { loadAnnouncementDocuments } from "@/lib/ai/announcement-text";
-import { fetchVolumeProfile } from "@/lib/market/volume";
+import {
+  loadAnnouncementDocuments,
+  type AnnouncementDocument,
+} from "@/lib/ai/announcement-text";
+import { fetchVolumeProfile, type VolumeProfile } from "@/lib/market/volume";
 import {
   checkReport,
   selectMover,
@@ -549,6 +552,65 @@ async function runPipeline(
     })
     .where(eq(moverDrafts.id, draftId));
 
+  return finishDraft({
+    draftId,
+    moveDate,
+    row,
+    selection,
+    analyst,
+    todayDocuments,
+    historyDocuments,
+    volumeProfile,
+    filingTimeline,
+    startedAt,
+    usage,
+  });
+}
+
+/**
+ * Everything from "the evidence is in hand" to "the draft is in the queue".
+ *
+ * Lifted out of `runPipeline` when the desk wanted a report re-run under a
+ * changed prompt: a regenerate has already chosen its subject, so it needs this
+ * half and none of the screening above it. Sharing the code rather than copying
+ * it matters here more than usual — the deadline guards, the rewrite rule and
+ * the terminal write are the parts where a second, slightly different copy
+ * would quietly stop matching what the cron actually does.
+ */
+export type DraftEvidence = {
+  draftId: number;
+  moveDate: string;
+  row: ScreenerRow;
+  selection: MoverSelection;
+  analyst: { id: number | null; name: string };
+  todayDocuments: AnnouncementDocument[];
+  historyDocuments: AnnouncementDocument[];
+  volumeProfile: VolumeProfile | null;
+  filingTimeline: { date: string; isPriceSensitive: boolean; headline: string }[];
+  /** When the run began, so the optional stages can be budgeted against it. */
+  startedAt: number;
+  /** Tokens already spent — the selection call, on a full run. */
+  usage: TokenUsage;
+};
+
+export async function finishDraft(
+  input: DraftEvidence,
+): Promise<{ ticker: string; moveDate: string }> {
+  const db = getDb();
+  const {
+    draftId,
+    moveDate,
+    row,
+    selection,
+    analyst,
+    todayDocuments,
+    historyDocuments,
+    volumeProfile,
+    filingTimeline,
+    startedAt,
+  } = input;
+  let usage = input.usage;
+
   const written = await writeReport(
     {
       moveDate,
@@ -704,6 +766,7 @@ async function runPipeline(
 
   return { ticker: row.ticker, moveDate };
 }
+
 
 /**
  * Creates the draft row and runs the pipeline.
