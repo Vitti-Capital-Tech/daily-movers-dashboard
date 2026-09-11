@@ -6,7 +6,7 @@ import {
 } from "./types";
 
 /**
- * The layout guard rail: what actually keeps a Daily Mover inside eight pages.
+ * The layout guard rail: what actually keeps a Daily Mover inside its sheet ceiling.
  *
  * The tool schema asks for the right lengths and the prompt explains why, and
  * between them they get it right most days. Neither is a guarantee. Models
@@ -116,6 +116,7 @@ function fitCallouts(
   trim: Trimmer,
 ): ReportCallout[] {
   return trim.list(callouts, limit, "callouts").map((callout) => ({
+    ...callout,
     label: trim.text(callout.label, REPORT_LIMITS.labelChars, "callout label"),
     text: trim.text(callout.text, REPORT_LIMITS.calloutChars, "callout"),
   }));
@@ -124,10 +125,29 @@ function fitCallouts(
 /**
  * One page, cut to the budget in `REPORT_LIMITS`.
  *
+ * The provenance line is trimmed here rather than in each branch: it is the one
+ * field every page kind carries, and a "Source:" line that runs to three
+ * filings is the same overflow as a fourth paragraph — it wraps and takes the
+ * bottom of the page with it.
+ */
+function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
+  return {
+    ...fitPageBody(page, trim),
+    sourceNote: trim.maybe(
+      page.sourceNote,
+      REPORT_LIMITS.sourceNoteChars,
+      "source note",
+    ),
+  };
+}
+
+/**
+ * The body of a page, cut to the budget.
+ *
  * The cover keeps everything but a runaway headline: it carries two cards and a
  * line of type, and its length was never the problem.
  */
-function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
+function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
   const intro =
     "intro" in page
       ? trim.maybe(page.intro, REPORT_LIMITS.introChars, "intro")
@@ -138,6 +158,7 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
       ...page,
       headline: trim.text(page.headline, 200, "cover headline"),
       kpis: page.kpis.slice(0, 2),
+      intro,
     };
   }
 
@@ -180,6 +201,11 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
           .list(page.notes ?? [], REPORT_LIMITS.notes, "notes")
           .map((note) => trim.text(note, REPORT_LIMITS.noteChars, "note")),
         callouts: fitCallouts(page.callouts ?? [], REPORT_LIMITS.callouts - 1, trim),
+        conclusion: trim.maybe(
+          page.conclusion,
+          REPORT_LIMITS.conclusionChars,
+          "KPI conclusion",
+        ),
       };
 
     case "entities":
@@ -204,6 +230,7 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
         ...page,
         title,
         items: trim.list(page.items, REPORT_LIMITS.risks, "risks").map((item) => ({
+          ...item,
           label: trim.text(item.label, REPORT_LIMITS.labelChars, "risk label"),
           text: trim.text(item.text, REPORT_LIMITS.riskChars, "risk"),
         })),
@@ -257,6 +284,25 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
           page.conclusion,
           REPORT_LIMITS.conclusionChars,
           "comparison conclusion",
+        ),
+      };
+
+    case "timeline":
+      return {
+        ...page,
+        title,
+        intro,
+        events: trim
+          .list(page.events, REPORT_LIMITS.timelineEvents, "timeline events")
+          .map((event) => ({
+            ...event,
+            date: trim.text(event.date, REPORT_LIMITS.timelineDateChars, "event date"),
+            text: trim.text(event.text, REPORT_LIMITS.timelineTextChars, "event"),
+          })),
+        conclusion: trim.maybe(
+          page.conclusion,
+          REPORT_LIMITS.conclusionChars,
+          "timeline conclusion",
         ),
       };
 
@@ -318,6 +364,11 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
           .map((item) =>
             trim.text(item, REPORT_LIMITS.outlookItemChars, "outlook item"),
           ),
+        conclusion: trim.maybe(
+          page.conclusion,
+          REPORT_LIMITS.conclusionChars,
+          "outlook conclusion",
+        ),
       };
 
     case "closing":
@@ -329,6 +380,11 @@ function fitPage(page: ReportPage, trim: Trimmer): ReportPage {
           .map((statement) =>
             trim.text(statement, REPORT_LIMITS.statementChars, "closing statement"),
           ),
+        pullQuote: trim.maybe(
+          page.pullQuote,
+          REPORT_LIMITS.pullQuoteChars,
+          "closing pull quote",
+        ),
         managementQuestion: trim.maybe(
           page.managementQuestion,
           REPORT_LIMITS.questionChars,

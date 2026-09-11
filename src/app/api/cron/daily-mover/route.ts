@@ -73,10 +73,16 @@ const WINDOW_END_MINUTES = 15 * 60;
  *
  * A measured end-to-end run (screen ~1,200 tickers, shortlist, select, download
  * and read the filings, generate, render, upload) took about 120 seconds before
- * the Accuracy Gate was added. The gate is one more model call over the same
- * corpus — cheap in wall-clock because the corpus is served from cache — and a
- * rewrite, when `warrantsRewrite` calls for one, adds another pass. Typical is
- * now around 200 seconds and the worst case around 250.
+ * the Accuracy Gate was added, and around 200 seconds with it — the gate is one
+ * more model call over the same corpus, cheap in wall-clock because the corpus
+ * is served from cache, and a rewrite adds another pass when
+ * `warrantsRewrite` calls for one.
+ *
+ * That 200 was measured on Sonnet 5 writing a seven-page report. The drafting
+ * model is now Opus 5 and the report is four or five pages, which trades a
+ * slower model against roughly half the output tokens; the run has not been
+ * re-measured. The deadline guards in `lib/drafts/generate.ts` are what keep
+ * the invocation inside the ceiling either way.
  *
  * The margin is real but no longer generous, so both optional stages are
  * budgeted rather than assumed: see `CHECK_DEADLINE_MS` and

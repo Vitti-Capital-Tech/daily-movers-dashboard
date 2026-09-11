@@ -26,6 +26,7 @@ const PAGE_ACCENT: Record<ReportPage["kind"], string> = {
   kpis: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
   chart: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
   comparison: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+  timeline: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
   "market-vs-reality": "bg-violet-500/10 text-violet-700 dark:text-violet-400",
   "vitti-view": "bg-violet-500/10 text-violet-700 dark:text-violet-400",
   management: "bg-amber-500/10 text-amber-700 dark:text-amber-500",
@@ -90,6 +91,11 @@ export function ReportPreview({
               </span>
             </p>
             <PageBlock page={page} />
+            {page.sourceNote ? (
+              <p className="mt-2 text-[10px] text-muted-foreground/80">
+                {page.sourceNote}
+              </p>
+            ) : null}
           </section>
         ))}
       </CardContent>
@@ -107,6 +113,9 @@ function PageBlock({ page }: { page: ReportPage }) {
           </h3>
           <p className="text-sm font-medium text-foreground">{page.headline}</p>
           <KpiGrid kpis={page.kpis} />
+          {page.intro ? (
+            <p className="text-sm text-muted-foreground">{page.intro}</p>
+          ) : null}
         </div>
       );
 
@@ -144,6 +153,11 @@ function PageBlock({ page }: { page: ReportPage }) {
             </p>
           ))}
           <CalloutList callouts={page.callouts} />
+          {page.conclusion ? (
+            <p className="text-sm font-medium text-foreground">
+              {page.conclusion}
+            </p>
+          ) : null}
         </div>
       );
 
@@ -386,7 +400,7 @@ function PageBlock({ page }: { page: ReportPage }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                What would improve the story
+                {page.columns?.[0] ?? "What would improve the story"}
               </p>
               <ul className="space-y-1">
                 {page.improve.map((item, index) => (
@@ -398,7 +412,7 @@ function PageBlock({ page }: { page: ReportPage }) {
             </div>
             <div>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400">
-                What would make it worse
+                {page.columns?.[1] ?? "What would make it worse"}
               </p>
               <ul className="space-y-1">
                 {page.worsen.map((item, index) => (
@@ -409,6 +423,39 @@ function PageBlock({ page }: { page: ReportPage }) {
               </ul>
             </div>
           </div>
+          {page.conclusion ? (
+            <p className="text-sm font-medium text-foreground">
+              {page.conclusion}
+            </p>
+          ) : null}
+        </div>
+      );
+
+    case "timeline":
+      return (
+        <div className="space-y-3">
+          <h3 className="text-base font-semibold text-foreground">
+            {page.title}
+          </h3>
+          {page.intro ? (
+            <p className="text-sm text-muted-foreground">{page.intro}</p>
+          ) : null}
+          <ol className="space-y-2 border-l border-border pl-4">
+            {page.events.map((event, index) => (
+              <li key={index} className="relative text-sm">
+                <span className="absolute -left-[21px] top-1.5 size-2 rounded-full bg-teal-500" />
+                <span className="font-semibold text-teal-700 dark:text-teal-400">
+                  {event.date}
+                </span>
+                <span className="text-foreground">{` — ${event.text}`}</span>
+              </li>
+            ))}
+          </ol>
+          {page.conclusion ? (
+            <p className="text-sm font-medium text-foreground">
+              {page.conclusion}
+            </p>
+          ) : null}
         </div>
       );
 
@@ -418,6 +465,11 @@ function PageBlock({ page }: { page: ReportPage }) {
           <h3 className="text-base font-semibold text-foreground">
             {page.title}
           </h3>
+          {page.pullQuote ? (
+            <p className="text-sm font-medium italic text-teal-700 dark:text-teal-400">
+              {page.pullQuote}
+            </p>
+          ) : null}
           {page.statements.map((statement, index) => (
             <p
               key={index}

@@ -19,9 +19,9 @@ Studio**, which drafts each weekday's Daily Mover for an analyst to approve, and
 | Theming | next-themes (Light / Dark / System mode toggle) |
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
 | AI Extraction | Claude Sonnet 4.6 — reads an uploaded report and fills the form |
-| AI Drafting | Claude Sonnet 5 — screens the board, reads ~25 filings, writes the report |
-| AI Post Copy | Claude Sonnet 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
-| PDF Generation | `@react-pdf/renderer` (no Chromium) |
+| AI Drafting | Claude Opus 5 — screens the board, reads ~25 filings, writes the report, then checks its own figures |
+| AI Post Copy | Claude Opus 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
+| PDF Generation | `@react-pdf/renderer` — a 16:9 slide deck, no Chromium |
 | Market Data | Yahoo Finance (`yahoo-finance2`) — quotes and session moves |
 | ASX Data | ASX company directory + company announcements (see caveat below) |
 | Database | Postgres (Supabase) |
@@ -77,6 +77,8 @@ account password.
 | `npm run db:studio` | Drizzle Studio |
 | `npm run storage:setup` | Create Supabase private storage bucket |
 | `npm run reports:download` | Batch download all attached PDF reports to a local folder |
+| `npm run report:preview` | Render the report template to a PDF locally — the fixture, or `-- <draftId>` from the database. No API call |
+| `npm run logo:build` | Regenerate `lib/report/logo.ts` from `public/logo.jpeg` after the asset changes |
 
 ## Mover Studio
 
@@ -103,11 +105,11 @@ reject. Approving files it in the archive exactly as a manual upload would.
    `daily_movers` columns, so the archive row and the PDF cannot disagree.
 6. **Check every figure.** A second call verifies the report against the same
    filings and triggers one rewrite when it finds a wrong fact.
-7. **Render and file.** `@react-pdf/renderer` produces the PDF into a `drafts/`
-   prefix, and the row goes to `pending`.
+7. **Render and file.** `@react-pdf/renderer` produces a four-to-five page
+   16:9 deck into a `drafts/` prefix, and the row goes to `pending`.
 
-Two to three minutes and roughly **US$0.55** per draft at list price
-(~$12/month over 22 trading days).
+Two to three minutes and roughly **US$1.40** per draft at list price
+(~$30/month over 22 trading days).
 
 **How it got there.** The first working version cost $1.50. Three measured
 changes took 73% out of it; the Accuracy Gate and the accounts then bought some
@@ -122,6 +124,7 @@ of it back, deliberately:
 | **+ the accounts and the Accuracy Gate** — one background filing, a second call that verifies every figure, and a rewrite when it finds a wrong one | $0.55 |
 | *(same, with caching removed)* | *$1.28* |
 | *(same, at the first cut of these features: 3 background filings, always rewrite)* | *$0.95* |
+| **Drafting model Sonnet 5 → Opus 5**, after a review found a fabricated total and a conditional sale written as completed — every component of the bill is exactly 2.5x, and the report is now half as long, which the output tokens barely notice | ~$1.40 *(derived, not re-measured)* |
 
 The two italic rows are what the tuning avoided. Reading the corpus three times
 at full price is what the 5-minute cache breakpoint prevents, and it is why
@@ -153,11 +156,13 @@ to its latest member and long legal instruments lose their annexures, but no
 class of filing is excluded outright. See `src/lib/asx/filings.ts`.
 
 **Remaining levers, not taken.** A two-stage read (Claude Haiku 4.5 summarises
-each filing, Sonnet 5 writes from the briefs) would cut roughly another half but
+each filing, Opus 5 writes from the briefs) would cut roughly another half but
 loses the specific numbers the reports are built on. The Batch API is 50% off
 but asynchronous, which would mean moving the cron earlier and giving up the
-same-session timing guarantee. Both are available if the bill ever matters more
-than it does at $9/month.
+same-session timing guarantee. Dropping back to Sonnet 5 would cut 60% and is
+deliberately not taken: the failures the desk actually reports are wrong figures
+and conditional money written as certain, which is what the tier buys. All three
+are available if the bill ever matters more than it does at $30/month.
 
 **When it doesn't run.** The scheduled job declines, without erroring, if it
 isn't a weekday in Sydney, if the market didn't trade (detected from the feed's
@@ -175,8 +180,12 @@ wide rather than tight because Hobby-plan cron precision is ±59 minutes, which 
 narrow window can miss entirely. Nothing changes when daylight saving does.
 
 **`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
-higher value fails the *build* on Hobby rather than failing at runtime. A
-measured run takes about 120 seconds, so 300 is ample.
+higher value fails the *build* on Hobby rather than failing at runtime. A run
+measured at 120 seconds before the Accuracy Gate and about 200 with it — on
+Sonnet 5, writing seven pages. Opus 5 and a four-to-five page report trade a
+slower model against half the output and have not been re-measured, so the
+deadline guards in `lib/drafts/generate.ts`, not the margin, are what keep the
+invocation inside the ceiling.
 
 **Reviewing a draft.** The card shows Claude's rationale and confidence, the
 report rendered inline, and every announcement it read with the cited ones
@@ -353,7 +362,9 @@ push to `main` deploys, and pull requests get preview URLs.
 ```
 scripts/
   apply-sql.mts          Idempotent statement-by-statement SQL runner
+  build-logo.mjs         public/logo.jpeg -> the keyed-out mark, inlined as lib/report/logo.ts
   download-reports.mts   Batch CLI utility to download all research PDFs to a local folder
+  preview-report.mts     Render the report deck to PDF locally, with no API call
   storage-setup.mts      Supabase storage bucket initializer
 src/
   actions/
@@ -405,7 +416,8 @@ src/
     catalysts.ts         the closed catalyst vocabulary, in one place
     drafts/              draft pipeline, queries, trading-day arithmetic
     posts/               track-record reads, post shapes, compliance footer
-    report/              typed report blocks + the react-pdf template
+    report/              typed report blocks, the length budget, the inlined
+                         house mark, and the react-pdf 16:9 deck template
     market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
     table.ts             shared paging/search params and clamping
@@ -536,24 +548,78 @@ the series these pages exist for are growth series — +6.0, +6.5, +4.0, +0.3,
 **-0.5** — where the crossing into negative territory *is* the insight, and a
 magnitude-only chart shows five similar bars and hides it.
 
+**A cash balance is a waterfall, not a bar.** An $880 million balance plotted as
+one column answers none of the questions a reader has: how much arrived with the
+deal, how much is already committed to the dividend, the buy-back and capex, and
+what is actually free. The `waterfall` chart type takes an opening total, the
+signed steps, and a closing total, and answers all three in one shape. A
+waterfall whose points are all totals is demoted to a column chart rather than
+rendered as bars that do not build.
+
+**The house mark travels with the code.** `public/logo.jpeg` is a square JPEG
+of the mark above the wordmark on a flat navy ground — the wrong shape twice
+over: the ground is a different navy from the page, so a rectangle would show,
+and the stacked wordmark is illegible at corner size. `npm run logo:build` keys
+the ground out by distance from the corner colour, crops to the mark and writes
+it into `lib/report/logo.ts` as a base64 PNG; the template sets the wordmark as
+type beside it. Inlined rather than read from `public/` at render time because
+the PDF is built inside a serverless function, which only has the files Next.js
+traced into the bundle — a path that works in `next dev` and throws in
+production is the worst version of this.
+
+**Every page names its sources.** `sourceNote` is required by the page schema and
+prints small under the content — "Source: Simberi Transaction Presentation, ASX
+10 Sep 2026, pp. 4-11; exchange feed". It is a reviewer's audit trail, and it is
+also a check on the writer: a figure whose source cannot be named is usually a
+figure that was not read anywhere. The Accuracy Gate verifies that each line
+names a filing that actually carries the page's figures, and a wrong one is a
+blocking finding.
+
+**Conditional money is written as conditional.** The failures the desk reports
+are not arithmetic — they are sentences that are true of a different transaction
+from the one announced: "unconditional" used of a payment that needs regulatory
+approval, proceeds written as received when they arrive on completion, and a
+company described as having no production while it still owned the mine. The
+prompt makes the four states explicit (agreed / binding but conditional /
+unconditional / completed), and `conditionality`, `cash-timing` and
+`status-timing` are gate categories that each trigger a rewrite on their own.
+
 **A dropped page is logged, not swallowed.** The page schema has exactly one
 failure mode — a page whose `kind` is right and whose body is empty — and
 discarding those silently hid it for a week: the model emitted chart pages
 without their conclusion line, `normalisePage` threw them away, and the reports
 simply had no charts with nothing anywhere saying why.
 
-**Colour carries meaning, never decoration.** Teal marks the analytical pages,
-gold the pages about people and process, and green and wine-red are reserved for
-direction — the cover's hero card, a comparison verdict, a chart column below
-the baseline. All of them survive a greyscale printer as distinguishable tones,
-and none is the saturated red/green of a trading screen, which would read as a
-house view on a document that must not carry one. Body type stays black on white.
+**The report is a 16:9 deck, not an A4 note.** The template rendered portrait
+on white until a generated draft was put next to what the desk actually
+publishes — the Focus Minerals report of 11 September 2026, a deep-navy slide
+deck with a mint rule top and bottom, the wordmark in the corner, and content in
+tiles, icon cards, dated timelines and before/now card tables. Next to it the
+portrait draft read as a memo someone had typed, and a reader scanning it had to
+work to find the numbers. `lib/report/template.tsx` now renders 960x540 to match.
 
-**The layout is checked by reading the PDF back.** Baselines and font sizes come
-out through `pdfjs` and get asserted, because a spacing bug looks plausible in
-the style object and wrong on the page: the KPI card inherited the page's 1.5
-line height and put a label's baseline 8pt below a 21pt number's — inside its
-descender depth.
+**Colour carries meaning, never decoration.** Mint is the house accent and it
+marks the finding — the eyebrow, a highlighted tile, the conclusion band, the
+closing pull quote — so a reader who follows only the mint gets the argument.
+Coral is reserved for the direction that hurts: a fall, a risk card, a step that
+takes cash out. Cobalt is a fact without a verdict. Body copy is one off-white
+and one grey and nothing else, because coloured body text on a dark ground makes
+a slide look like a warning label.
+
+**Four or five pages, and the ceiling is enforced in three places.** The desk
+reviewed an eleven-sheet note where the dividend, the buy-back, deal completion
+and project execution each appeared on three or four pages, and set the length
+at four to five. `REPORT_PAGE_TARGET` bounds the tool schema, `fitReportPages`
+drops from the back of an over-long document, and `validateReportDoc` refuses to
+render one — because a model told "at most five pages" in prose will still
+sometimes send six.
+
+**The layout is checked by looking at the rendered page.** A spacing bug looks
+plausible in the style object and wrong on the page: the KPI card once inherited
+the page's 1.5 line height and put a label's baseline 8pt below a 21pt number's,
+inside its descender depth. `npm run report:preview` renders the template
+without an API call — a fixture that exercises every page kind, or a stored draft
+by id — so a layout change is checked against real copy for nothing.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

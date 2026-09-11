@@ -113,7 +113,8 @@ graph TD
 | **Styling & Design System** | **Tailwind CSS 4 + shadcn/ui** | Design-token-driven styling, accessible Base UI/Radix primitives, Lucide React icons. |
 | **Theming System** | **next-themes** | Client-side Light / Midnight Navy Dark / System theme switching with hydration safety and local storage persistence. |
 | **Typography** | **Plus Jakarta Sans + JetBrains Mono** | High-legibility geometric UI typography paired with developer/financial-grade monospace figures for tickers and percentage metrics. |
-| **AI Extraction Engine** | **Anthropic Claude 3.5 Sonnet** | Native multimodal document parser extracting structured equity research metadata from raw PDF bytes. |
+| **AI Extraction Engine** | **Anthropic Claude Sonnet 4.6** | Native multimodal document parser extracting structured equity research metadata from raw PDF bytes. Text is extracted locally first and the PDF is only sent as a document block when that fails. |
+| **AI Drafting & Verification Engine** | **Anthropic Claude Opus 5** | Selects the day's subject, writes the report as typed page blocks, and then re-reads it against the same filings as the Accuracy Gate. The tier is chosen for reasoning over a large evidence corpus: the failures that matter are a figure that felt correct and conditional money written as certain. |
 | **Market Data & Discovery** | **`yahoo-finance2`** | Maintained client for Yahoo Finance: owns cookie/crumb handshake and rate-limiting. Used for batch quote refreshes, daily closes backfilling, per-ticker daily volume history for the volume profile, and automatic corporate website discovery for company logo resolution. |
 | **Archive Compression** | **`jszip`** | High-speed, in-memory DEFLATE compression engine for bundling dozens of research PDFs into a single ZIP stream. |
 | **Database** | **PostgreSQL (Supabase)** | Relational integrity (FK constraints), JSONB support for raw extractions, performant B-Tree indexes, transaction pooling. |
@@ -136,7 +137,7 @@ graph TD
 - **Rationale**: Prevents data corruption where an explicit string field could contradict the numeric move percentage. Validation strictly forbids `0%` moves (as non-movers).
 
 ### 5.3 Automated PDF Extraction & Entity Auto-Resolution
-- **Decision**: Analysts can drop a Daily Mover PDF to trigger `extractReportAction()`. Claude 3.5 Sonnet parses the document and extracts structured attributes. The server action automatically resolves or creates missing company entities and links catalyst/analyst foreign keys before pre-populating the UI form.
+- **Decision**: Analysts can drop a Daily Mover PDF to trigger `extractReportAction()`. Claude Sonnet 4.6 parses the document and extracts structured attributes. The server action automatically resolves or creates missing company entities and links catalyst/analyst foreign keys before pre-populating the UI form.
 - **Rationale**: Eliminates manual data entry while preserving human oversight, guaranteeing that research notes, catalysts, and signed percentage moves are captured accurately in seconds.
 
 ### 5.4 Direct-to-Storage PDF Upload Pipeline
@@ -268,7 +269,7 @@ graph LR
   - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL for direct client storage PUT.
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key for client upload authentication.
   - `SUPABASE_SERVICE_ROLE_KEY`: Server-only key used exclusively to mint signed upload/download tokens.
-  - `ANTHROPIC_API_KEY`: API key for Claude 3.5 Sonnet PDF auto-extraction.
+  - `ANTHROPIC_API_KEY`: API key for Claude — PDF auto-extraction, drafting and the Accuracy Gate. `ANTHROPIC_MODEL` and `ANTHROPIC_DRAFT_MODEL` override the two model choices.
 
 ---
 
@@ -294,16 +295,16 @@ graph LR
 5. **Mover Studio — Autonomous Daily Mover Drafting (`/mover-studio`, admin only)**:
    - Scheduled each weekday around midday Sydney time (Vercel Cron, twice-daily UTC firing with an in-handler timezone gate, so daylight saving needs no change; `maxDuration` is 300s, the Hobby ceiling, and the optional stages are budgeted against it — see `CHECK_DEADLINE_MS`).
    - Computes both sides of the ASX movers board from the exchange's company directory plus the market provider's session moves, applies a dollar-turnover and market-cap liquidity screen ($1m / $75m by default, set to favour companies with accounts over single-catalyst explorers), and drops any mover with no price-sensitive filing that session.
-   - Claude Sonnet 5 selects the subject with a recorded rationale, confidence score and runners-up, weighing established businesses over speculative ones and reading each candidate's session turnover as a share of market capitalisation.
+   - Claude Opus 5 selects the subject with a recorded rationale, confidence score and runners-up, weighing established businesses over speculative ones and reading each candidate's session turnover as a share of market capitalisation.
    - Reads the company's last ~15 price-sensitive announcements plus its most recent annual, half-year or quarterly report, and is given a session volume profile (turnover against a 30-session average) and a date-and-headline index of every filing in the window.
-   - Emits the report's typed page blocks and the `daily_movers` columns in one structured call. Page kinds cover prose, KPI grids, segment blocks, charts, a headline-versus-reaction split, before/after comparison tables, management and board, risks, a setup scorecard, and the closing statements.
-   - A second model call — the **Accuracy Gate** — verifies every figure against the same filings and triggers one rewrite when it finds a wrong fact. Its findings are stored on the draft and shown above the report.
-   - Renders the report to PDF with `@react-pdf/renderer` into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.
+   - Emits the report's typed page blocks and the `daily_movers` columns in one structured call, bounded to **four or five content pages** (six sheets with the appended compliance page). Page kinds cover big-number tiles, charts (columns, bars, and a waterfall for a cash build-up), a dated timeline, before/now comparison tables, a headline-versus-reaction split, segment and project blocks, risks, management, a setup scorecard, prose, and the closing statements. Every page carries a source line naming the filing and its ASX date.
+   - A second model call — the **Accuracy Gate** — verifies every figure against the same filings, checks that each page's source line names a filing that actually carries its figures, and checks the wording the desk reports as the real failure mode: conditional payments written as unconditional, proceeds written as received rather than expected on completion, and a pro-forma position written in the present tense. A blocking finding of that kind triggers one rewrite. Its findings are stored on the draft and shown above the report.
+   - Renders the report to PDF with `@react-pdf/renderer` — a 16:9 slide deck on deep navy with the house mark inlined as a data URI, matching what the desk publishes — into a `drafts/` storage prefix, and presents it for approval with the archive fields editable, the report shown inline, and every announcement read listed with the cited ones marked.
    - Approval projects the draft into `daily_movers` and *moves* the PDF into the manual-upload key scheme, so every downstream consumer is unchanged.
    - Declines without erroring when the market did not trade, when an analyst has already published for the day, or when a scheduled draft already exists.
 6. **Post Studio - Track Record & LinkedIn Copy (`/post-studio`, admin only)**:
    - Every published Daily Mover shown against the current quote: publication anchor, latest price, post-event return, elapsed days, and whether the price continued or reversed.
-   - Claude Sonnet 5 assesses whether the price action bears out **what the note argued**, returning `validated` / `mixed` / `contradicted` / `too_early` with the verbatim clause from the takeaway it relies on. Deliberately not derived from the sign of the return: on the current archive only 25 of 56 movers continued in their original direction, and several reversals are precisely what the note predicted.
+   - Claude Opus 5 assesses whether the price action bears out **what the note argued**, returning `validated` / `mixed` / `contradicted` / `too_early` with the verbatim clause from the takeaway it relies on. Deliberately not derived from the sign of the return: on the current archive only 25 of 56 movers continued in their original direction, and several reversals are precisely what the note predicted.
    - LinkedIn copy is drafted **only** for `validated` calls, in the firm's voice, and that restriction is enforced in code rather than only requested in the prompt.
    - Two or three variants per call, with the LinkedIn fold marked so the reviewer can see what lands above "see more", and a copy-to-clipboard button that includes the compliance footer.
    - The compliance footer is an application constant, never model-generated - a post stating a return is a regulated past-performance representation made by a Corporate Authorised Representative under an AFSL.

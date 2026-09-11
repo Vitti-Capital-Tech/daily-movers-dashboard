@@ -115,10 +115,18 @@ const BACKGROUND_TARGET = 1;
  * unchecked draft an analyst can read.
  *
  * So the Accuracy Gate and its rewrite are budgeted rather than assumed. With
- * the corpus served from cache the check runs in roughly 40-70 seconds and a
- * rewrite in 60-90; these thresholds leave room for the slow end of both plus
- * the render and upload, and skipping is recorded on the draft so a reviewer is
- * never shown a clean bill of health that was never issued.
+ * the corpus served from cache the check ran in roughly 40-70 seconds and a
+ * rewrite in 60-90 on Sonnet 5 writing seven-page reports; these thresholds
+ * leave room for the slow end of both plus the render and upload, and skipping
+ * is recorded on the draft so a reviewer is never shown a clean bill of health
+ * that was never issued.
+ *
+ * Those figures have not been re-measured since the drafting model moved to
+ * Opus 5 and the report came down to four or five pages. The two changes pull
+ * in opposite directions — a slower model, roughly half the output — so the
+ * budgets are left as they are, and the guards below are what actually protect
+ * the invocation. If the logs start showing skipped checks, the fix is to
+ * measure the new numbers rather than to raise the thresholds on a guess.
  *
  * The order of preference when time is short is deliberate: skip the rewrite
  * before skipping the check. The check's findings are useful to a human on their

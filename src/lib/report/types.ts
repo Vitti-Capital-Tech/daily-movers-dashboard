@@ -38,6 +38,14 @@ export type ReportKpi = {
 export type ReportCallout = {
   label: string;
   text: string;
+  /**
+   * Optional mark from `REPORT_ICONS`, drawn in a disc above the label.
+   *
+   * Used on the risks grid, where the deck gives every card an icon: six
+   * outlined cards of identical text are a wall, and the mark is what makes the
+   * page scannable in the two seconds it gets.
+   */
+  icon?: string | null;
 };
 
 /** A named block: the per-country and per-acquisition entries on the SPZ pages. */
@@ -57,20 +65,40 @@ export type ReportEntity = {
 export type ReportChartPoint = {
   /** Axis label: "Q1 FY26", "New Zealand", "Jul-26". */
   label: string;
-  /** The plotted magnitude. Signed — negatives plot below the baseline. */
+  /**
+   * The plotted magnitude. Signed — negatives plot below the baseline.
+   *
+   * On a `waterfall` this is the step itself, not the running total: the cash
+   * build-up "start $122M, +$453M proceeds, -$88M dividend" is 122, 453, -88,
+   * and the renderer does the stacking.
+   */
   value: number;
   /** How the figure prints. Falls back to the raw value. */
   display?: string | null;
   /** Draws this point in the accent colour: the one the conclusion is about. */
   highlight?: boolean;
+  /**
+   * `waterfall` only: this bar is a total rather than a step.
+   *
+   * A waterfall reads as "where it started, what moved it, where it ends", so
+   * the two ends sit on the baseline as solid columns and the steps float
+   * between them. Without the flag the renderer would stack the closing total
+   * on top of the steps that produced it and print it at twice its value.
+   */
+  isTotal?: boolean;
 };
 
 /**
- * A chart, in the only two forms the page has room for.
+ * A chart, in the three forms the page has room for.
  *
  * `columns` is the trend — quarterly growth, margin by half, production by
  * period — and reads left to right as time. `bars` is the comparison, where the
  * labels are names rather than dates and are too long to sit under a column.
+ * `waterfall` is the build-up: a starting figure, the things that add to or
+ * subtract from it, and what is left. The desk asked for it by name after the
+ * St Barbara note plotted an $880 million cash balance as a single column and
+ * left the reader to work out what it was made of and what is already spoken
+ * for — the shape of that answer is a waterfall, not a bar.
  *
  * Deliberately not a general charting layer. Instruction 32 asks for charts that
  * carry an insight, and every insight the desk has needed is one series of
@@ -79,148 +107,244 @@ export type ReportChartPoint = {
  * can read.
  */
 export type ReportChart = {
-  type: "columns" | "bars";
+  type: "columns" | "bars" | "waterfall";
   points: ReportChartPoint[];
   /** Optional axis note: "% change on prior corresponding period". */
   unit?: string | null;
 };
 
-export type ReportPage =
-  /**
-   * Page 1. `kpis` is capped at two by the layout — the hero row is a pair of
-   * cards, and a third would either shrink them or wrap.
-   */
-  | {
-      kind: "cover";
-      /** Full registered name, wrapped across lines by the renderer. */
-      companyName: string;
-      /** The "Shares Rise as Much as ~20.6% in Morning Trade After..." line. */
-      headline: string;
-      kpis: ReportKpi[];
-    }
-  /** Prose with an optional intro and small-caps callouts. */
-  | {
-      kind: "narrative";
-      title: string;
-      intro?: string | null;
-      paragraphs: string[];
-      callouts?: ReportCallout[];
-    }
-  /** A KPI grid with optional framing text above and notes below. */
-  | {
-      kind: "kpis";
-      title: string;
-      intro?: string | null;
-      kpis: ReportKpi[];
-      notes?: string[];
-      callouts?: ReportCallout[];
-    }
-  /** Named blocks — segments, geographies, acquisitions. */
-  | {
-      kind: "entities";
-      title: string;
-      intro?: string | null;
-      items: ReportEntity[];
-    }
-  /** "Risks & What to Watch": label plus explanation, no numbers. */
-  | {
-      kind: "risks";
-      title: string;
-      items: ReportCallout[];
-    }
-  /**
-   * A chart with the one-line conclusion that says what to notice in it.
-   *
-   * The conclusion is required, not optional. A chart without it is decoration,
-   * which is the thing instruction 32 rules out.
-   */
-  | {
-      kind: "chart";
-      title: string;
-      intro?: string | null;
-      chart: ReportChart;
-      conclusion: string;
-      callouts?: ReportCallout[];
-    }
-  /**
-   * The three-way split of instruction 28: what was announced, what the market
-   * actually reacted to, and the thing that decides the story from here.
-   *
-   * Its own page kind rather than three callouts because the gap between the
-   * headline and the reaction is the whole point of a Daily Mover on a day when
-   * a record result sells off, and a fixed three-block layout is what stops it
-   * being written as another narrative page.
-   */
-  | {
-      kind: "market-vs-reality";
-      title: string;
-      headline: string;
-      marketFocus: string;
-      whatMatters: string;
-    }
-  /**
-   * "What changed since the last update" (29) and "expectations vs actual" (30)
-   * are the same shape: a metric, two figures, and the delta between them.
-   * `columns` names what the two figures are, so one layout serves both.
-   */
-  | {
-      kind: "comparison";
-      title: string;
-      intro?: string | null;
-      /** Column headings: ["Metric", "Before", "Now"] or ["Metric", "Consensus", "Actual"]. */
-      columns: [string, string, string];
-      rows: ReportComparisonRow[];
-      conclusion?: string | null;
-    }
-  /**
-   * Who runs the company, and what has changed at the top.
-   *
-   * A PM meeting a name for the first time asks who is running it and whether
-   * they own any of it, and the answer changes how the rest of the report reads:
-   * a turnaround under a chief executive appointed four months ago is a
-   * different proposition from the same turnaround under a fifteen-year founder.
-   * Board and executive churn is also a risk in its own right — three CFOs in
-   * two years is a finding, not a footnote.
-   */
-  | {
-      kind: "management";
-      title: string;
-      intro?: string | null;
-      people: ReportPerson[];
-      /** Recent board or executive changes, from the filings. */
-      changes?: string[];
-    }
-  /** The Vitti View scorecard (33). Not a recommendation — a read of the setup. */
-  | {
-      kind: "vitti-view";
-      title: string;
-      ratings: ReportRating[];
-      keyDebate: string;
-      nextCatalyst: string;
-      /** The one question for management, from instruction 34. */
-      managementQuestion?: string | null;
-    }
-  /** "What would change the story" (35): the two lists, company-specific. */
-  | {
-      kind: "outlook";
-      title: string;
-      intro?: string | null;
-      improve: string[];
-      worsen: string[];
-    }
-  /**
-   * "Where the Story Stands": a few standalone statements, then the by-line.
-   *
-   * `signOff` is not a field — the renderer appends the house line verbatim, for
-   * the same reason the disclaimer is not in the schema.
-   */
-  | {
-      kind: "closing";
-      title: string;
-      statements: string[];
-      /** Instruction 34, when it hasn't already been asked on the Vitti View page. */
-      managementQuestion?: string | null;
-    };
+/**
+ * The small vector marks the deck uses to make a page scannable.
+ *
+ * Names, not glyphs: the renderer draws each one as a path, so the model picks
+ * a meaning ("cash", "regulation") and never a character that may not exist in
+ * the embedded font. Shared with the tool schema as an enum, which is what
+ * stops a page asking for an icon the renderer has no drawing for.
+ *
+ * Deliberately a short list of business meanings rather than a general icon
+ * set. Sixteen marks a reader can tell apart at 9pt on a dark ground beats
+ * forty that all read as "a small grey shape".
+ */
+export const REPORT_ICONS = [
+  "cash",
+  "chart",
+  "plant",
+  "mine",
+  "resource",
+  "contract",
+  "regulation",
+  "trial",
+  "supply",
+  "operations",
+  "announcement",
+  "done",
+  "warning",
+  "timing",
+  "people",
+  "geography",
+] as const;
+
+export type ReportIcon = (typeof REPORT_ICONS)[number];
+
+/** One dated step on a `timeline` page. */
+export type ReportTimelineEvent = {
+  /** "26 May 2025", "Jun 2026 Qtr", "Dec 2024" — as the filing dates it. */
+  date: string;
+  /** What happened, in one line. */
+  text: string;
+  /** Optional mark, from `REPORT_ICONS`. */
+  icon?: string | null;
+};
+
+/**
+ * Every page carries the same optional provenance line.
+ *
+ * `sourceNote` is what the desk asked for after the St Barbara note: the
+ * figures on a page are checkable only if the page says which filing they came
+ * from, and a reviewer should not have to open five PDFs to find out. It prints
+ * small under the content — "Source: Simberi Transaction Presentation, ASX
+ * 10 Sep 2026" — and it is the writer's own audit trail as much as the
+ * reader's, because a figure whose source cannot be named is usually a figure
+ * that was not read anywhere.
+ *
+ * An `accent` field is deliberately absent: a page's colour comes from its
+ * kind, in the renderer. A model choosing colours produces a document with no
+ * code in it.
+ */
+type PageCommon = {
+  /** "Source: FY26 Financial Results, ASX 28 Aug 2026; exchange feed." */
+  sourceNote?: string | null;
+};
+
+export type ReportPage = PageCommon &
+  (
+    /**
+     * Page 1. `kpis` is capped at two by the layout — the hero row is a pair of
+     * cards, and a third would either shrink them or wrap.
+     */
+    | {
+        kind: "cover";
+        /** Full registered name, wrapped across lines by the renderer. */
+        companyName: string;
+        /** The "Shares Rise as Much as ~20.6% in Morning Trade After..." line. */
+        headline: string;
+        kpis: ReportKpi[];
+        /** One line under the hero cards: the single fact behind the move. */
+        intro?: string | null;
+      }
+    /** Prose with an optional intro and small-caps callouts. */
+    | {
+        kind: "narrative";
+        title: string;
+        intro?: string | null;
+        paragraphs: string[];
+        callouts?: ReportCallout[];
+      }
+    /** A KPI grid with optional framing text above and notes below. */
+    | {
+        kind: "kpis";
+        title: string;
+        intro?: string | null;
+        kpis: ReportKpi[];
+        notes?: string[];
+        callouts?: ReportCallout[];
+        /** The one-line read on the cards, set in the accent under them. */
+        conclusion?: string | null;
+      }
+    /** Named blocks — segments, geographies, acquisitions. */
+    | {
+        kind: "entities";
+        title: string;
+        intro?: string | null;
+        items: ReportEntity[];
+      }
+    /** "Risks & What to Watch": label plus explanation, no numbers. */
+    | {
+        kind: "risks";
+        title: string;
+        items: ReportCallout[];
+      }
+    /**
+     * A chart with the one-line conclusion that says what to notice in it.
+     *
+     * The conclusion is required, not optional. A chart without it is
+     * decoration, which is the thing instruction 32 rules out.
+     */
+    | {
+        kind: "chart";
+        title: string;
+        intro?: string | null;
+        chart: ReportChart;
+        conclusion: string;
+        callouts?: ReportCallout[];
+      }
+    /**
+     * The three-way split of instruction 28: what was announced, what the
+     * market actually reacted to, and the thing that decides the story from
+     * here.
+     *
+     * Its own page kind rather than three callouts because the gap between the
+     * headline and the reaction is the whole point of a Daily Mover on a day
+     * when a record result sells off, and a fixed three-block layout is what
+     * stops it being written as another narrative page.
+     */
+    | {
+        kind: "market-vs-reality";
+        title: string;
+        headline: string;
+        marketFocus: string;
+        whatMatters: string;
+      }
+    /**
+     * "What changed since the last update" (29) and "expectations vs actual"
+     * (30) are the same shape: a metric, two figures, and the delta between
+     * them. `columns` names what the two figures are, so one layout serves
+     * both.
+     *
+     * It is also how a transaction gets weighed: ["Metric", "What SBM
+     * Receives", "What SBM Gives Up"] is a comparison, and the desk's standing
+     * complaint about deal notes is that they print only the first column.
+     */
+    | {
+        kind: "comparison";
+        title: string;
+        intro?: string | null;
+        /** Column headings: ["Metric", "Before", "Now"] or ["Metric", "Consensus", "Actual"]. */
+        columns: [string, string, string];
+        rows: ReportComparisonRow[];
+        conclusion?: string | null;
+      }
+    /**
+     * How the story got here: the dated steps, in order.
+     *
+     * The desk publishes this as a row of marks along a rule, and it does a job
+     * no paragraph does — it separates what has already happened from what is
+     * merely agreed, which is exactly where the St Barbara draft went wrong
+     * when it described a sale that had not completed as though it had. A date
+     * against each step makes that distinction unavoidable.
+     */
+    | {
+        kind: "timeline";
+        title: string;
+        intro?: string | null;
+        events: ReportTimelineEvent[];
+        conclusion?: string | null;
+      }
+    /**
+     * Who runs the company, and what has changed at the top.
+     *
+     * A PM meeting a name for the first time asks who is running it and whether
+     * they own any of it, and the answer changes how the rest of the report
+     * reads: a turnaround under a chief executive appointed four months ago is
+     * a different proposition from the same turnaround under a fifteen-year
+     * founder. Board and executive churn is also a risk in its own right —
+     * three CFOs in two years is a finding, not a footnote.
+     */
+    | {
+        kind: "management";
+        title: string;
+        intro?: string | null;
+        people: ReportPerson[];
+        /** Recent board or executive changes, from the filings. */
+        changes?: string[];
+      }
+    /** The Vitti View scorecard (33). Not a recommendation — a read of the setup. */
+    | {
+        kind: "vitti-view";
+        title: string;
+        ratings: ReportRating[];
+        keyDebate: string;
+        nextCatalyst: string;
+        /** The one question for management, from instruction 34. */
+        managementQuestion?: string | null;
+      }
+    /** "What would change the story" (35): the two lists, company-specific. */
+    | {
+        kind: "outlook";
+        title: string;
+        intro?: string | null;
+        improve: string[];
+        worsen: string[];
+        /** Optional headings, when "improve/worsen" is not what the two lists are. */
+        columns?: [string, string] | null;
+        conclusion?: string | null;
+      }
+    /**
+     * "Where the Story Stands": a few standalone statements, then the by-line.
+     *
+     * `signOff` is not a field — the renderer appends the house line verbatim,
+     * for the same reason the disclaimer is not in the schema.
+     */
+    | {
+        kind: "closing";
+        title: string;
+        statements: string[];
+        /** The line the deck sets as a pull quote above the sign-off. */
+        pullQuote?: string | null;
+        /** Instruction 34, when it hasn't already been asked on the Vitti View page. */
+        managementQuestion?: string | null;
+      }
+  );
 
 /** One row of a `comparison` page. */
 export type ReportComparisonRow = {
@@ -295,6 +419,7 @@ export const REPORT_PAGE_KINDS = [
   "chart",
   "market-vs-reality",
   "comparison",
+  "timeline",
   "management",
   "risks",
   "vitti-view",
@@ -317,35 +442,41 @@ export const DISCLAIMER_PARAGRAPHS: readonly string[] = [
   "This communication is not personal financial advice. Vitti Capital is a Corporate Authorised Representative of Point Capital Group Pty Ltd (AFSL 518031).",
   "If you have not previously received a copy of our Financial Services Guide (FSG), it is available free of charge from our website (https://vitti.capital/fsg/) or by contacting us. Vitti Capital and its representatives may hold or have exposure to securities mentioned. Any such interest is managed under our Conflicts of Interest Policy (https://vitti.capital/privacy-policy-2/).",
 ];
-
 /**
  * How many sheets the finished PDF is allowed to run to.
  *
- * The desk's instruction is a hard eight pages, and eight means eight in the
- * file a client opens — the compliance page is a sheet like any other, so it
- * comes out of the same budget rather than sitting outside it. That leaves
- * seven content pages.
+ * Six, and six means six in the file a client opens — the compliance page is a
+ * sheet like any other, so it comes out of the same budget rather than sitting
+ * outside it. That leaves five content pages.
+ *
+ * It was eight until the desk reviewed the St Barbara note of 10 September
+ * 2026. That one ran to eleven sheets, with the dividend, the buy-back, deal
+ * completion and project execution each restated on three or four of them, and
+ * the verdict was that a Daily Mover is read in about a minute: four or five
+ * pages is where it should land. So the ceiling came down and the page shapes
+ * in the prompt were rewritten around it, rather than left to be squeezed.
  */
-export const REPORT_MAX_SHEETS = 8;
+export const REPORT_MAX_SHEETS = 6;
 
 /**
  * How many content pages a report should run to.
  *
  * `max` is `REPORT_MAX_SHEETS - 1`: the renderer appends the disclaimer, and
- * that sheet is counted. The earlier ceiling of nine content pages plus a
- * disclaimer was already a ten-sheet document before any page overflowed — and
- * with no length budget on the blocks, a page carrying four long paragraphs and
- * three callouts wrapped onto a second sheet, so the count a reader saw was not
- * the count anyone had chosen. `REPORT_LIMITS` fixes the second half of that;
- * this fixes the first.
+ * that sheet is counted. Earlier ceilings of nine and then seven content pages
+ * were both set by what would fit rather than by what anyone wanted to read —
+ * and with no length budget on the blocks, a page carrying four long paragraphs
+ * and three callouts wrapped onto a second sheet, so the count a reader saw was
+ * not the count anyone had chosen. `REPORT_LIMITS` fixes the second half of
+ * that; this fixes the first.
  *
- * `min` is five rather than six for the same reason the ceiling came down: the
- * analyst-first pages (market-vs-reality, the comparison, the Vitti View) carry
- * a page's worth of argument in a third of the words, so a tight report now
- * genuinely finishes sooner. A thin day should produce a short honest note, not
- * a padded one.
+ * `min` is four because four pages is a complete note in this format: the
+ * cover, what happened and what it is worth, the risks, and where the story
+ * stands. The pages that carry the most argument per word — the comparison, the
+ * waterfall, market-vs-reality — are also the most compact, so a tight report
+ * is a better report rather than a thinner one. A thin day should produce a
+ * short honest note, not a padded one.
  */
-export const REPORT_PAGE_TARGET = { min: 5, max: REPORT_MAX_SHEETS - 1 } as const;
+export const REPORT_PAGE_TARGET = { min: 4, max: REPORT_MAX_SHEETS - 1 } as const;
 
 /**
  * The per-block length budget, in characters.
@@ -378,16 +509,20 @@ export const REPORT_LIMITS = {
   /** Callouts sit under the body, so they are budgeted tighter than it. */
   callouts: 3,
   calloutChars: 240,
-  /** 'kpis': four cards is two rows; the note under a card is one line. */
-  kpis: 4,
+  /**
+   * 'kpis': six cards is two rows of three, which is the deck layout and the
+   * answer to the review note that these reports carry too few numbers. The note
+   * under a card is one line.
+   */
+  kpis: 6,
   kpiNoteChars: 90,
   noteChars: 170,
   notes: 2,
   /** 'entities': five named blocks at three lines each. */
   entities: 5,
   entityCommentChars: 150,
-  /** 'risks': five is already more real risk than most filings support. */
-  risks: 5,
+  /** 'risks': six fills two rows of three in the deck grid. */
+  risks: 6,
   riskChars: 240,
   /** 'market-vs-reality': three blocks, each a short paragraph. */
   mvrChars: 300,
@@ -416,6 +551,20 @@ export const REPORT_LIMITS = {
   /** Headings and labels, which are set large or letter-spaced. */
   titleChars: 80,
   labelChars: 40,
+  /**
+   * The provenance line under a page. Two filings named with their dates fit;
+   * a third is a sign the page is carrying more than one idea.
+   */
+  sourceNoteChars: 180,
+  /**
+   * 'timeline': eight marks along the rule, each caption a line or two. Past
+   * eight the captions collide at this measure.
+   */
+  timelineEvents: 8,
+  timelineDateChars: 24,
+  timelineTextChars: 120,
+  /** 'closing': the pull quote the deck sets in the accent above the by-line. */
+  pullQuoteChars: 220,
 } as const;
 
 /**
@@ -506,12 +655,30 @@ export function validateReportDoc(doc: ReportDoc): string[] {
 
   /** Instruction 32: a chart without its conclusion is decoration. */
   for (const [index, page] of doc.pages.entries()) {
-    if (page.kind !== "chart") continue;
-    if (!page.conclusion?.trim()) {
-      problems.push(`chart on page ${index + 1} has no conclusion line`);
+    if (page.kind === "chart") {
+      if (!page.conclusion?.trim()) {
+        problems.push(`chart on page ${index + 1} has no conclusion line`);
+      }
+      if (page.chart.points.length < 2) {
+        problems.push(`chart on page ${index + 1} has fewer than two points`);
+      }
+      /**
+       * A waterfall whose steps are all totals is a column chart that has been
+       * mislabelled, and it renders as a row of full-height bars with nothing
+       * floating — which is worse than the column chart it should have been,
+       * because the reader reads it as a build-up that does not build.
+       */
+      if (
+        page.chart.type === "waterfall" &&
+        page.chart.points.every((point) => point.isTotal)
+      ) {
+        problems.push(
+          `waterfall on page ${index + 1} has no steps between its totals`,
+        );
+      }
     }
-    if (page.chart.points.length < 2) {
-      problems.push(`chart on page ${index + 1} has fewer than two points`);
+    if (page.kind === "timeline" && page.events.length < 2) {
+      problems.push(`timeline on page ${index + 1} has fewer than two events`);
     }
   }
 
@@ -522,12 +689,12 @@ export function validateReportDoc(doc: ReportDoc): string[] {
   }
 
   /**
-   * The eight-sheet ceiling, enforced rather than asked for.
+   * The sheet ceiling, enforced rather than asked for.
    *
    * `fitReportPages` already trims an over-long report before it gets here, so
    * this failing means something bypassed it — which is worth a loud error,
-   * because the one thing the desk asked for is a document that does not run
-   * past eight pages.
+   * because the one thing the desk asked for is a note that can be read in a
+   * minute.
    */
   if (doc.pages.length > REPORT_PAGE_TARGET.max) {
     problems.push(

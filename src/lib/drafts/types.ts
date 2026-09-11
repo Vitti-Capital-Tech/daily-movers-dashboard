@@ -91,19 +91,33 @@ export type AccuracyFinding = {
  *
  * These are the ones that put a *wrong fact* on a client document — a figure
  * that isn't in the filings, a move described as a close when it was intraday,
- * a conditional contract value presented as committed, or anything that reads as
- * advice. There is no version of those a reviewer can leave standing, and the
- * review UI does not allow editing the report body, so the alternative to a
- * rewrite is a rejection and no Daily Mover that day.
+ * a conditional contract value presented as committed, a source line pointing
+ * at a filing that does not carry the figure, or anything that reads as advice.
+ * There is no version of those a reviewer can leave standing, and the review UI
+ * does not allow editing the report body, so the alternative to a rewrite is a
+ * rejection and no Daily Mover that day.
+ *
+ * `conditionality`, `cash-timing` and `status-timing` were added after the desk
+ * reviewed the St Barbara note of 10 September 2026. Each of those findings is a
+ * sentence that is true of a different transaction from the one announced — an
+ * "unconditional" payment that needed regulatory approval, proceeds written as
+ * received when they arrive on completion, and a company described as having no
+ * production while it still owned the mine. A reader cannot correct for any of
+ * them, which makes them wrong facts rather than loose wording.
  *
  * The categories deliberately *not* here — `unsupported-claim`,
- * `future-certainty`, `organic-vs-acquired`, `structure` — are over-reach in
- * the wording rather than a wrong number. One of those on its own is a judgment
- * call worth an analyst's eye, not $0.16 of rewrite; two or more of anything
- * blocking says the draft has a pattern and gets rewritten regardless.
+ * `future-certainty`, `organic-vs-acquired`, `attribution`, `missing-number`,
+ * `repetition`, `length`, `structure` — are over-reach or omission rather than a
+ * wrong number. One of those on its own is a judgment call worth an analyst's
+ * eye, not the cost of a rewrite; two or more of anything blocking says the
+ * draft has a pattern and gets rewritten regardless.
  */
 const HARD_FACT_CATEGORIES = new Set([
   "figure",
+  "sourcing",
+  "conditionality",
+  "cash-timing",
+  "status-timing",
   "share-price-wording",
   "contract-terms",
   "compliance",

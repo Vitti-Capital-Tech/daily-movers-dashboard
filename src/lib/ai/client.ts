@@ -13,19 +13,33 @@ import Anthropic from "@anthropic-ai/sdk";
  *   page, and it runs on every upload — so it stays on the cheaper model the app
  *   has always used.
  * - **Drafting** (`lib/ai/mover-draft.ts`) chooses which of forty movers is
- *   worth covering, reads twenty-five filings, and writes the analysis. That is
- *   judgment rather than transcription, and it runs at a much larger input size
- *   — so it gets its own setting, a longer client timeout, and effort turned up.
+ *   worth covering, reads twenty-five filings, writes the analysis, and then
+ *   checks its own figures back against the filings. That is judgment rather
+ *   than transcription, and it runs at a much larger input size — so it gets its
+ *   own setting, a longer client timeout, and effort turned up.
  */
 
 export const DEFAULT_EXTRACTION_MODEL = "claude-sonnet-4-6";
 /**
- * Sonnet 5 rather than Opus: same price tier as the extraction model
- * ($3/$15 per MTok against Opus's $5/$25) on a newer model, and it supports
- * everything the pipeline actually uses — adaptive thinking and
- * `output_config.effort`. Override with ANTHROPIC_DRAFT_MODEL.
+ * Opus 5 rather than Sonnet 5, decided on accuracy rather than price.
+ *
+ * The drafting call reads a corpus of filings and writes financial figures into
+ * a client document, and the failure that matters is a number that felt right:
+ * the St Barbara draft of 10 September 2026 printed a cumulative royalty total
+ * no filing contained, and described a conditional sale as though it had
+ * completed. Both are reasoning failures over long evidence, which is where the
+ * gap between the tiers is widest — and the Accuracy Gate reads the same corpus
+ * with the same model, so the tier buys a better writer and a better checker.
+ *
+ * It costs about two and a half times as much per million tokens ($5/$25
+ * against $2/$10), but most of the input is served from the prompt cache at a
+ * tenth of the rate, and the reports are now four to five pages rather than
+ * ten. Measured against the alternative — an analyst re-checking every figure
+ * by hand, or a wrong number reaching a client — it is not a close call.
+ *
+ * Override with ANTHROPIC_DRAFT_MODEL.
  */
-export const DEFAULT_DRAFT_MODEL = "claude-sonnet-5";
+export const DEFAULT_DRAFT_MODEL = "claude-opus-5";
 
 let cached: Anthropic | null = null;
 
@@ -43,7 +57,7 @@ export function getAnthropicClient(): Anthropic {
     apiKey: apiKey.trim(),
     /**
      * The drafting pipeline's longest single call reads twenty-five filings and
-     * writes an eleven-page report. The SDK's ten-minute default is generous for
+     * writes the whole report. The SDK's ten-minute default is generous for
      * that, but a cron run has no user waiting and every retry costs a full set
      * of input tokens, so the ceiling is raised rather than risk a timeout on a
      * call that was nearly finished.

@@ -16,7 +16,9 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
     "storage:setup": "tsx scripts/storage-setup.mts",
-    "reports:download": "tsx scripts/download-reports.mts"
+    "reports:download": "tsx scripts/download-reports.mts",
+    "report:preview": "esbuild scripts/preview-report.mts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/preview-report.mjs --log-level=error && node --env-file-if-exists=.env.local node_modules/.cache/preview-report.mjs",
+    "logo:build": "node scripts/build-logo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
