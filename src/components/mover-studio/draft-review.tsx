@@ -4,6 +4,7 @@ import {
   Check,
   ExternalLink,
   FileText,
+  FileArchive,
   Loader2,
   RefreshCw,
   TriangleAlert,
@@ -114,6 +115,9 @@ export function DraftReview({
    * about to spend, not the one already spent.
    */
   const rerunCost = estimateDraftCostUsd({ ...draft, model: null });
+  /** How many filings the corpus held, for the sources download. */
+  const sourceCount =
+    (draft.sources?.today.length ?? 0) + (draft.sources?.history.length ?? 0);
   const costHint = rerunCost ? `${rerunCost.toFixed(2)}` : "a dollar or two";
   const tokensIn = totalInputTokens(draft);
 
@@ -207,6 +211,20 @@ export function DraftReview({
                   <FileText className="size-3.5" />
                   Open draft PDF
                   <ExternalLink className="size-3" />
+                </Button>
+              )}
+              {sourceCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  title={`Download all ${sourceCount} announcements this report was written from, as they were read`}
+                  render={
+                    <a href={`/api/drafts/${draft.id}/sources`} download />
+                  }
+                >
+                  <FileArchive className="size-3.5" />
+                  Sources (.zip)
                 </Button>
               )}
               {draft.approvedMoverId && (

@@ -11,6 +11,8 @@ import { asxData, type Announcement, type ScreenerRow } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
 import type { VolumeProfile } from "@/lib/market/volume";
 
+import { describeMoveWindow } from "./trading-day";
+
 import { finishDraft, type GenerateOutcome } from "./generate";
 
 /**
@@ -56,6 +58,8 @@ export type RegenerationPlan = {
   today: Announcement[];
   history: Announcement[];
   volumeProfile: VolumeProfile | null;
+  /** When the original board was read, so the move keeps its own window. */
+  fetchedAt: string | null;
 };
 
 /**
@@ -182,6 +186,8 @@ export async function planRegeneration(options: {
       today: sources.today,
       history: sources.history,
       volumeProfile: sources.volumeProfile ?? null,
+      fetchedAt:
+        (source.screen as { fetchedAt?: string } | null)?.fetchedAt ?? null,
     },
   };
 }
@@ -220,6 +226,14 @@ export async function runRegeneration(
       historyDocuments,
       volumeProfile: plan.volumeProfile,
       filingTimeline: await buildFilingTimeline(ticker, moveDate),
+      /**
+       * The window the ORIGINAL board was read in, from the stored screen —
+       * not from the clock now. A regenerate run in the evening still has to
+       * describe the midday figure it is re-reporting as a midday figure.
+       */
+      moveWindow: plan.fetchedAt
+        ? describeMoveWindow(new Date(plan.fetchedAt))
+        : null,
       startedAt,
       usage: ZERO_USAGE,
     });

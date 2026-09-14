@@ -255,7 +255,8 @@ export function draftSide(movePct: number | null): MoverSide | null {
  * A row with no model, or one written by a model that is not listed, is priced
  * at the current drafting tier: an unknown value almost always means a row
  * written by code newer than this table, and under-pricing it would be the
- * failure this map exists to stop.
+ * failure this map exists to stop. `CURRENT_TIER` tracks
+ * `DEFAULT_DRAFT_MODEL` — keep the two in step.
  */
 const LIST_PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-opus-5": { input: 5, output: 25 },
@@ -264,7 +265,7 @@ const LIST_PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-haiku-4-5": { input: 1, output: 5 },
 };
 
-const CURRENT_TIER = LIST_PRICE_PER_MTOK["claude-opus-5"];
+const CURRENT_TIER = LIST_PRICE_PER_MTOK["claude-sonnet-5"];
 
 function ratesFor(model: string | null | undefined) {
   const list = (model && LIST_PRICE_PER_MTOK[model.trim()]) || CURRENT_TIER;

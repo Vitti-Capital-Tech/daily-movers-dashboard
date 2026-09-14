@@ -32,7 +32,12 @@ import { buildDraftPath, renderReportPdf } from "@/lib/report/render";
 import { REPORTS_BUCKET } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-import { exchangeDate, tradedOn } from "./trading-day";
+import {
+  describeMoveWindow,
+  exchangeDate,
+  tradedOn,
+  type MoveWindow,
+} from "./trading-day";
 import { warrantsRewrite, type AccuracyReview } from "./types";
 
 /**
@@ -562,6 +567,7 @@ async function runPipeline(
     historyDocuments,
     volumeProfile,
     filingTimeline,
+    moveWindow: describeMoveWindow(new Date(screen.fetchedAt)),
     startedAt,
     usage,
   });
@@ -587,6 +593,8 @@ export type DraftEvidence = {
   historyDocuments: AnnouncementDocument[];
   volumeProfile: VolumeProfile | null;
   filingTimeline: { date: string; isPriceSensitive: boolean; headline: string }[];
+  /** What kind of figure the move is: intraday, morning trade, or a close. */
+  moveWindow: MoveWindow | null;
   /** When the run began, so the optional stages can be budgeted against it. */
   startedAt: number;
   /** Tokens already spent — the selection call, on a full run. */
@@ -607,6 +615,7 @@ export async function finishDraft(
     historyDocuments,
     volumeProfile,
     filingTimeline,
+    moveWindow,
     startedAt,
   } = input;
   let usage = input.usage;
@@ -621,6 +630,7 @@ export async function finishDraft(
       historyDocuments,
       volumeProfile,
       filingTimeline,
+      moveWindow,
     },
     usage,
   );
@@ -668,6 +678,7 @@ export async function finishDraft(
           historyDocuments,
           volumeProfile,
           filingTimeline,
+          moveWindow,
         },
         usage,
       );
@@ -708,6 +719,7 @@ export async function finishDraft(
             historyDocuments,
             volumeProfile,
             filingTimeline,
+            moveWindow,
             corrections: { doc: report.doc, findings: accuracy.findings },
           },
           usage,

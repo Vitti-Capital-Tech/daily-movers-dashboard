@@ -21,25 +21,30 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const DEFAULT_EXTRACTION_MODEL = "claude-sonnet-4-6";
 /**
- * Opus 5 rather than Sonnet 5, decided on accuracy rather than price.
+ * Sonnet 5, on the desk's decision, with Opus 5 one environment variable away.
  *
- * The drafting call reads a corpus of filings and writes financial figures into
- * a client document, and the failure that matters is a number that felt right:
- * the St Barbara draft of 10 September 2026 printed a cumulative royalty total
- * no filing contained, and described a conditional sale as though it had
- * completed. Both are reasoning failures over long evidence, which is where the
- * gap between the tiers is widest — and the Accuracy Gate reads the same corpus
- * with the same model, so the tier buys a better writer and a better checker.
+ * The case for the more capable tier is real and worth writing down, because it
+ * will come up again: this call reads a corpus of filings and writes financial
+ * figures into a client document, and the failure that matters is a number that
+ * felt right. The St Barbara draft of 10 September 2026 printed a cumulative
+ * royalty total no filing contained and described a conditional sale as though
+ * it had completed — reasoning failures over long evidence, which is where the
+ * gap between tiers is widest. The Accuracy Gate runs on the same model, so the
+ * tier buys both a better writer and a better checker.
  *
- * It costs about two and a half times as much per million tokens ($5/$25
- * against $2/$10), but most of the input is served from the prompt cache at a
- * tenth of the rate, and the reports are now four to five pages rather than
- * ten. Measured against the alternative — an analyst re-checking every figure
- * by hand, or a wrong number reaching a client — it is not a close call.
+ * Against that: Opus 5 is two and a half times the price per token on every
+ * component of the bill ($5/$25 against $2/$10), which measured out at about
+ * $29 a month against $12. The desk weighed the two in September 2026 and chose
+ * the cheaper tier, with the prompt's own guard rails — the source line on every
+ * page, the conditionality rules, the gate's blocking categories — carrying the
+ * accuracy instead.
  *
- * Override with ANTHROPIC_DRAFT_MODEL.
+ * So this is a **cost decision, not a capability finding**. If wrong figures
+ * start reaching review again, `ANTHROPIC_DRAFT_MODEL=claude-opus-5` is the
+ * whole change, and `estimateDraftCostUsd` prices each draft at whichever model
+ * actually wrote it.
  */
-export const DEFAULT_DRAFT_MODEL = "claude-opus-5";
+export const DEFAULT_DRAFT_MODEL = "claude-sonnet-5";
 
 let cached: Anthropic | null = null;
 

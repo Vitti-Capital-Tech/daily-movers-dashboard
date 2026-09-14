@@ -89,6 +89,63 @@ export function exchangeClock(at: Date = new Date()): ExchangeClock {
 }
 
 /**
+ * What kind of figure the board's move actually is.
+ *
+ * The screen is a live quote, taken whenever the run happens — and the run
+ * happens in the middle of the Sydney session, which means the change it
+ * reports is an INTRADAY figure with hours of trading still to come. The first
+ * SBM draft called it "Shares Closed Up ~17.8%" and the desk caught it: the
+ * stock went on to move further, so the report described the wrong window and
+ * the wrong number in one phrase.
+ *
+ * The model cannot work this out from a bare percentage, so the market data
+ * block states it. Before 13:00 local the session is still young enough that
+ * the desk's own house phrase is "morning trade"; after the close it is a
+ * close; in between it is intraday.
+ */
+export type MoveWindow = {
+  /** The house phrase: "morning trade", "intraday", "the close". */
+  label: string;
+  /** Whether this is the official closing figure. */
+  isClose: boolean;
+  /** Exchange-local clock at the moment the board was read, "12:03". */
+  localTime: string;
+  /** Whether the market was open then. */
+  marketOpen: boolean;
+};
+
+/** Local time the session stops being "the morning". */
+const MIDDAY_MINUTES = 13 * 60;
+
+export function describeMoveWindow(at: Date = new Date()): MoveWindow {
+  const clock = exchangeClock(at);
+  const localTime =
+    `${String(Math.floor(clock.minutes / 60)).padStart(2, "0")}:` +
+    `${String(clock.minutes % 60).padStart(2, "0")}`;
+
+  const marketOpen =
+    clock.isWeekday &&
+    clock.minutes >= MARKET_OPEN_MINUTES &&
+    clock.minutes < MARKET_CLOSE_MINUTES;
+
+  if (!marketOpen) {
+    /**
+     * Before the open the last print is the previous session's close, and after
+     * it the figure is today's close. Either way it is a close, which is the
+     * only claim the report needs to get right.
+     */
+    return { label: "the close", isClose: true, localTime, marketOpen: false };
+  }
+
+  return {
+    label: clock.minutes < MIDDAY_MINUTES ? "morning trade" : "intraday",
+    isClose: false,
+    localTime,
+    marketOpen: true,
+  };
+}
+
+/**
  * Whether the market actually traded on the exchange-local date of `asOf`.
  *
  * This is how public holidays are handled, and it is deliberately *not* a

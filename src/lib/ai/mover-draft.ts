@@ -37,6 +37,7 @@ import {
 } from "@/lib/market/volume";
 
 import { fitReportPages } from "@/lib/report/fit";
+import type { MoveWindow } from "@/lib/drafts/trading-day";
 
 import type { AccuracyFinding, AccuracyReview } from "@/lib/drafts/types";
 
@@ -425,7 +426,10 @@ const PAGE_SCHEMA = {
               },
               display: {
                 type: "string",
-                description: "How the figure prints: '+6.0%', '-0.5%', '$55.4M', '-$88M'.",
+                description:
+                  "How the figure prints, WITH its sign and unit: '+6.0%', '-0.5%', '$55.4M', '-$88M'. " +
+                  "Always set it on a waterfall — a build-up printed as '427 410 43 880' tells the reader " +
+                  "nothing about which of those are movements and which are balances.",
               },
               highlight: {
                 type: "boolean",
@@ -486,7 +490,8 @@ const PAGE_SCHEMA = {
       type: "string",
       maxLength: REPORT_LIMITS.conclusionChars,
       description:
-        "ONE sentence saying what the reader should take from this page, printed in a coloured band under the " +
+        "ONE sentence — 280 characters at the most — saying what the reader should take from this page, " +
+        "printed in a coloured band under the " +
         "content. Required on 'chart' pages, and worth writing on 'kpis', 'comparison', 'timeline' and 'outlook' " +
         "pages too. Not a restatement of the figures — the point they make. 'The direction of sales growth explains " +
         "the sell-off better than the headline FY26 result.' Where it is an inference rather than a fact, word it " +
@@ -965,7 +970,9 @@ FUTURE OUTCOMES. Never present one as certain. Distinguish carefully between gua
 
 === 6. THE SHARE-PRICE MOVE ===
 
-Always separate what the company announced from how the market reacted, and always say which window the move is measured over. An intraday figure must be described as intraday: "shares rose as much as ~12.9% in morning trade", "shares fell as much as ~17% during the session". Never write a bare "IPG rose 12.9%" — it reads as a closing return. Only call it a closing move when the market data says the figure is a close.
+Always separate what the company announced from how the market reacted, and always say which window the move is measured over.
+
+THE MARKET DATA BLOCK STATES THE WINDOW. Use it and nothing else. When it says INTRADAY the board was read while the market was still open: the session had hours left, the day's final move may be larger or smaller, and the report must say so — "shares rose as much as ~12.9% in morning trade", "shares fell as much as ~17% during the session". Writing "closed up 17.8%" for a midday figure is wrong twice over: the wrong window, and a number the rest of the day went on to change. Never write a bare "IPG rose 12.9%" either — it reads as a closing return. Only call it a close when the block says the figure IS the close.
 
 === 7. HOUSE STYLE ===
 
@@ -1121,6 +1128,11 @@ What to verify, in order of how much damage it does:
 If two documents in the evidence disagree, that is a finding of its own — say which the report used and which it should have.
 
 Be specific, and be honest in both directions. Do not invent findings to look thorough: an empty findings list with a summary saying what you checked is a valid and useful result. Do not soften a real one: if a number cannot be traced to the evidence, say so and mark it blocking, even if it is probably right.`;
+
+/** "morning trade" -> "Morning Trade", as the hero card prints it. */
+function toTitleCase(value: string): string {
+  return value.replace(/\b\w/g, (character) => character.toUpperCase());
+}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -1577,6 +1589,15 @@ type EvidenceInput = {
   /** Session volume against the company's trailing average. Null if unavailable. */
   volumeProfile: VolumeProfile | null;
   /**
+   * What kind of figure the move is — intraday, morning trade, or a close.
+   *
+   * Derived from when the board was read, not from the model's reading of a
+   * bare percentage. Optional so a caller written before this existed still
+   * compiles; absent, the market block says the window is unknown, which the
+   * prompt treats as "do not claim one".
+   */
+  moveWindow?: MoveWindow | null;
+  /**
    * Every filing the company has lodged in the fetched window, as date and
    * headline only.
    *
@@ -1640,12 +1661,30 @@ function buildEvidenceContent(
    * the desk writes a number, so a prefix here reappears in the report — the
    * instruction not to use it competes with a live demonstration of using it.
    */
+  /**
+   * The window, spelled out.
+   *
+   * A bare "+17.81%" tells the model nothing about whether the session had
+   * finished, and the first SBM draft duly wrote "Shares Closed Up ~17.8%" for
+   * a figure read at midday with three hours of trading left — the wrong
+   * window, and because the stock kept moving, the wrong number too.
+   */
+  const window = input.moveWindow;
+  const windowLine = window
+    ? window.isClose
+      ? `the OFFICIAL CLOSE (board read at ${window.localTime} Sydney, after the close)`
+      : `INTRADAY — the market was still OPEN at ${window.localTime} Sydney when this was read, so ` +
+        `the day's final move may be larger or smaller than this. The desk's phrase for this ` +
+        `window is "${window.label}". NEVER describe this figure as a close.`
+    : "unknown — say nothing about the window rather than guessing it";
+
   const marketBlock = `MARKET DATA (${input.moveDate}, from the exchange feed — these are the authoritative figures for the move)
   ticker:      ${row.ticker}
   company:     ${row.companyName}
   sector:      ${row.sector ?? "unknown"}
   move:        ${row.changePct > 0 ? "+" : ""}${row.changePct.toFixed(2)}%
-  last price:  ${row.last !== null ? `$${row.last.toFixed(4)}` : "unknown"}
+  window:      ${windowLine}
+  last price:  ${row.last !== null ? `${row.last.toFixed(4)}` : "unknown"}
   turnover:    ${formatMoneyCompact(row.turnover)}
   market cap:  ${formatMoneyCompact(row.marketCap)}
 
@@ -1737,6 +1776,8 @@ export async function writeReport(
     volumeProfile: VolumeProfile | null;
     /** Date-and-headline index of every filing fetched. See `EvidenceInput`. */
     filingTimeline: EvidenceInput["filingTimeline"];
+    /** What kind of figure the move is — see `EvidenceInput.moveWindow`. */
+    moveWindow?: MoveWindow | null;
     /**
      * The first draft and what the Accuracy Gate found in it.
      *
@@ -1876,8 +1917,24 @@ export async function writeReport(
           companyName,
           sector: asString(raw.sector) || row.sector,
           movePct,
-          moveType: raw.moveType === "closing" ? "closing" : "intraday",
-          moveWindowLabel: asString(raw.moveWindowLabel) || null,
+          /**
+           * The window comes from the clock, the same way `movePct` comes from
+           * the feed: both are facts about when the board was read, and a model
+           * that guesses either writes a report about a session that did not
+           * happen. The model's own words are kept only where there is nothing
+           * better to use.
+           */
+          moveType: input.moveWindow
+            ? input.moveWindow.isClose
+              ? "closing"
+              : "intraday"
+            : raw.moveType === "closing"
+              ? "closing"
+              : "intraday",
+          moveWindowLabel:
+            input.moveWindow && !input.moveWindow.isClose
+              ? toTitleCase(input.moveWindow.label)
+              : asString(raw.moveWindowLabel) || null,
           catalystSlug: isCatalystSlug(catalystSlug) ? catalystSlug : "other",
           reasonForMove: clamp(asString(raw.reasonForMove), 1000),
           mainTakeaway: clamp(asString(raw.mainTakeaway), 1000),
@@ -2223,6 +2280,8 @@ export async function checkReport(
     historyDocuments: AnnouncementDocument[];
     volumeProfile: VolumeProfile | null;
     filingTimeline: EvidenceInput["filingTimeline"];
+    /** What kind of figure the move is — see `EvidenceInput.moveWindow`. */
+    moveWindow?: MoveWindow | null;
   },
   usage: TokenUsage,
 ): Promise<{ review: AccuracyReview; usage: TokenUsage }> {

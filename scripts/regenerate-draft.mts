@@ -21,6 +21,7 @@ import { getDb } from "../src/db";
 import { moverDrafts } from "../src/db/schema";
 import { draftModel } from "../src/lib/ai/client";
 import { regenerateDraft } from "../src/lib/drafts/regenerate";
+import { estimateDraftCostUsd } from "../src/lib/drafts/types";
 
 const [idArg, ...flags] = process.argv.slice(2);
 const sourceDraftId = Number(idArg);
@@ -31,8 +32,23 @@ if (!Number.isInteger(sourceDraftId) || sourceDraftId <= 0) {
   process.exit(1);
 }
 
-/** Opus 5 list rates, per million tokens. */
-const RATES = { input: 5, cacheWrite: 6.25, cacheRead: 0.5, output: 25 };
+/**
+ * The estimate is priced by the model that will actually run — which is not
+ * necessarily the one the source draft used, since the point of a regenerate is
+ * often that something changed. `estimateDraftCostUsd` owns the rate table;
+ * passing `model: null` prices at the current tier.
+ */
+const priceAtCurrentTier = (usage: {
+  cacheWriteTokens: number;
+  outputTokens: number;
+}) =>
+  estimateDraftCostUsd({
+    inputTokens: 0,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    cacheReadTokens: usage.cacheWriteTokens * 2,
+    outputTokens: usage.outputTokens,
+    model: null,
+  }) ?? 0;
 
 const [source] = await getDb()
   .select({
@@ -54,23 +70,24 @@ if (!source) {
 }
 
 /**
- * The corpus is the bill, and it is the one quantity that carries over: the
- * same filings are read again. Output is estimated at half the source draft's,
- * because the report ceiling came down from nine pages to five.
+ * The corpus is the bill, and it is the one quantity that carries over exactly:
+ * the same filings are read again. Output is taken from the source draft
+ * unchanged, which over-estimates when re-running a draft written before the
+ * page ceiling came down and is right for everything since — the direction an
+ * estimate shown before spending money should err in.
  */
 const corpus = source.cacheWriteTokens ?? 0;
-const output = Math.round((source.outputTokens ?? 0) / 2);
-const estimate =
-  (corpus * RATES.cacheWrite +
-    corpus * 2 * RATES.cacheRead +
-    output * RATES.output) /
-  1_000_000;
+const output = source.outputTokens ?? 0;
+const estimate = priceAtCurrentTier({
+  cacheWriteTokens: corpus,
+  outputTokens: output,
+});
 
 console.log(`source draft ${sourceDraftId}: ${source.ticker} ${source.moveDate}`);
 console.log(`  status ${source.status} / trigger ${source.trigger} / model ${source.model}`);
 console.log(`  corpus ${corpus.toLocaleString()} tok, output ${(source.outputTokens ?? 0).toLocaleString()} tok`);
 console.log(`regenerating with ${draftModel()}`);
-console.log(`estimated cost: ~$${estimate.toFixed(2)} (corpus re-read, output assumed halved)`);
+console.log(`estimated cost: ~$${estimate.toFixed(2)} (the same corpus, re-read)`);
 
 if (!commit) {
   console.log("\ndry run — nothing spent. Add --run to regenerate for real.");

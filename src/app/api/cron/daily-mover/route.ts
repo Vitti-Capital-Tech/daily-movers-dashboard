@@ -14,25 +14,43 @@ import { exchangeClock } from "@/lib/drafts/trading-day";
  * ## Why it fires twice a day in `vercel.json`
  *
  * Vercel cron expressions are **UTC only** — there is no timezone field. The
- * desk wants this at lunchtime in Sydney, and Sydney is UTC+10 for half the
- * year and UTC+11 for the other half, so a single UTC expression is an hour
- * wrong for six months at a time.
+ * desk reads the draft first thing in the Indian morning, and Sydney is UTC+10
+ * for half the year and UTC+11 for the other half, so a single UTC expression
+ * is an hour wrong in Sydney terms for six months at a time.
  *
- * So it is scheduled at both 01:30 and 02:30 UTC, and this handler checks that
- * the firing lands in the middle of the Sydney session before doing anything.
- * Under AEST those firings are 11:30 and 12:30 local; under AEDT, 12:30 and
- * 13:30. Both pass the window, and the first one to arrive does the work — the
- * second is a no-op against the day's unique index. Nothing has to be changed
- * when daylight saving starts or ends.
+ * So it is scheduled at both **01:15 and 02:15 UTC — 06:45 and 07:45 IST** —
+ * and this handler checks that the firing lands inside the Sydney session
+ * before doing anything. Under AEST those firings are 11:15 and 12:15 local;
+ * under AEDT, 12:15 and 13:15. All four pass the window, and the first one to
+ * arrive does the work — the second is a no-op against the day's unique index.
+ * Nothing has to be changed when daylight saving starts or ends.
  *
- * ## Why lunchtime
+ * ## What 06:45 IST actually means for the report
  *
  * ASX continuous trading runs 10:00 to 16:00 local, and price-sensitive
- * announcements cluster before the open. By 12:30 the morning's moves are
- * established and the filings that explain them are out — which is also why
- * the desk's own notes are headed "Morning Trade" and "Intraday" rather than
- * written after the close. It leaves the afternoon for an analyst to review,
- * edit and approve.
+ * announcements cluster before the open, so by 11:15 the morning's moves are
+ * established and the filings that explain them are out. But the session still
+ * has four hours to run: the board's percentage is an **intraday** figure, the
+ * day's final move will differ, and the report has to say so. That is not a
+ * prompt instruction — `describeMoveWindow` reads the clock the board was taken
+ * on and the market data block states the window, because the first SBM draft
+ * wrote "Shares Closed Up ~17.8%" for a figure taken at midday.
+ *
+ * The earlier the run, the thinner the board: a mover needs $1m of turnover to
+ * pass the screen, and at 11:15 some of the day's real movers have not traded
+ * that yet. Moving earlier trades coverage for a draft that is waiting when the
+ * desk starts work, which is the trade the desk asked for.
+ *
+ * ## On Hobby, the firing time is approximate
+ *
+ * Vercel's Hobby plan schedules cron jobs with **±59 minutes** of precision, and
+ * in practice this one has landed about 29 minutes late every day. So 01:15 UTC
+ * means "somewhere in the 01:00 hour": 06:45 IST is the earliest it runs, not
+ * the time it runs. If the desk needs it *at* 06:45, the scheduler has to be
+ * something with minute precision — a Vercel Pro plan, Supabase `pg_cron`
+ * calling this route with the cron secret, or any external pinger. The route
+ * itself is unchanged by that choice: it is idempotent, and `?force=1` exists
+ * for exactly this kind of re-trigger.
  */
 
 /**
@@ -60,8 +78,8 @@ function isAuthorisedCron(request: NextRequest): boolean {
  * allowed to pass it. Only one draft is still produced, because the partial
  * unique index on `(move_date) WHERE trigger = 'cron'` makes the second firing a
  * no-op — the dedupe was always in the database, and the narrow window was only
- * ever belt-and-braces. Whichever firing arrives first does the work: 11:30
- * Sydney under AEST, 12:30 under AEDT, both well into the session.
+ * ever belt-and-braces. Whichever firing arrives first does the work: 11:15
+ * Sydney under AEST, 12:15 under AEDT, both an hour or more into the session.
  */
 const WINDOW_START_MINUTES = 11 * 60;
 const WINDOW_END_MINUTES = 15 * 60;

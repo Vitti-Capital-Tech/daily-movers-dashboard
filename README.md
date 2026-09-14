@@ -19,8 +19,8 @@ Studio**, which drafts each weekday's Daily Mover for an analyst to approve, and
 | Theming | next-themes (Light / Dark / System mode toggle) |
 | Typography | Plus Jakarta Sans (UI) + JetBrains Mono (Financial Data) |
 | AI Extraction | Claude Sonnet 4.6 — reads an uploaded report and fills the form |
-| AI Drafting | Claude Opus 5 — screens the board, reads ~25 filings, writes the report, then checks its own figures |
-| AI Post Copy | Claude Opus 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
+| AI Drafting | Claude Sonnet 5 — screens the board, reads ~25 filings, writes the report, then checks its own figures |
+| AI Post Copy | Claude Sonnet 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
 | PDF Generation | `@react-pdf/renderer` — a 16:9 slide deck, no Chromium |
 | Market Data | Yahoo Finance (`yahoo-finance2`) — quotes and session moves |
 | ASX Data | ASX company directory + company announcements (see caveat below) |
@@ -83,9 +83,10 @@ account password.
 
 ## Mover Studio
 
-Each weekday **around midday Sydney time**, Claude drafts that day's Daily Mover
-and leaves it in a review queue at `/mover-studio` for an analyst to approve or
-reject. Approving files it in the archive exactly as a manual upload would.
+Each weekday **at 06:45 IST — 11:15 in Sydney, about an hour into the session**
+— Claude drafts that day's Daily Mover and leaves it in a review queue at
+`/mover-studio` for an analyst to approve or reject. Approving files it in the
+archive exactly as a manual upload would.
 
 **The pipeline**
 
@@ -109,8 +110,10 @@ reject. Approving files it in the archive exactly as a manual upload would.
 7. **Render and file.** `@react-pdf/renderer` produces a four-to-five page
    16:9 deck into a `drafts/` prefix, and the row goes to `pending`.
 
-Two to three minutes and roughly **US$1.40** per draft at list price
-(~$30/month over 22 trading days).
+Two to three minutes and roughly **US$0.55** per draft at list price
+(~$12/month over 22 trading days). `ANTHROPIC_DRAFT_MODEL=claude-opus-5` moves
+it to about $1.40 and $30, which is the lever to pull if wrong figures start
+reaching review.
 
 **How it got there.** The first working version cost $1.50. Three measured
 changes took 73% out of it; the Accuracy Gate and the accounts then bought some
@@ -125,7 +128,8 @@ of it back, deliberately:
 | **+ the accounts and the Accuracy Gate** — one background filing, a second call that verifies every figure, and a rewrite when it finds a wrong one | $0.55 |
 | *(same, with caching removed)* | *$1.28* |
 | *(same, at the first cut of these features: 3 background filings, always rewrite)* | *$0.95* |
-| **Drafting model Sonnet 5 → Opus 5**, after a review found a fabricated total and a conditional sale written as completed — every component of the bill is exactly 2.5x, and the report is now half as long, which the output tokens barely notice | ~$1.40 *(derived, not re-measured)* |
+| *(Opus 5 for a day, after a review found a fabricated total and a conditional sale written as completed — every component of the bill is exactly 2.5x)* | *~$1.40* |
+| **Back to Sonnet 5**, on the desk's call: the prompt's own guard rails — a source line on every page, the conditionality rules, the gate's blocking categories — carry the accuracy instead, at 40% of the price | ~$0.55 |
 
 The two italic rows are what the tuning avoided. Reading the corpus three times
 at full price is what the 5-minute cache breakpoint prevents, and it is why
@@ -157,13 +161,14 @@ to its latest member and long legal instruments lose their annexures, but no
 class of filing is excluded outright. See `src/lib/asx/filings.ts`.
 
 **Remaining levers, not taken.** A two-stage read (Claude Haiku 4.5 summarises
-each filing, Opus 5 writes from the briefs) would cut roughly another half but
+each filing, Sonnet 5 writes from the briefs) would cut roughly another half but
 loses the specific numbers the reports are built on. The Batch API is 50% off
 but asynchronous, which would mean moving the cron earlier and giving up the
-same-session timing guarantee. Dropping back to Sonnet 5 would cut 60% and is
-deliberately not taken: the failures the desk actually reports are wrong figures
-and conditional money written as certain, which is what the tier buys. All three
-are available if the bill ever matters more than it does at $30/month.
+same-session timing guarantee. The measured corpus levers — a tighter reading
+budget for history filings, de-duplicating investor presentations — would take
+20-25% and are a quality trade, so they wait until the current accuracy changes
+have a week of drafts behind them. All of them are available if the bill ever
+matters more than it does at $12/month.
 
 **When it doesn't run.** The scheduled job declines, without erroring, if it
 isn't a weekday in Sydney, if the market didn't trade (detected from the feed's
@@ -173,25 +178,32 @@ already exists. `?force=1` with the cron secret skips only the time-of-day check
 for re-running a session that was missed.
 
 **Why the cron fires twice.** Vercel cron expressions are UTC only, and Sydney is
-UTC+10 for half the year and UTC+11 for the other half. Both 01:30 and 02:30 UTC
-are scheduled, and the handler only acts if the firing lands between 11:00 and
-15:00 Sydney time. Both firings pass that window, and the first to arrive does
+UTC+10 for half the year and UTC+11 for the other half. Both 01:15 and 02:15 UTC
+— 06:45 and 07:45 IST — are scheduled, and the handler only acts if the firing
+lands between 11:00 and 15:00 Sydney time. Both firings pass that window, and the first to arrive does
 the work — the second is a no-op against the day's unique index. The window is
 wide rather than tight because Hobby-plan cron precision is ±59 minutes, which a
 narrow window can miss entirely. Nothing changes when daylight saving does.
 
 **`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
 higher value fails the *build* on Hobby rather than failing at runtime. A run
-measured at 120 seconds before the Accuracy Gate and about 200 with it — on
-Sonnet 5, writing seven pages. Opus 5 and a four-to-five page report trade a
-slower model against half the output and have not been re-measured, so the
-deadline guards in `lib/drafts/generate.ts`, not the margin, are what keep the
-invocation inside the ceiling.
+measured at 120 seconds before the Accuracy Gate and about 200 with it, on
+Sonnet 5 writing seven pages; the report is now four or five pages, which only
+moves that down. The deadline guards in `lib/drafts/generate.ts` are what keep
+the invocation inside the ceiling either way.
 
 **Reviewing a draft.** The card shows Claude's rationale and confidence, the
 report rendered inline, and every announcement it read with the cited ones
 marked and linked. The archive fields — move, catalyst, reason, takeaway — are
 **editable before approval**: the model drafts, the analyst is still the author.
+
+**Downloading the evidence.** The card has a **Sources (.zip)** button:
+every announcement the report was written from, in `today/` and `history/`
+folders, plus a `sources.txt` manifest marking the ones the report actually drew
+a figure from. The pipeline extracts each PDF to text and throws the bytes away,
+so the route re-downloads them from the ASX — which is also why it takes a
+moment, and why anything withdrawn since is listed in the manifest rather than
+silently missing.
 
 **Regenerating a draft.** The card also has a **Regenerate** button, and there
 is `npm run draft:regenerate -- <id>` for the same thing from a terminal. It
@@ -605,6 +617,22 @@ of its own. Nothing anywhere said why, in a document nobody counts the pages of.
 The cause is fixed where it belongs (comparison cells now have a character
 budget, and rows are tighter), and the counter is there so the next one shows up
 in the log rather than in front of a client.
+
+**The window comes from the clock, not from the model.** The board is read
+while the market is still open, so its percentage is an *intraday* figure with
+hours of trading left — and the first SBM draft wrote "Shares Closed Up ~17.8%"
+for a midday reading, which was the wrong window and, once the stock kept
+moving, the wrong number. `describeMoveWindow` turns the moment the board was
+taken into "morning trade", "intraday" or "the close"; the market data block
+states it in as many words; and `moveType` and `moveWindowLabel` are set from it
+rather than from the model, the same way `move_pct` is set from the feed.
+
+**The deck is green on a rise and red on a fall.** The accent is a property of
+the day rather than a house constant: the edges, the eyebrow, the heading rule,
+the conclusion band, the timeline marks and the closing quote all read it from
+`deckTheme(movePct)`. The cobalt tile beside the move card stays cobalt in both,
+because it is the colour for a fact without a verdict and a fact does not change
+direction with the share price.
 
 **Emphasis is markup, parsed and not trusted.** The model may mark the one or
 two figures a block turns on with `**`, and the renderer sets them in bold white

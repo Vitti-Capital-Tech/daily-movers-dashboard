@@ -139,15 +139,61 @@ const PALETTE = {
 } as const;
 
 /**
- * The accent a page is drawn in, by kind.
+ * The deck's accent, decided by the direction of the move.
  *
- * Centralised so the code stays consistent as pages are added — the alternative
- * is a colour chosen at each render site, which is how a document ends up with
- * four greens. Only risk pages leave the mint, because only risk has a
- * direction that the reader should feel before reading.
+ * A Daily Mover is about one thing before it is about anything else — the stock
+ * went up, or it went down — and the desk asked for the document to carry that
+ * before a word of it is read: **green on a rise, red on a fall**, with the
+ * cobalt tile beside it either way. So the accent is not a house constant; it
+ * is a property of the day, and everything that used to be mint now reads it
+ * from here: the edges, the eyebrow, the heading rule, the conclusion band, the
+ * timeline marks, the closing quote.
+ *
+ * Cobalt stays put in both. It is the colour for a fact without a verdict, and
+ * a fact does not change direction with the share price.
  */
-function pageAccent(kind: ReportPage["kind"]): string {
-  return kind === "risks" ? PALETTE.coral : PALETTE.mint;
+export type DeckTheme = {
+  accent: string;
+  accentDeep: string;
+  /** Type colour on a filled accent panel. */
+  accentInk: string;
+};
+
+const RISE: DeckTheme = {
+  accent: PALETTE.mint,
+  accentDeep: PALETTE.mintDeep,
+  accentInk: PALETTE.mintInk,
+};
+
+const FALL: DeckTheme = {
+  accent: PALETTE.coral,
+  accentDeep: PALETTE.coralDeep,
+  accentInk: "#2A0906",
+};
+
+function deckTheme(movePct?: number | null): DeckTheme {
+  return (movePct ?? 0) < 0 ? FALL : RISE;
+}
+
+/**
+ * The theme travels as a prop, not through React context.
+ *
+ * Context would be tidier, and Next.js will not have it: this module is
+ * reachable from a Server Component — the cron route imports the renderer —
+ * and `createContext` anywhere in that graph is a build error. A prop also does
+ * not depend on which reconciler is running, which for a file rendered by
+ * react-pdf rather than by the DOM is worth something on its own.
+ */
+
+/**
+ * The accent a page is drawn in.
+ *
+ * Only risk pages leave the deck's accent, and only on a rising day: risk has a
+ * direction a reader should feel before reading, and on a falling deck the two
+ * colours would be the same anyway.
+ */
+function pageAccent(kind: ReportPage["kind"], theme: DeckTheme): string {
+  return kind === "risks" ? PALETTE.coral : theme.accent;
 }
 
 /** The small chip above a heading, naming what kind of page this is. */
@@ -406,7 +452,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   chartRow: { flexDirection: "row", alignItems: "flex-end" },
-  chartCell: { justifyContent: "flex-end", paddingHorizontal: 5 },
+  chartCell: {
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingHorizontal: 5,
+  },
+  /**
+   * The drawn bar.
+   *
+   * Capped, because a four-point series across a 960pt sheet gives each column
+   * 220 points of width and the chart stops reading as a chart — it reads as
+   * four coloured panels. 148pt is about the width a column wants at this
+   * height, and a longer series simply fills its cell as before.
+   */
+  bar: { width: "100%", maxWidth: 148 },
   chartBaseline: { height: 0.75, backgroundColor: PALETTE.hairline },
   chartValue: {
     fontFamily: "Helvetica-Bold",
@@ -422,7 +481,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   barRow: { flexDirection: "row", alignItems: "center", marginBottom: 9 },
-  barLabel: { width: 150, fontSize: 9.5, color: PALETTE.body, paddingRight: 10 },
+  barLabel: {
+    width: 150,
+    fontSize: 9.5,
+    color: PALETTE.body,
+    paddingRight: 10,
+  },
   barTrack: { flex: 1, height: 15, backgroundColor: PALETTE.track },
   barValue: {
     width: 76,
@@ -589,19 +653,27 @@ const styles = StyleSheet.create({
   footerPage: { fontSize: 8, color: PALETTE.faint },
 
   /** Disclaimer -------------------------------------------------------- */
+  /**
+   * The compliance sheet, set to be read.
+   *
+   * It was 9.5pt across a 640pt measure on a 960pt sheet, which left two thirds
+   * of the page empty and the one piece of regulated text in the document as
+   * the smallest type in it. At 13pt over a wider measure it fills the sheet and
+   * reads like part of the deck — which is what it is.
+   */
   disclaimerHeading: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 11,
-    letterSpacing: 1.4,
+    fontSize: 14,
+    letterSpacing: 1.6,
     color: PALETTE.mint,
-    marginBottom: 12,
+    marginBottom: 18,
   },
   disclaimerText: {
-    fontSize: 9.5,
-    lineHeight: 1.5,
-    color: PALETTE.muted,
-    marginBottom: 8,
-    maxWidth: 640,
+    fontSize: 13,
+    lineHeight: 1.65,
+    color: PALETTE.body,
+    marginBottom: 16,
+    maxWidth: 820,
   },
 });
 
@@ -619,8 +691,22 @@ function IconGlyph({ name }: { name: string }) {
     case "cash":
       return (
         <>
-          <Circle cx="7" cy="7" r="5" fill="none" stroke={stroke} strokeWidth={1.4} />
-          <Line x1="7" y1="3.4" x2="7" y2="10.6" stroke={stroke} strokeWidth={1.4} />
+          <Circle
+            cx="7"
+            cy="7"
+            r="5"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.4}
+          />
+          <Line
+            x1="7"
+            y1="3.4"
+            x2="7"
+            y2="10.6"
+            stroke={stroke}
+            strokeWidth={1.4}
+          />
         </>
       );
     case "chart":
@@ -646,16 +732,52 @@ function IconGlyph({ name }: { name: string }) {
     case "contract":
       return (
         <>
-          <Rect x="2.5" y="1.5" width="9" height="11" fill="none" stroke={stroke} strokeWidth={1.2} />
-          <Line x1="4.6" y1="5" x2="9.4" y2="5" stroke={stroke} strokeWidth={1.1} />
-          <Line x1="4.6" y1="8" x2="9.4" y2="8" stroke={stroke} strokeWidth={1.1} />
+          <Rect
+            x="2.5"
+            y="1.5"
+            width="9"
+            height="11"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.2}
+          />
+          <Line
+            x1="4.6"
+            y1="5"
+            x2="9.4"
+            y2="5"
+            stroke={stroke}
+            strokeWidth={1.1}
+          />
+          <Line
+            x1="4.6"
+            y1="8"
+            x2="9.4"
+            y2="8"
+            stroke={stroke}
+            strokeWidth={1.1}
+          />
         </>
       );
     case "regulation":
       return (
         <>
-          <Line x1="7" y1="2" x2="7" y2="12" stroke={stroke} strokeWidth={1.3} />
-          <Line x1="2.2" y1="4.4" x2="11.8" y2="4.4" stroke={stroke} strokeWidth={1.3} />
+          <Line
+            x1="7"
+            y1="2"
+            x2="7"
+            y2="12"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
+          <Line
+            x1="2.2"
+            y1="4.4"
+            x2="11.8"
+            y2="4.4"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
           <Polygon points="2.2,4.4 4.4,8.4 0,8.4" fill={stroke} />
           <Polygon points="11.8,4.4 14,8.4 9.6,8.4" fill={stroke} />
         </>
@@ -678,7 +800,14 @@ function IconGlyph({ name }: { name: string }) {
     case "operations":
       return (
         <>
-          <Circle cx="7" cy="7" r="3.2" fill="none" stroke={stroke} strokeWidth={1.6} />
+          <Circle
+            cx="7"
+            cy="7"
+            r="3.2"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.6}
+          />
           <Rect x="6.2" y="0.6" width="1.6" height="3" fill={stroke} />
           <Rect x="6.2" y="10.4" width="1.6" height="3" fill={stroke} />
           <Rect x="0.6" y="6.2" width="3" height="1.6" fill={stroke} />
@@ -705,16 +834,49 @@ function IconGlyph({ name }: { name: string }) {
       return (
         <>
           <Polygon points="7,1.6 13,12.4 1,12.4" fill={stroke} />
-          <Rect x="6.3" y="5.4" width="1.4" height="3.6" fill={PALETTE.coralDeep} />
-          <Rect x="6.3" y="9.8" width="1.4" height="1.4" fill={PALETTE.coralDeep} />
+          <Rect
+            x="6.3"
+            y="5.4"
+            width="1.4"
+            height="3.6"
+            fill={PALETTE.coralDeep}
+          />
+          <Rect
+            x="6.3"
+            y="9.8"
+            width="1.4"
+            height="1.4"
+            fill={PALETTE.coralDeep}
+          />
         </>
       );
     case "timing":
       return (
         <>
-          <Circle cx="7" cy="7" r="5.2" fill="none" stroke={stroke} strokeWidth={1.3} />
-          <Line x1="7" y1="4" x2="7" y2="7.4" stroke={stroke} strokeWidth={1.3} />
-          <Line x1="7" y1="7.4" x2="9.6" y2="8.8" stroke={stroke} strokeWidth={1.3} />
+          <Circle
+            cx="7"
+            cy="7"
+            r="5.2"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
+          <Line
+            x1="7"
+            y1="4"
+            x2="7"
+            y2="7.4"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
+          <Line
+            x1="7"
+            y1="7.4"
+            x2="9.6"
+            y2="8.8"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
         </>
       );
     case "people":
@@ -727,9 +889,28 @@ function IconGlyph({ name }: { name: string }) {
     case "geography":
       return (
         <>
-          <Circle cx="7" cy="7" r="5.2" fill="none" stroke={stroke} strokeWidth={1.3} />
-          <Line x1="1.8" y1="7" x2="12.2" y2="7" stroke={stroke} strokeWidth={1.2} />
-          <Path d="M7 1.8 C4 4.6 4 9.4 7 12.2 C10 9.4 10 4.6 7 1.8 Z" fill="none" stroke={stroke} strokeWidth={1.2} />
+          <Circle
+            cx="7"
+            cy="7"
+            r="5.2"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.3}
+          />
+          <Line
+            x1="1.8"
+            y1="7"
+            x2="12.2"
+            y2="7"
+            stroke={stroke}
+            strokeWidth={1.2}
+          />
+          <Path
+            d="M7 1.8 C4 4.6 4 9.4 7 12.2 C10 9.4 10 4.6 7 1.8 Z"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.2}
+          />
         </>
       );
     default:
@@ -740,18 +921,26 @@ function IconGlyph({ name }: { name: string }) {
 /** The icon in its coloured disc — mint by default, coral on a risks page. */
 function IconDisc({
   name,
-  tone = PALETTE.mintDeep,
+  tone,
   size = 26,
+  theme,
 }: {
   name?: string | null;
   tone?: string;
   size?: number;
+  theme: DeckTheme;
 }) {
+  const disc = tone ?? theme.accentDeep;
   return (
     <View
       style={[
         styles.disc,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: tone },
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: disc,
+        },
       ]}
     >
       <Svg width={size * 0.54} height={size * 0.54} viewBox="0 0 14 14">
@@ -814,10 +1003,12 @@ function sheetCount(doc: ReportDoc): number {
   return doc.pages.length + 1;
 }
 
-function Chrome({ doc }: { doc: ReportDoc }) {
+function Chrome({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
   return (
     <View style={styles.chrome}>
-      <Text style={styles.eyebrow}>{formatEyebrow(doc.ticker)}</Text>
+      <Text style={[styles.eyebrow, { color: theme.accent }]}>
+        {formatEyebrow(doc.ticker)}
+      </Text>
       <View style={styles.lockup}>
         {/* react-pdf primitive, not an HTML img — there is no alt attribute in
             the PDF object model, and the mark is decorative next to the
@@ -840,13 +1031,7 @@ function Chrome({ doc }: { doc: ReportDoc }) {
  * which the length budget exists to prevent, but a footerless orphan sheet is
  * the worst way to find out that it happened.
  */
-function Footer({
-  doc,
-  pageNumber,
-}: {
-  doc: ReportDoc;
-  pageNumber: number;
-}) {
+function Footer({ doc, pageNumber }: { doc: ReportDoc; pageNumber: number }) {
   return (
     <View style={styles.footer} fixed>
       <Text style={styles.footerText}>
@@ -865,17 +1050,25 @@ function Sheet({
   doc,
   pageNumber,
   children,
+  theme,
 }: {
   doc: ReportDoc;
   pageNumber: number;
   children: ReactNode;
+  theme: DeckTheme;
 }) {
   return (
     <Page size={PAGE_SIZE} style={styles.page}>
-      <View style={styles.edgeTop} fixed />
-      <Chrome doc={doc} />
+      <View
+        style={[styles.edgeTop, { backgroundColor: theme.accentDeep }]}
+        fixed
+      />
+      <Chrome doc={doc} theme={theme} />
       {children}
-      <View style={styles.edgeBottom} fixed />
+      <View
+        style={[styles.edgeBottom, { backgroundColor: theme.accentDeep }]}
+        fixed
+      />
       <Footer doc={doc} pageNumber={pageNumber} />
     </Page>
   );
@@ -887,11 +1080,20 @@ function SourceLine({ note }: { note?: string | null }) {
 }
 
 /** The full-width accent band a page ends on when it has a conclusion. */
-function ConclusionBand({ text }: { text?: string | null }) {
+function ConclusionBand({
+  text,
+  theme,
+}: {
+  text?: string | null;
+  theme: DeckTheme;
+}) {
   if (!text?.trim()) return null;
   return (
-    <View style={styles.band} wrap={false}>
-      <Rich style={styles.bandText} strongStyle={{ color: PALETTE.mintInk }}>
+    <View style={[styles.band, { backgroundColor: theme.accent }]} wrap={false}>
+      <Rich
+        style={[styles.bandText, { color: theme.accentInk }]}
+        strongStyle={{ color: theme.accentInk }}
+      >
         {text}
       </Rich>
     </View>
@@ -928,29 +1130,27 @@ function Tile({
   kpi,
   width,
   tone,
+  theme,
 }: {
   kpi: ReportKpi;
   width: string;
   tone?: "accent" | "negative" | "cobalt" | "plain";
+  theme: DeckTheme;
 }) {
   const filled = tone === "accent" || tone === "negative" || tone === "cobalt";
   const background =
     tone === "accent"
-      ? PALETTE.mint
+      ? theme.accent
       : tone === "negative"
         ? PALETTE.coral
         : tone === "cobalt"
           ? PALETTE.cobalt
           : PALETTE.card;
 
-  const valueColour = tone === "accent" ? PALETTE.mintInk : PALETTE.paper;
-  const labelColour = tone === "accent" ? PALETTE.mintInk : PALETTE.paper;
+  const valueColour = tone === "accent" ? theme.accentInk : PALETTE.paper;
+  const labelColour = tone === "accent" ? theme.accentInk : PALETTE.paper;
   const noteColour =
-    tone === "accent"
-      ? "#0C5A43"
-      : filled
-        ? "#F2F5F9"
-        : PALETTE.muted;
+    tone === "accent" ? theme.accentDeep : filled ? "#F2F5F9" : PALETTE.muted;
 
   return (
     <View style={[styles.tileCell, { width }]}>
@@ -963,7 +1163,9 @@ function Tile({
           },
         ]}
       >
-        <Text style={[styles.tileValue, { color: valueColour }]}>{kpi.value}</Text>
+        <Text style={[styles.tileValue, { color: valueColour }]}>
+          {kpi.value}
+        </Text>
         <Text style={[styles.tileLabel, { color: labelColour }]}>
           {kpi.label.toUpperCase()}
         </Text>
@@ -988,7 +1190,7 @@ function Tile({
  * desk deck leads with the number the page is about, and a row of six identical
  * outlined tiles makes the reader choose, which is the report failing to.
  */
-function TileGrid({ kpis }: { kpis: ReportKpi[] }) {
+function TileGrid({ kpis, theme }: { kpis: ReportKpi[]; theme: DeckTheme }) {
   if (kpis.length === 0) return null;
   const perRow = kpis.length <= 2 ? kpis.length : 3;
   const width = `${100 / perRow}%`;
@@ -1000,6 +1202,7 @@ function TileGrid({ kpis }: { kpis: ReportKpi[] }) {
           kpi={kpi}
           width={width}
           tone={index === 0 ? "accent" : "plain"}
+          theme={theme}
         />
       ))}
     </View>
@@ -1032,13 +1235,7 @@ function Callouts({
   );
 }
 
-function Bullets({
-  items,
-  accent,
-}: {
-  items: string[];
-  accent: string;
-}) {
+function Bullets({ items, accent }: { items: string[]; accent: string }) {
   return (
     <View>
       {items.map((item, index) => (
@@ -1066,7 +1263,13 @@ const CHART_PLOT_HEIGHT = 210;
  * the one fact worth showing, so the plot is split into a positive region and a
  * negative one, sized by how far the series actually runs each way.
  */
-function ColumnChart({ chart }: { chart: ReportChart }) {
+function ColumnChart({
+  chart,
+  theme,
+}: {
+  chart: ReportChart;
+  theme: DeckTheme;
+}) {
   const points = chart.points;
   const cellWidth = `${100 / points.length}%`;
 
@@ -1081,7 +1284,7 @@ function ColumnChart({ chart }: { chart: ReportChart }) {
   const negativeHeight = CHART_PLOT_HEIGHT - positiveHeight;
 
   const barColour = (point: ReportChartPoint) => {
-    if (point.highlight) return PALETTE.mint;
+    if (point.highlight) return theme.accent;
     return point.value < 0 ? PALETTE.coral : PALETTE.steel;
   };
 
@@ -1098,12 +1301,18 @@ function ColumnChart({ chart }: { chart: ReportChart }) {
             >
               {point.value > 0 ? (
                 <View
-                  style={{
-                    // A floor of 2pt so a small positive still reads as present
-                    // rather than as a missing period.
-                    height: Math.max(2, (positiveHeight * point.value) / maxPositive),
-                    backgroundColor: barColour(point),
-                  }}
+                  style={[
+                    styles.bar,
+                    {
+                      // A floor of 2pt so a small positive still reads as
+                      // present rather than as a missing period.
+                      height: Math.max(
+                        2,
+                        (positiveHeight * point.value) / maxPositive,
+                      ),
+                      backgroundColor: barColour(point),
+                    },
+                  ]}
                 />
               ) : null}
             </View>
@@ -1114,15 +1323,26 @@ function ColumnChart({ chart }: { chart: ReportChart }) {
       <View style={styles.chartBaseline} />
 
       {negativeHeight > 0 ? (
-        <View style={[styles.chartRow, { height: negativeHeight, alignItems: "flex-start" }]}>
+        <View
+          style={[
+            styles.chartRow,
+            { height: negativeHeight, alignItems: "flex-start" },
+          ]}
+        >
           {points.map((point, index) => (
             <View key={index} style={[styles.chartCell, { width: cellWidth }]}>
               {point.value < 0 ? (
                 <View
-                  style={{
-                    height: Math.max(2, (negativeHeight * -point.value) / maxNegative),
-                    backgroundColor: barColour(point),
-                  }}
+                  style={[
+                    styles.bar,
+                    {
+                      height: Math.max(
+                        2,
+                        (negativeHeight * -point.value) / maxNegative,
+                      ),
+                      backgroundColor: barColour(point),
+                    },
+                  ]}
                 />
               ) : null}
             </View>
@@ -1151,7 +1371,7 @@ function ColumnChart({ chart }: { chart: ReportChart }) {
  * and abbreviating a country to fit is how a chart starts misleading. Turning
  * the chart on its side gives the label a whole line.
  */
-function BarChart({ chart }: { chart: ReportChart }) {
+function BarChart({ chart, theme }: { chart: ReportChart; theme: DeckTheme }) {
   const maxAbsolute = Math.max(
     ...chart.points.map((point) => Math.abs(point.value)),
   );
@@ -1169,7 +1389,7 @@ function BarChart({ chart }: { chart: ReportChart }) {
                 height: "100%",
                 width: `${Math.max(1, (Math.abs(point.value) / maxAbsolute) * 100)}%`,
                 backgroundColor: point.highlight
-                  ? PALETTE.mint
+                  ? theme.accent
                   : point.value < 0
                     ? PALETTE.coral
                     : PALETTE.steel,
@@ -1223,7 +1443,13 @@ function waterfallSpans(
   }, []);
 }
 
-function WaterfallChart({ chart }: { chart: ReportChart }) {
+function WaterfallChart({
+  chart,
+  theme,
+}: {
+  chart: ReportChart;
+  theme: DeckTheme;
+}) {
   const points = chart.points;
   const cellWidth = `${100 / points.length}%`;
 
@@ -1248,18 +1474,43 @@ function WaterfallChart({ chart }: { chart: ReportChart }) {
           const height = Math.max(2, scale(top - bottom));
           const colour = span.point.isTotal
             ? span.point.highlight
-              ? PALETTE.mint
+              ? theme.accent
               : PALETTE.steel
             : span.point.value < 0
               ? PALETTE.coral
-              : PALETTE.mint;
+              : theme.accent;
 
           return (
             <View
               key={index}
               style={[styles.chartCell, { width: cellWidth, height: "100%" }]}
             >
-              <View style={{ height, backgroundColor: colour }} />
+              {/**
+               * The connector: a hairline from where this bar ends to where the
+               * next one starts.
+               *
+               * Without it a waterfall is a row of bars at odd heights, and the
+               * reader has to infer that each one begins where the last left
+               * off — which is the entire claim the chart is making. It spans
+               * the gutter between cells, so it reads as one line across the
+               * plot rather than a tick on each bar.
+               */}
+              {index < spans.length - 1 ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    // From this bar's centre to the next one's: the line runs
+                    // at the level the next bar starts from, which is the whole
+                    // claim a waterfall makes.
+                    left: "50%",
+                    width: "100%",
+                    height: 0.75,
+                    top: Math.max(0, CHART_PLOT_HEIGHT - scale(span.to)),
+                    backgroundColor: PALETTE.faint,
+                  }}
+                />
+              ) : null}
+              <View style={[styles.bar, { height, backgroundColor: colour }]} />
               {/* The gap under a floating step, so it reads as suspended. */}
               <View style={{ height: Math.max(0, scale(bottom)) }} />
             </View>
@@ -1272,8 +1523,13 @@ function WaterfallChart({ chart }: { chart: ReportChart }) {
       <View style={styles.chartRow}>
         {points.map((point, index) => (
           <View key={index} style={{ width: cellWidth, paddingHorizontal: 5 }}>
-            <Text style={styles.chartValue}>
-              {pointLabel(point.value, point.display)}
+            <Text
+              style={[
+                styles.chartValue,
+                point.isTotal ? { color: PALETTE.paper } : {},
+              ]}
+            >
+              {stepLabel(point)}
             </Text>
             <Text style={styles.chartCategory}>{point.label}</Text>
           </View>
@@ -1283,10 +1539,32 @@ function WaterfallChart({ chart }: { chart: ReportChart }) {
   );
 }
 
-function ChartBlock({ chart }: { chart: ReportChart }) {
-  if (chart.type === "bars") return <BarChart chart={chart} />;
-  if (chart.type === "waterfall") return <WaterfallChart chart={chart} />;
-  return <ColumnChart chart={chart} />;
+/**
+ * A waterfall step, printed with its sign.
+ *
+ * `display` is what should print and usually carries the sign and the unit
+ * ("+$410M"). When the model leaves it out the fallback used to be the bare
+ * number, and a waterfall of "427 410 43 880" says nothing about which of those
+ * are movements — so a step without a display at least gets a "+".
+ */
+function stepLabel(point: ReportChartPoint): string {
+  const display = point.display?.trim();
+  if (display) return display;
+  if (point.isTotal || point.value < 0) return String(point.value);
+  return `+${point.value}`;
+}
+
+function ChartBlock({
+  chart,
+  theme,
+}: {
+  chart: ReportChart;
+  theme: DeckTheme;
+}) {
+  if (chart.type === "bars") return <BarChart chart={chart} theme={theme} />;
+  if (chart.type === "waterfall")
+    return <WaterfallChart chart={chart} theme={theme} />;
+  return <ColumnChart chart={chart} theme={theme} />;
 }
 
 /** Verdict colour for a comparison row. Neutral by default. */
@@ -1303,11 +1581,20 @@ function changeTint(direction: ReportComparisonRow["direction"]): string {
   return PALETTE.card;
 }
 
-function ManagementQuestion({ question }: { question?: string | null }) {
+function ManagementQuestion({
+  question,
+  theme,
+}: {
+  question?: string | null;
+  theme: DeckTheme;
+}) {
   if (!question?.trim()) return null;
   return (
-    <View style={styles.question} wrap={false}>
-      <Text style={styles.questionHeading}>
+    <View
+      style={[styles.question, { borderLeftColor: theme.accent }]}
+      wrap={false}
+    >
+      <Text style={[styles.questionHeading, { color: theme.accent }]}>
         {MANAGEMENT_QUESTION_HEADING.toUpperCase()}
       </Text>
       <Text style={styles.questionText}>{question.trim()}</Text>
@@ -1320,9 +1607,11 @@ function ManagementQuestion({ question }: { question?: string | null }) {
 function CoverBody({
   doc,
   page,
+  theme,
 }: {
   doc: ReportDoc;
   page: Extract<ReportPage, { kind: "cover" }>;
+  theme: DeckTheme;
 }) {
   /**
    * The hero pair: the move, then the one number the announcement turned on.
@@ -1339,13 +1628,20 @@ function CoverBody({
     <View style={styles.bodyCentred}>
       <Text style={styles.coverName}>{page.companyName}</Text>
       <Rich style={styles.coverHeadline}>{page.headline}</Rich>
-      <View style={styles.coverRule} />
+      <View style={[styles.coverRule, { backgroundColor: theme.accent }]} />
 
       <View style={styles.tileRow}>
         {move ? (
-          <Tile kpi={move} width="50%" tone={falling ? "negative" : "accent"} />
+          <Tile
+            kpi={move}
+            width="50%"
+            tone={falling ? "negative" : "accent"}
+            theme={theme}
+          />
         ) : null}
-        {second ? <Tile kpi={second} width="50%" tone="cobalt" /> : null}
+        {second ? (
+          <Tile kpi={second} width="50%" tone="cobalt" theme={theme} />
+        ) : null}
       </View>
 
       {page.intro?.trim() ? (
@@ -1358,8 +1654,10 @@ function CoverBody({
 
 function RisksBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "risks" }>;
+  theme: DeckTheme;
 }) {
   const perRow = page.items.length <= 2 ? page.items.length : 3;
   const width = `${100 / perRow}%`;
@@ -1369,7 +1667,11 @@ function RisksBody({
         {page.items.map((item, index) => (
           <View key={index} style={[styles.tileCell, { width }]}>
             <View style={styles.tile} wrap={false}>
-              <IconDisc name={item.icon} tone={PALETTE.coralDeep} />
+              <IconDisc
+                name={item.icon}
+                tone={PALETTE.coralDeep}
+                theme={theme}
+              />
               <Text
                 style={[
                   styles.tileLabel,
@@ -1390,15 +1692,17 @@ function RisksBody({
 
 function EntitiesBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "entities" }>;
+  theme: DeckTheme;
 }) {
   return (
     <View style={styles.body}>
       {page.items.map((item, index) => (
         <View key={index} style={{ marginBottom: 10 }} wrap={false}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <IconDisc name="chart" size={20} />
+            <IconDisc name="chart" size={20} theme={theme} />
             <Text
               style={{
                 fontFamily: "Helvetica-Bold",
@@ -1412,11 +1716,14 @@ function EntitiesBody({
             <Rich
               style={{
                 fontSize: 9.5,
-                color: PALETTE.mint,
+                color: theme.accent,
                 marginLeft: 10,
                 flex: 1,
               }}
-              strongStyle={{ fontFamily: "Helvetica-Bold", color: PALETTE.mint }}
+              strongStyle={{
+                fontFamily: "Helvetica-Bold",
+                color: theme.accent,
+              }}
             >
               {item.stat}
             </Rich>
@@ -1443,19 +1750,32 @@ function EntitiesBody({
 
 function ComparisonBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "comparison" }>;
+  theme: DeckTheme;
 }) {
   return (
     <View style={styles.body}>
       <View style={styles.compHead}>
-        <Text style={[styles.compMetric, styles.compHeadCell, { paddingTop: 0, color: PALETTE.muted }]}>
+        <Text
+          style={[
+            styles.compMetric,
+            styles.compHeadCell,
+            { paddingTop: 0, color: PALETTE.muted },
+          ]}
+        >
           {page.columns[0].toUpperCase()}
         </Text>
-        <Text style={[styles.compHeadCell, { flex: 1, color: PALETTE.muted, marginRight: 8 }]}>
+        <Text
+          style={[
+            styles.compHeadCell,
+            { flex: 1, color: PALETTE.muted, marginRight: 8 },
+          ]}
+        >
           {page.columns[1].toUpperCase()}
         </Text>
-        <Text style={[styles.compHeadCell, { flex: 1, color: PALETTE.mint }]}>
+        <Text style={[styles.compHeadCell, { flex: 1, color: theme.accent }]}>
           {page.columns[2].toUpperCase()}
         </Text>
         <View style={styles.compChangeCell} />
@@ -1469,7 +1789,7 @@ function ComparisonBody({
               {row.before}
             </Rich>
           </View>
-          <View style={[styles.compNow, { borderColor: PALETTE.mintDeep }]}>
+          <View style={[styles.compNow, { borderColor: theme.accentDeep }]}>
             <Rich style={[styles.compText, { color: PALETTE.paper }]}>
               {row.now}
             </Rich>
@@ -1496,7 +1816,7 @@ function ComparisonBody({
         </View>
       ))}
 
-      <ConclusionBand text={page.conclusion} />
+      <ConclusionBand text={page.conclusion} theme={theme} />
       <SourceLine note={page.sourceNote} />
     </View>
   );
@@ -1512,8 +1832,10 @@ function ComparisonBody({
  */
 function TimelineBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "timeline" }>;
+  theme: DeckTheme;
 }) {
   const width = `${100 / page.events.length}%`;
   return (
@@ -1523,13 +1845,15 @@ function TimelineBody({
         <View style={[styles.timelineTrack, { top: 33 }]} />
         {page.events.map((event, index) => (
           <View key={index} style={[styles.timelineCell, { width }]}>
-            <Text style={styles.timelineDate}>{event.date}</Text>
-            <IconDisc name={event.icon} size={28} />
+            <Text style={[styles.timelineDate, { color: theme.accent }]}>
+              {event.date}
+            </Text>
+            <IconDisc name={event.icon} size={28} theme={theme} />
             <Rich style={styles.timelineText}>{event.text}</Rich>
           </View>
         ))}
       </View>
-      <ConclusionBand text={page.conclusion} />
+      <ConclusionBand text={page.conclusion} theme={theme} />
       <SourceLine note={page.sourceNote} />
     </View>
   );
@@ -1537,13 +1861,23 @@ function TimelineBody({
 
 function MarketVsRealityBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "market-vs-reality" }>;
+  theme: DeckTheme;
 }) {
   const blocks: Array<{ label: string; text: string; tone: string }> = [
     { label: "What was announced", text: page.headline, tone: PALETTE.cobalt },
-    { label: "What the market reacted to", text: page.marketFocus, tone: PALETTE.coral },
-    { label: "What decides it from here", text: page.whatMatters, tone: PALETTE.mint },
+    {
+      label: "What the market reacted to",
+      text: page.marketFocus,
+      tone: PALETTE.steel,
+    },
+    {
+      label: "What decides it from here",
+      text: page.whatMatters,
+      tone: theme.accent,
+    },
   ];
 
   return (
@@ -1572,8 +1906,10 @@ function MarketVsRealityBody({
 
 function VittiViewBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "vitti-view" }>;
+  theme: DeckTheme;
 }) {
   return (
     <View style={styles.body}>
@@ -1581,10 +1917,18 @@ function VittiViewBody({
         {page.ratings.map((rating, index) => (
           <View
             key={index}
-            style={[styles.tileCell, { width: `${100 / Math.max(1, page.ratings.length)}%` }]}
+            style={[
+              styles.tileCell,
+              { width: `${100 / Math.max(1, page.ratings.length)}%` },
+            ]}
           >
             <View style={styles.tile} wrap={false}>
-              <Text style={[styles.tileValue, { fontSize: 16, color: PALETTE.mint }]}>
+              <Text
+                style={[
+                  styles.tileValue,
+                  { fontSize: 16, color: theme.accent },
+                ]}
+              >
                 {rating.value}
               </Text>
               <Text style={styles.tileLabel}>{rating.label.toUpperCase()}</Text>
@@ -1597,13 +1941,17 @@ function VittiViewBody({
       </View>
 
       <View style={{ marginTop: 6 }}>
-        <Text style={styles.sectionLabel}>THE KEY DEBATE</Text>
+        <Text style={[styles.sectionLabel, { color: theme.accent }]}>
+          THE KEY DEBATE
+        </Text>
         <Rich style={styles.paragraph}>{page.keyDebate}</Rich>
-        <Text style={styles.sectionLabel}>NEXT CATALYST</Text>
+        <Text style={[styles.sectionLabel, { color: theme.accent }]}>
+          NEXT CATALYST
+        </Text>
         <Rich style={styles.paragraph}>{page.nextCatalyst}</Rich>
       </View>
 
-      <ManagementQuestion question={page.managementQuestion} />
+      <ManagementQuestion question={page.managementQuestion} theme={theme} />
       <SourceLine note={page.sourceNote} />
     </View>
   );
@@ -1611,8 +1959,10 @@ function VittiViewBody({
 
 function OutlookBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "outlook" }>;
+  theme: DeckTheme;
 }) {
   const [left, right] = page.columns ?? [
     "What would improve the story",
@@ -1622,11 +1972,11 @@ function OutlookBody({
     <View style={styles.body}>
       <View style={{ flexDirection: "row" }}>
         <View style={{ flex: 1, paddingRight: 18 }}>
-          <Text style={[styles.sectionLabel, { color: PALETTE.mint }]}>
+          <Text style={[styles.sectionLabel, { color: theme.accent }]}>
             {left.toUpperCase()}
           </Text>
           <View style={styles.rule} />
-          <Bullets items={page.improve} accent={PALETTE.mint} />
+          <Bullets items={page.improve} accent={theme.accent} />
         </View>
         <View style={{ flex: 1, paddingLeft: 18 }}>
           <Text style={[styles.sectionLabel, { color: PALETTE.coral }]}>
@@ -1636,7 +1986,7 @@ function OutlookBody({
           <Bullets items={page.worsen} accent={PALETTE.coral} />
         </View>
       </View>
-      <ConclusionBand text={page.conclusion} />
+      <ConclusionBand text={page.conclusion} theme={theme} />
       <SourceLine note={page.sourceNote} />
     </View>
   );
@@ -1644,8 +1994,10 @@ function OutlookBody({
 
 function ManagementBody({
   page,
+  theme,
 }: {
   page: Extract<ReportPage, { kind: "management" }>;
+  theme: DeckTheme;
 }) {
   return (
     <View style={styles.body}>
@@ -1653,16 +2005,22 @@ function ManagementBody({
         {page.people.map((person, index) => (
           <View
             key={index}
-            style={[styles.tileCell, { width: `${100 / Math.max(1, page.people.length)}%` }]}
+            style={[
+              styles.tileCell,
+              { width: `${100 / Math.max(1, page.people.length)}%` },
+            ]}
           >
             <View style={styles.tile} wrap={false}>
-              <IconDisc name="people" size={22} />
+              <IconDisc name="people" size={22} theme={theme} />
               <Text
-                style={[styles.tileLabel, { fontSize: 10.5, letterSpacing: 0, marginTop: 9 }]}
+                style={[
+                  styles.tileLabel,
+                  { fontSize: 10.5, letterSpacing: 0, marginTop: 9 },
+                ]}
               >
                 {person.name}
               </Text>
-              <Text style={[styles.tileNote, { color: PALETTE.mint }]}>
+              <Text style={[styles.tileNote, { color: theme.accent }]}>
                 {person.role}
               </Text>
               {person.tenure?.trim() ? (
@@ -1681,9 +2039,11 @@ function ManagementBody({
 
       {page.changes?.length ? (
         <View style={{ marginTop: 4 }}>
-          <Text style={styles.sectionLabel}>RECENT CHANGES</Text>
+          <Text style={[styles.sectionLabel, { color: theme.accent }]}>
+            RECENT CHANGES
+          </Text>
           <View style={styles.rule} />
-          <Bullets items={page.changes} accent={PALETTE.mint} />
+          <Bullets items={page.changes} accent={theme.accent} />
         </View>
       ) : null}
       <SourceLine note={page.sourceNote} />
@@ -1694,9 +2054,11 @@ function ManagementBody({
 function ClosingBody({
   doc,
   page,
+  theme,
 }: {
   doc: ReportDoc;
   page: Extract<ReportPage, { kind: "closing" }>;
+  theme: DeckTheme;
 }) {
   return (
     <View style={styles.body}>
@@ -1706,16 +2068,18 @@ function ClosingBody({
         </Rich>
       ))}
 
-      <View style={styles.coverRule} />
+      <View style={[styles.coverRule, { backgroundColor: theme.accent }]} />
 
       {page.pullQuote?.trim() ? (
-        <Text style={styles.quote}>{`"${page.pullQuote.trim()}"`}</Text>
+        <Text style={[styles.quote, { color: theme.accent }]}>
+          {`"${page.pullQuote.trim()}"`}
+        </Text>
       ) : null}
-      <Text style={[styles.quote, { marginTop: 8 }]}>
+      <Text style={[styles.quote, { marginTop: 8, color: theme.accent }]}>
         {`"${CLOSING_SIGN_OFF}"`}
       </Text>
 
-      <ManagementQuestion question={page.managementQuestion} />
+      <ManagementQuestion question={page.managementQuestion} theme={theme} />
 
       <View style={{ marginTop: 16 }}>
         <Text
@@ -1736,12 +2100,20 @@ function ClosingBody({
   );
 }
 
-function PageBody({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
-  const accent = pageAccent(page.kind);
+function PageBody({
+  doc,
+  page,
+  theme,
+}: {
+  doc: ReportDoc;
+  page: ReportPage;
+  theme: DeckTheme;
+}) {
+  const accent = pageAccent(page.kind, theme);
 
   switch (page.kind) {
     case "cover":
-      return <CoverBody doc={doc} page={page} />;
+      return <CoverBody doc={doc} page={page} theme={theme} />;
 
     case "narrative":
       return (
@@ -1759,7 +2131,7 @@ function PageBody({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
     case "kpis":
       return (
         <View style={styles.body}>
-          <TileGrid kpis={page.kpis} />
+          <TileGrid kpis={page.kpis} theme={theme} />
           {page.notes?.map((note, index) => (
             <Text
               key={index}
@@ -1769,47 +2141,47 @@ function PageBody({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
             </Text>
           ))}
           <Callouts callouts={page.callouts} accent={accent} />
-          <ConclusionBand text={page.conclusion} />
+          <ConclusionBand text={page.conclusion} theme={theme} />
           <SourceLine note={page.sourceNote} />
         </View>
       );
 
     case "entities":
-      return <EntitiesBody page={page} />;
+      return <EntitiesBody page={page} theme={theme} />;
 
     case "risks":
-      return <RisksBody page={page} />;
+      return <RisksBody page={page} theme={theme} />;
 
     case "chart":
       return (
         <View style={styles.bodyCentred}>
-          <ChartBlock chart={page.chart} />
+          <ChartBlock chart={page.chart} theme={theme} />
           <Callouts callouts={page.callouts} accent={accent} />
-          <ConclusionBand text={page.conclusion} />
+          <ConclusionBand text={page.conclusion} theme={theme} />
           <SourceLine note={page.sourceNote} />
         </View>
       );
 
     case "market-vs-reality":
-      return <MarketVsRealityBody page={page} />;
+      return <MarketVsRealityBody page={page} theme={theme} />;
 
     case "comparison":
-      return <ComparisonBody page={page} />;
+      return <ComparisonBody page={page} theme={theme} />;
 
     case "timeline":
-      return <TimelineBody page={page} />;
+      return <TimelineBody page={page} theme={theme} />;
 
     case "management":
-      return <ManagementBody page={page} />;
+      return <ManagementBody page={page} theme={theme} />;
 
     case "vitti-view":
-      return <VittiViewBody page={page} />;
+      return <VittiViewBody page={page} theme={theme} />;
 
     case "outlook":
-      return <OutlookBody page={page} />;
+      return <OutlookBody page={page} theme={theme} />;
 
     case "closing":
-      return <ClosingBody doc={doc} page={page} />;
+      return <ClosingBody doc={doc} page={page} theme={theme} />;
   }
 }
 
@@ -1821,13 +2193,16 @@ function PageBody({ doc, page }: { doc: ReportDoc; page: ReportPage }) {
  * feel they have left the deck. The text itself is verbatim from `types.ts` and
  * never model-generated.
  */
-function DisclaimerPage({ doc }: { doc: ReportDoc }) {
+function DisclaimerPage({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
   return (
     <Page size={PAGE_SIZE} style={styles.page}>
-      <View style={styles.edgeTop} fixed />
-      <Chrome doc={doc} />
+      <View
+        style={[styles.edgeTop, { backgroundColor: theme.accentDeep }]}
+        fixed
+      />
+      <Chrome doc={doc} theme={theme} />
       <View style={styles.body}>
-        <Text style={styles.disclaimerHeading}>
+        <Text style={[styles.disclaimerHeading, { color: theme.accent }]}>
           {DISCLAIMER_HEADING.replace(/:$/, "").toUpperCase()}
         </Text>
         {DISCLAIMER_PARAGRAPHS.map((paragraph, index) => (
@@ -1836,13 +2211,17 @@ function DisclaimerPage({ doc }: { doc: ReportDoc }) {
           </Text>
         ))}
       </View>
-      <View style={styles.edgeBottom} fixed />
+      <View
+        style={[styles.edgeBottom, { backgroundColor: theme.accentDeep }]}
+        fixed
+      />
       <Footer doc={doc} pageNumber={sheetCount(doc)} />
     </Page>
   );
 }
 
 export function DailyMoverReport({ doc }: { doc: ReportDoc }) {
+  const theme = deckTheme(doc.movePct);
   return (
     <Document
       title={`${doc.ticker} Daily Mover — ${formatReportDate(doc.moveDate)}`}
@@ -1850,14 +2229,14 @@ export function DailyMoverReport({ doc }: { doc: ReportDoc }) {
       subject={`Daily Mover: ${doc.companyName} (${doc.ticker})`}
     >
       {doc.pages.map((page, index) => (
-        <Sheet key={index} doc={doc} pageNumber={index + 1}>
+        <Sheet key={index} doc={doc} pageNumber={index + 1} theme={theme}>
           {page.kind === "cover" ? null : (
-            <PageHeading page={page} accent={pageAccent(page.kind)} />
+            <PageHeading page={page} accent={pageAccent(page.kind, theme)} />
           )}
-          <PageBody doc={doc} page={page} />
+          <PageBody doc={doc} page={page} theme={theme} />
         </Sheet>
       ))}
-      <DisclaimerPage doc={doc} />
+      <DisclaimerPage doc={doc} theme={theme} />
     </Document>
   );
 }

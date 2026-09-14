@@ -529,6 +529,12 @@ export const REPORT_LIMITS = {
   /** 'comparison': past six rows the table stops being scannable. */
   comparisonRows: 6,
   /**
+   * The conclusion band: two lines at the sheet measure.
+   *
+   * 220 was a portrait-page number and cut mid-sentence on the deck, which
+   * prints an ellipsis in the middle of the one line the page is making.
+   */
+  /**
    * The cells of a comparison row, which had no budget at all until a row read
    * "1,275koz gold (50% attributable basis; ~1.0Moz on the 40% basis used in
    * the transaction comparables)".
@@ -540,7 +546,7 @@ export const REPORT_LIMITS = {
    */
   comparisonCellChars: 88,
   comparisonChangeChars: 28,
-  conclusionChars: 220,
+  conclusionChars: 280,
   /** 'chart': eight columns is the most that stays legible at the measure. */
   chartPoints: 8,
   /** 'management': the people who actually run it, not the whole board. */
