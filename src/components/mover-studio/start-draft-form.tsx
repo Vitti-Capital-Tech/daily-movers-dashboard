@@ -42,7 +42,17 @@ export function StartDraftForm({ today }: { today: string }) {
   return (
     <Card>
       <CardContent className="py-4">
-        <form action={formAction} className="space-y-4">
+        {/**
+         * `noValidate`, because the server is the one that decides.
+         *
+         * `readCriterion` clamps every field into `SCREEN_LIMITS` before the
+         * screen runs, so browser validation adds nothing except a way for the
+         * form to fail invisibly: an invalid control inside the collapsed panel
+         * cannot be focused, so Chrome refuses to submit and shows the user
+         * nothing. That is exactly what happened on 14 September 2026, when the
+         * market-cap default sat off its own step.
+         */}
+        <form action={formAction} noValidate className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" disabled={isPending} className="gap-2">
               {isPending ? (

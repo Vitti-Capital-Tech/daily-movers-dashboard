@@ -103,10 +103,45 @@ export type ScreenResult = {
  */
 export const SCREEN_LIMITS = {
   minTurnover: { min: 0, max: 50_000_000, step: 100_000 },
-  minMarketCap: { min: 0, max: 1_000_000_000, step: 10_000_000 },
+  /**
+   * 5 million, not 10.
+   *
+   * `step` on a number input is not a spinner increment — it defines which
+   * values are *valid*, counted from `min`. At a step of 10 million the default
+   * of 75 million was not a multiple of it, so the field was permanently
+   * invalid; and because the screen panel is collapsed with `hidden`, the
+   * browser could not focus the field to complain. The result was a submit
+   * button that did nothing at all, silently, with only a console warning
+   * ("An invalid form control with name='minMarketCap' is not focusable") to
+   * say why.
+   *
+   * Every default must sit on its field's step. The check below enforces it.
+   */
+  minMarketCap: { min: 0, max: 1_000_000_000, step: 5_000_000 },
   minAbsChangePct: { min: 1, max: 50, step: 1 },
   perSide: { min: 5, max: 50, step: 5 },
 } as const;
+
+/**
+ * Every default has to be a valid value for its own input.
+ *
+ * A development-time warning rather than a throw: a mismatch breaks a form in
+ * the browser, which is worth shouting about, but it is not worth taking the
+ * server down for. The condition is the same one the browser applies.
+ */
+if (process.env.NODE_ENV !== "production") {
+  for (const [field, limits] of Object.entries(SCREEN_LIMITS)) {
+    const value = DEFAULT_SCREEN[field as keyof ScreenCriteria];
+    const offStep = (value - limits.min) % limits.step !== 0;
+    if (offStep || value < limits.min || value > limits.max) {
+      console.warn(
+        `SCREEN_LIMITS.${field}: the default ${value} is not a valid value ` +
+          `(min ${limits.min}, max ${limits.max}, step ${limits.step}). ` +
+          `The browser will block the form and say nothing.`,
+      );
+    }
+  }
+}
 
 /**
  * How many of a company's earlier price-sensitive announcements to read.
