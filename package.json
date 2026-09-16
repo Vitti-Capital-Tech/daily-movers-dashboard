@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:apply": "tsx scripts/apply-sql.mts",
     "db:auth": "tsx scripts/apply-sql.mts drizzle/auth-setup.sql",
+    "db:cron": "tsx scripts/cron-setup.mts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
     "storage:setup": "tsx scripts/storage-setup.mts",

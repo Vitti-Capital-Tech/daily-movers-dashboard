@@ -76,6 +76,7 @@ account password.
 | `npm run db:seed` | Idempotent seed |
 | `npm run db:studio` | Drizzle Studio |
 | `npm run storage:setup` | Create Supabase private storage bucket |
+| `npm run db:cron -- <url>` | Point pg_cron at the deployed Daily Mover route (06:00 IST). URL remembered after the first run |
 | `npm run reports:download` | Batch download all attached PDF reports to a local folder |
 | `npm run report:preview` | Render the report template to a PDF locally — the fixture, or `-- <draftId>` from the database. No API call |
 | `npm run logo:build` | Regenerate `lib/report/logo.ts` from `public/logo.jpeg` after the asset changes |
@@ -83,7 +84,7 @@ account password.
 
 ## Mover Studio
 
-Each weekday **at 06:45 IST — 11:15 in Sydney, about an hour into the session**
+Each weekday **at 06:00 IST — 10:30 in Sydney, half an hour into the session**
 — Claude drafts that day's Daily Mover and leaves it in a review queue at
 `/mover-studio` for an analyst to approve or reject. Approving files it in the
 archive exactly as a manual upload would.
@@ -177,13 +178,34 @@ published a Daily Mover for the day**, or if a scheduled draft for the day
 already exists. `?force=1` with the cron secret skips only the time-of-day check,
 for re-running a session that was missed.
 
-**Why the cron fires twice.** Vercel cron expressions are UTC only, and Sydney is
-UTC+10 for half the year and UTC+11 for the other half. Both 01:15 and 02:15 UTC
-— 06:45 and 07:45 IST — are scheduled, and the handler only acts if the firing
-lands between 11:00 and 15:00 Sydney time. Both firings pass that window, and the first to arrive does
-the work — the second is a no-op against the day's unique index. The window is
-wide rather than tight because Hobby-plan cron precision is ±59 minutes, which a
-narrow window can miss entirely. Nothing changes when daylight saving does.
+**Who calls it: Supabase `pg_cron`, not Vercel.** `vercel.json` has no `crons`
+key. The schedule lives in [`drizzle/cron-setup.sql`](drizzle/cron-setup.sql) as
+a single pg_cron job at `30 0 * * 1-5` UTC, and `pg_net` makes the HTTP call with
+the cron secret. Set it up once with `npm run db:cron -- https://your-app.vercel.app`.
+
+Vercel Cron was dropped because the Hobby plan schedules with ±59 minutes of
+precision — the nominal time is the *earliest* a job can run, not when it runs —
+and this one landed about 29 minutes late every day. pg_cron fires on the minute.
+
+**Why one schedule, where Vercel needed two.** India has no daylight saving, so
+06:00 IST is 00:30 UTC on every day of the year. The old pair existed only so
+that an hour of slop would still land inside the Sydney session on both sides of
+the AEST/AEDT switch; with minute precision there is nothing to straddle.
+
+**Why the window opens at the bell.** The handler still checks that the firing
+lands between 10:00 and 15:00 Sydney time. 00:30 UTC is 10:30 in Sydney under
+AEST and 11:30 under AEDT, so the floor has to be at or below 10:30 — the old
+11:00 floor would have silently skipped every AEST day, six months of the year.
+It does not go lower than 10:00 because there is no continuous trading to screen
+before the open. Dedupe is not the window's job: the partial unique index on
+`(move_date) WHERE trigger = 'cron'` is what makes a second caller a no-op, which
+is why adding a Vercel cron back as a fallback would need no code change.
+
+**What "exactly 06:00" means.** pg_cron starts the job within a second of 00:30
+UTC. The request is exact; the draft is not — generation runs in `after()` and
+takes two to five minutes. Note that `cron.job_run_details` records success as
+soon as the request is *queued*, because pg_net is asynchronous; the HTTP status
+is in `net._http_response`. Both queries are in `drizzle/cron-setup.sql`.
 
 **`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
 higher value fails the *build* on Hobby rather than failing at runtime. A run
