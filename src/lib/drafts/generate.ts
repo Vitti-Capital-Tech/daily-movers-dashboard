@@ -90,10 +90,16 @@ export type SkipReason =
  * Every candidate needs one request to find out whether it filed anything
  * price-sensitive today, and a candidate that filed nothing is unwritable — so
  * this is a hard filter, not just context for the model. Capped because a
- * volatile day can put forty names on the board and the answer rarely changes
- * after the first couple of dozen.
+ * volatile day can put a long board in front of it and the answer rarely
+ * changes after the first couple of dozen.
+ *
+ * **Keep this at or above `DEFAULT_SCREEN.perSide * 2`.** The list it truncates
+ * is the two boards interleaved, so a cap below that silently discards the tail
+ * of both sides: at 40, a `perSide` of 25 produced exactly the top 20 of each
+ * and the extra ten rows a side were never looked up — the setting read as
+ * applied in the Studio and did nothing. 50 covers the current 25 a side.
  */
-const CANDIDATE_LOOKUP_LIMIT = 40;
+const CANDIDATE_LOOKUP_LIMIT = 50;
 const CANDIDATE_LOOKUP_CONCURRENCY = 6;
 
 /**

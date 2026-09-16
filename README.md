@@ -92,8 +92,8 @@ archive exactly as a manual upload would.
 **The pipeline**
 
 1. **Screen the board.** Every ASX listing is quoted; the ones that moved at
-   least 5% on at least $500k of turnover and $20m of market cap are ranked into
-   top-20 gainers and top-20 losers.
+   least 5% on at least $5m of market cap are ranked into top-25 gainers and
+   top-25 losers. There is no turnover floor — see below.
 2. **Shortlist the explainable ones.** Each survivor's announcements for the day
    are checked, and anything without a *price-sensitive* filing is dropped — a
    move the public record doesn't explain is not a report.
@@ -533,12 +533,17 @@ ASX company directory plus the market provider's session moves turned out better
 anyway: no bot-detection surface, turnover computed exactly in dollars, and the
 screen runs over the whole universe instead of someone else's page one.
 
-**The liquidity screen runs before Claude sees anything.** On a representative
-day the raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover,
-+27% on **$2,451**. No prompt fixes a shortlist made of those. The floors are now
-$1m turnover and $75m market cap, up from $500k/$20m: the old pair was a pure
-liquidity filter and still let through $30m explorers whose entire move was one
-drill hole. The selection prompt weighs the same thing from the other side —
+**The screen runs before Claude sees anything.** On a representative day the
+raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover, +27% on
+**$2,451**. No prompt fixes a shortlist made of those. The floors went $500k/$20m
+→ $1m/$75m → **no turnover floor and $5m market cap**, and the last move is a
+consequence of the schedule rather than a change of mind: turnover is cumulative
+from the open, and the board is now screened at 10:30 Sydney instead of 11:15, so
+a dollar floor half an hour into the session selects for whatever traded first
+and empties the board on a quiet morning. Turnover is still computed and still
+printed on every candidate — it is just no longer a gate, which leaves the $5m
+market-cap floor as the only structural filter. The selection prompt weighs the
+same thing from the other side —
 each candidate's turnover is printed as a share of its market capitalisation,
 because a 30% move on 8% of the register changing hands is a speculative
 blow-off while the same move on 0.4% is a re-rate — and it applies one test:

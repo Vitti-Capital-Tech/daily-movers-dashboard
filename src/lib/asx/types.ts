@@ -44,35 +44,59 @@ export type ScreenCriteria = {
  * research, and no amount of prompting fixes a shortlist made of those — the
  * filter has to happen before the model is asked to choose.
  *
- * Defaults are conservative rather than clever. They live here, in the
- * client-safe module, so the form's default values and the server's fallback
- * are the same numbers and cannot drift.
+ * The defaults live here, in the client-safe module, so the form's default
+ * values and the server's fallback are the same numbers and cannot drift.
  */
 /**
- * The default screen, tuned toward companies a Daily Mover can say something
- * durable about.
+ * The default screen. Wide, because the run now happens early.
  *
- * The floors were $500k turnover and $20m market cap, which is a liquidity
- * screen and nothing more — it kept out the +47%-on-$107k nano-caps and let
- * through plenty of $30m explorers whose move was one drill hole. Those produce
- * a report that is unfalsifiable on the day and worthless a month later, and the
- * desk kept passing over them at the selection stage anyway.
+ * The history matters here, because these numbers have moved twice in opposite
+ * directions. They began at $500k turnover / $20m market cap — a pure liquidity
+ * filter, which kept out the +47%-on-$107k nano-caps but let through $30m
+ * explorers whose whole move was one drill hole. They were then raised to $1m /
+ * $75m to push the shortlist toward companies with revenue and a disclosure
+ * history, on the reasoning that a single-catalyst explorer makes a report that
+ * is unfalsifiable on the day and worthless a month later.
  *
- * $1m and $75m instead. On a normal session that still leaves both boards well
- * populated, and it shifts the shortlist toward companies with revenue, a
- * disclosure history and a reason to move that survives contact with the
- * accounts. An analyst who wants the speculative end can lower both in the
- * Studio — `SCREEN_LIMITS` still allows zero.
+ * **A turnover floor stopped being affordable when the schedule moved.** The
+ * draft used to be screened at 11:15 Sydney, an hour and a quarter into the
+ * session; it is now screened at 10:30, thirty minutes in. Turnover is
+ * cumulative from the open, so the same stock has roughly a quarter of the
+ * dollars against its name at 10:30 that it had at 11:15. A $1m floor applied
+ * half an hour into trading does not select for liquidity — it selects for
+ * whatever happened to trade first, and on a quiet morning it empties the board
+ * entirely. Hence zero: the turnover *figure* is still computed, printed on
+ * every candidate, and weighed by the selection prompt as a share of market
+ * capitalisation. It is simply no longer a gate.
+ *
+ * That leaves `minMarketCap` carrying the whole nano-cap defence on its own, so
+ * it is set at $5m rather than removed — low enough to admit the speculative end
+ * the desk asked for, high enough to exclude the shells. The +27%-on-$2,451 rows
+ * that motivated the original screen are $2-3m companies and still fall outside
+ * it.
+ *
+ * Note that `passesScreen` rejects a *null* turnover regardless of this floor:
+ * an unknown figure is not evidence of a liquid stock, and zero here means
+ * "don't gate on the number", not "accept rows that have no number".
+ *
+ * An analyst who wants the old behaviour can raise both in the Studio. Beware
+ * that `SCREEN_LIMITS.minTurnover` has a step of 100,000, so the smallest
+ * non-zero floor the form will accept is $100k.
  */
 export const DEFAULT_SCREEN: ScreenCriteria = {
-  /** Session dollar turnover. Below this, the move isn't tradeable. */
-  minTurnover: 1_000_000,
-  /** Market capitalisation floor. */
-  minMarketCap: 75_000_000,
+  /** Not a gate. See above: at 10:30 a dollar floor selects for luck, not size. */
+  minTurnover: 0,
+  /** Market capitalisation floor — the only structural filter left. */
+  minMarketCap: 5_000_000,
   /** Ignore moves too small to be worth a report. */
   minAbsChangePct: 5,
-  /** How many rows per side to keep after ranking. */
-  perSide: 20,
+  /**
+   * How many rows per side to keep after ranking. Kept in step with
+   * `CANDIDATE_LOOKUP_LIMIT` in `lib/drafts/generate.ts`, which truncates the
+   * interleaved board: at a cap of 40 anything above 20 a side is discarded
+   * before it is ever looked up.
+   */
+  perSide: 25,
 };
 
 export type ScreenedBoard = {
