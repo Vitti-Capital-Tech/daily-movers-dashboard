@@ -70,6 +70,76 @@ const LEGAL_INSTRUMENT_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * Litigation, regulators and shareholder authority.
+ *
+ * A separate class because these explain a move in a way results never do, and
+ * because the reading order for them is the opposite of the usual one: when the
+ * catalyst is a court, a panel or a vote, the *primary* document is the thing to
+ * read and the company's own summary of it is the gloss.
+ *
+ * The case that produced this class: a settlement announcement whose whole
+ * meaning sat in a Takeovers Panel application and an EGM result filed months
+ * earlier. The corpus at the time ranked by recency and filled up with dividend
+ * notifications instead, so the report could say a dispute had settled without
+ * being able to say what the dispute was.
+ *
+ * `panel receives` stays a series above -- five receipt notices for one
+ * application are still one fact. What lands here are the documents that move
+ * the legal position: declarations, orders, judgments, undertakings, meeting
+ * results.
+ */
+const LEGAL_REGULATORY_PATTERNS: RegExp[] = [
+  /takeovers panel/i,
+  /declaration of unacceptable circumstances/i,
+  /panel (orders|decision|reasons|declines|makes)/i,
+  /(federal|supreme|high) court/i,
+  /court (orders?|approval|hearing|proceedings?|judgment|judgement)/i,
+  /(commencement|settlement|discontinuance) of (legal |court )?proceedings/i,
+  /legal proceedings|originating (process|application)|statement of claim/i,
+  /class action|injunction|undertakings? to (asic|the court)/i,
+  /asic.{0,40}(investigation|inquiry|proceedings|action|relief|exemption)/i,
+  /asx (query|aware|price query|appendix 3y query) letter/i,
+  /response to asx (query|aware|price) letter/i,
+  /(results?|outcome) of (the )?(annual general |general |extraordinary general |scheme )?meeting/i,
+  /shareholder approval|requisition|s249d|section 249[dq]/i,
+  /scheme of arrangement|first court hearing|second court hearing/i,
+  /deed of settlement|settlement (deed|agreement|of dispute)/i,
+];
+
+/**
+ * Filings that are administratively required and analytically empty.
+ *
+ * Distinct from a series: a series is one process filed repeatedly, where the
+ * newest member is worth reading. These are worth reading approximately never.
+ * A change of registered office, an Appendix 3Y recording that a director's
+ * holding moved by 4,000 shares, last quarter's dividend timetable -- a Daily
+ * Mover has never cited one, and on a serial filer they crowd out the documents
+ * that explain the move.
+ *
+ * They are dropped rather than budgeted down, with one exception that matters:
+ * `rankHistoricalFilings` reinstates any filing that today's announcement
+ * explicitly refers back to, whatever class it landed in. A routine-looking
+ * headline that today's release points at is not routine.
+ */
+const ROUTINE_PATTERNS: RegExp[] = [
+  /appendix 3[abxyz]/i,
+  /appendix 4g/i,
+  /dividend\s*\/?\s*distribution/i,
+  /dividend (notification|timetable|record date|currency)/i,
+  /(request for )?trading halt/i,
+  /(suspension|reinstatement) (from|to) (official )?quotation/i,
+  /voluntary suspension/i,
+  /change (of|in) director'?s interest notice/i,
+  /(initial|change (of|in)) (substantial holder|substantial holding)/i,
+  /becoming a substantial holder|ceasing to be a substantial holder/i,
+  /change of (address|registered office|share registry|company secretary)/i,
+  /(proxy form|notice of record date|distribution reinvestment)/i,
+  /corporate governance (statement|compliance)/i,
+  /security holder (details|communication) (update|preference)/i,
+  /notification of (dividend|distribution)/i,
+];
+
+/**
  * Filings the desk reads even when the ASX did not flag them price-sensitive.
  *
  * The price-sensitive flag answers "did this move the stock", which is the right
@@ -118,13 +188,30 @@ export function isBackgroundFiling(announcement: Announcement): boolean {
   if (SERIES_PATTERNS.some(({ pattern }) => pattern.test(headline))) {
     return false;
   }
+  if (ROUTINE_PATTERNS.some((pattern) => pattern.test(headline))) {
+    return false;
+  }
   return BACKGROUND_PATTERNS.some((pattern) => pattern.test(headline));
+}
+
+/** Whether a headline is one of the administratively-required empty ones. */
+export function isRoutineFiling(announcement: Announcement): boolean {
+  return ROUTINE_PATTERNS.some((pattern) => pattern.test(announcement.headline));
+}
+
+/** Whether a headline is litigation, a regulator, or shareholder authority. */
+export function isLegalRegulatoryFiling(announcement: Announcement): boolean {
+  return LEGAL_REGULATORY_PATTERNS.some((pattern) =>
+    pattern.test(announcement.headline),
+  );
 }
 
 export type FilingClass =
   | "substantive"
   | "series"
   | "legal-instrument"
+  | "legal-regulatory"
+  | "routine"
   | "background";
 
 export type ClassifiedAnnouncement = Announcement & {
@@ -152,6 +239,24 @@ export function classifyAnnouncement(
     };
   }
 
+  /**
+   * Before `routine`, because the two overlap on purpose. "Results of Meeting"
+   * is shareholder authority and belongs here; "Notice of Record Date" is
+   * paperwork. Checking legal first means a headline that reads both ways is
+   * kept rather than dropped, which is the safer direction to be wrong in.
+   */
+  if (LEGAL_REGULATORY_PATTERNS.some((pattern) => pattern.test(headline))) {
+    return {
+      ...announcement,
+      filingClass: "legal-regulatory",
+      seriesKey: null,
+    };
+  }
+
+  if (ROUTINE_PATTERNS.some((pattern) => pattern.test(headline))) {
+    return { ...announcement, filingClass: "routine", seriesKey: null };
+  }
+
   if (isBackgroundFiling(announcement)) {
     return { ...announcement, filingClass: "background", seriesKey: null };
   }
@@ -171,6 +276,20 @@ export const CHAR_BUDGET: Record<FilingClass, number> = {
   substantive: 90_000,
   series: 12_000,
   "legal-instrument": 14_000,
+  /**
+   * Court and panel documents are read for their operative parts -- the orders,
+   * the undertakings, the declaration -- which sit at the front, but the
+   * reasoning that follows is often the only place the commercial substance is
+   * stated. Larger than a legal instrument's front matter for that reason, and
+   * still well short of `substantive`, since the back half is authorities.
+   */
+  "legal-regulatory": 30_000,
+  /**
+   * Only reachable when today's announcement referred back to one of these by
+   * name, since `rankHistoricalFilings` otherwise drops the class. A dividend
+   * timetable that today's release points at is being pointed at for one date.
+   */
+  routine: 6_000,
   /**
    * Background filings are read for context, on a deliberately tight budget.
    *

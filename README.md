@@ -557,6 +557,42 @@ because a 30% move on 8% of the register changing hands is a speculative
 blow-off while the same move on 0.4% is a re-rate — and it applies one test:
 would this report still be worth reading in a month?
 
+**The corpus is chosen from today's announcement, not from the calendar.** The
+pipeline reads today's price-sensitive filings *first*, then decides what history
+to read — because the one document guaranteed to say which history matters is
+today's. Four things come out of that text before anything else is downloaded
+(`lib/asx/references.ts`, `lib/asx/signals.ts`, `lib/drafts/research-signals.ts`):
+
+- **Referenced documents.** "…continues on the terms set out in the Buy-Back
+  Booklet dated 12 August" is a pointer, and it is followed: the reference is
+  matched back to a real filing by date and headline, and admitted to the corpus
+  *above* the reading target rather than competing for a slot. This is the miss
+  that motivated the whole change — a report explained a buy-back without the
+  booklet holding its mechanics, while the budget went on old dividend notices.
+- **The event chain.** The thread today sits on, reconstructed oldest-first, so
+  the report can start the story at its beginning: capital-management proposal →
+  EGM approval → court challenge → Takeovers Panel → settlement today. The chain
+  seeds its vocabulary from the referenced documents as well as today's headline,
+  which is what lets it reach back past a headline that shares no words with the
+  filing that started everything.
+- **Personnel.** Sentences describing anyone arriving, leaving or changing role,
+  quoted verbatim and never interpreted. Board change is always material and is
+  almost never the headline.
+- **Dates.** Every date today's filings state, with the clause around each one,
+  plus any two close enough to be mistaken for each other — a buy-back closing on
+  the 21st and withdrawals running to the 24th are two deadlines, and merging
+  them is an error that reads perfectly fluently.
+
+**Ranking is by relevance, not recency.** `rankHistoricalFilings` scores every
+earlier filing: referenced by today's announcement beats everything, then the
+event chain, then legal/regulatory documents when today's catalyst is a court, a
+regulator or a vote, then the accounts, then headline overlap with today, with
+recency as a weak tiebreak. Routine paperwork — dividend timetables, trading
+halts, Appendix 3Y interest notices, address changes — is dropped outright
+*unless today's announcement points at it*. The draft's audit trail records the
+score and reasons for everything kept and the grounds for everything dropped, so
+a reviewer can tell a deliberate omission from a bug.
+
 **Volume is the evidence, not the move.** A Daily Mover's central claim is that
 an announcement moved the stock, and the session's raw share count cannot support
 it — two million shares is a quiet day for one company and five times normal for

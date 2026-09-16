@@ -3,6 +3,7 @@ import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 
 import { CATALYST_SLUGS, isCatalystSlug, type CatalystSlug } from "@/lib/catalysts";
+import type { ResearchSignals } from "@/lib/drafts/research-signals";
 import { formatMoneyCompact, type ScreenResult, type ScreenerRow } from "@/lib/asx/types";
 import {
   REPORT_ICONS,
@@ -1002,6 +1003,12 @@ CONTRACTS. Separate the headline value from what is actually committed. Look for
 
 ACQUISITIONS. Purchase price, upfront versus earn-out, how it is funded (cash, debt, shares), revenue and EBITDA acquired, the implied multiple, EPS accretion, stated synergies, goodwill, and integration risk. Then ask the question that matters: what does growth look like without the acquisition? Never describe acquisition-driven growth as organic.
 
+LEGAL, REGULATORY AND SHAREHOLDER ACTION. When the catalyst is a court, the Takeovers Panel, ASIC, the ASX or a shareholder vote, the primary documents explain the move and the company's own summary of them does not. Say what the dispute or application was ABOUT, who brought it, what was decided or agreed, what it now binds the company to, and what is still open. Be exact with legal language: proceedings "discontinued" is not the same fact as a matter "resolved", an undertaking is not an order, and a settlement whose terms are not disclosed is a different thing from one whose terms are. Where the evidence does not say, write that it does not say.
+
+BOARD, MANAGEMENT AND MANDATE CHANGE. Always check for it, and never assume the headline would have mentioned it — it very often does not. Who joins, who leaves, who takes which chair, and whether the investment manager or responsible entity changed. Give the timing exactly: effective immediately, on completion, or at a stated date. Distinguish what HAS happened from what is EXPECTED to happen — "expected to retire following completion of the buy-back" is contingent on the buy-back completing, and writing it as a departure states as done something that has not occurred. Where a board turns over substantially, say what that means for control and for the mandate; that is usually more material than the transaction it arrived attached to.
+
+WHAT IS ACTUALLY NEW TODAY. Before writing anything, separate today's news from what was already public. A proposal announced in May and approved today is not a proposal announced today: the news is the approval. Presenting the earlier step as new overstates the event, misleads on the timeline, and is the easiest error in the report to make, because the announcement restates its own history as context. Where today confirms, completes, approves or resolves something already disclosed, say so in those words and be specific about what changed — the status, not the substance.
+
 EARNINGS QUALITY. Do not stop at EBITDA. Check whether the earnings are backed by cash: operating cash flow, free cash flow, cash conversion, receivables, inventory, working capital. If cash flow is materially weaker or stronger than earnings, explain why.
 
 MARGINS. When a margin moves, explain why — mix, operating leverage, cost-out, acquisitions, pricing. Never print two percentages and leave the reader to connect them. A falling gross margin alongside a rising EBITDA margin is a story, not a contradiction, and a margin decline is not automatically bad if the economics improved.
@@ -1610,7 +1617,137 @@ type EvidenceInput = {
    * the fifteen most substantive filings, and it costs almost nothing to see.
    */
   filingTimeline: { date: string; isPriceSensitive: boolean; headline: string }[];
+  /**
+   * What today's announcement pointed at, moved, and dated.
+   *
+   * Built by `planCorpus` before the history was chosen — see
+   * `lib/drafts/research-signals.ts`. Optional because `regenerateDraft` re-runs
+   * a stored draft without re-deriving them; absent, these blocks are omitted
+   * rather than faked.
+   */
+  researchSignals?: ResearchSignals | null;
 };
+
+/**
+ * The four signal blocks, rendered.
+ *
+ * Each one exists because a published draft got something wrong that the
+ * evidence plainly contained, and in every case the fix is the same shape: put
+ * the specific thing in front of the model as evidence, with its source named,
+ * rather than adding another sentence of instruction and hoping.
+ */
+function formatResearchSignals(
+  signals: ResearchSignals,
+): Anthropic.ContentBlockParam[] {
+  const blocks: Anthropic.ContentBlockParam[] = [];
+
+  const referenced = signals.references.filter((entry) => entry.matched);
+  const unmatched = signals.references.filter((entry) => !entry.matched);
+
+  if (referenced.length > 0 || unmatched.length > 0) {
+    const lines: string[] = [];
+    for (const entry of referenced) {
+      const matched = entry.matched as NonNullable<typeof entry.matched>;
+      lines.push(
+        `- ${entry.label}${entry.statedDate ? ` (stated date ${entry.statedDate})` : ""} ` +
+          `-> ${matched.date} "${matched.headline}"` +
+          `${entry.read ? " [READ IN FULL, in the filings block above]" : " [NOT read in full — use the timeline]"}`,
+      );
+      lines.push(`    today's words: "${entry.phrase.slice(0, 260)}"`);
+    }
+    for (const entry of unmatched) {
+      lines.push(
+        `- ${entry.label}${entry.statedDate ? ` (stated date ${entry.statedDate})` : ""} ` +
+          `-> NOT FOUND in the fetched filing history (${entry.because})`,
+      );
+    }
+
+    blocks.push({
+      type: "text",
+      text:
+        `DOCUMENTS TODAY'S ANNOUNCEMENT REFERS BACK TO\n\n` +
+        `Today's release points at these earlier documents by name. The company has told you they ` +
+        `are the terms it is operating under, so they outrank general history: where one is marked ` +
+        `READ IN FULL, prefer it over any other source for the mechanics, the terms and the dates ` +
+        `of the thing it describes. Where one is marked NOT FOUND, say plainly that the report ` +
+        `could not verify those terms rather than inferring them.\n\n${lines.join("\n")}`,
+    });
+  }
+
+  if (signals.chain.length > 0) {
+    const lines = signals.chain.map(
+      (step) =>
+        `${step.date}  ${step.isOrigin ? "[START]" : "       "} ` +
+        `${step.isPriceSensitive ? "*" : " "} ${step.headline}` +
+        `${step.read ? "  [read in full]" : ""}`,
+    );
+
+    blocks.push({
+      type: "text",
+      text:
+        `THE EVENT CHAIN LEADING TO TODAY (oldest first)\n\n` +
+        `These earlier filings are steps in the same story as today's announcement. Today is the ` +
+        `latest step, not the first.\n\n` +
+        `Two things follow. First, the report must explain what this sequence was ABOUT before it ` +
+        `explains how it ended — a note that opens on a resolution without saying what was being ` +
+        `resolved is unreadable. Second, and this is the one that gets missed: anything already ` +
+        `announced in this chain is NOT news today. If today's release confirms, approves or ` +
+        `completes something proposed earlier, say exactly that — "proposed on <date>, now ` +
+        `approved" — and never present the earlier proposal as though it broke today. What is new ` +
+        `today is the change of STATUS, and that distinction is the report's job.\n\n${lines.join("\n")}`,
+    });
+  }
+
+  if (signals.personnel.length > 0) {
+    const lines = signals.personnel.map(
+      (entry) => `- [${entry.source}] ${entry.sentence}`,
+    );
+    blocks.push({
+      type: "text",
+      text:
+        `BOARD, MANAGEMENT AND MANDATE CHANGES DETECTED IN TODAY'S FILINGS\n\n` +
+        `Sentences from today's announcements that describe someone arriving, leaving, or changing ` +
+        `role — extracted mechanically, quoted verbatim, and NOT interpreted. Read them and work ` +
+        `out what actually happened: who joins and when, who leaves and on what condition, who ` +
+        `takes which chair, and whether an investment manager or responsible entity changed.\n\n` +
+        `Be precise about tense and condition. "Appointed with immediate effect" and "expected to ` +
+        `retire following completion" are different facts and the difference is the story — one has ` +
+        `happened, the other is contingent on something that has not. Do not flatten them into ` +
+        `"the board was restructured".\n\n` +
+        `If these amount to a material change of control or mandate, they belong in the report ` +
+        `whether or not they are what the headline is about. They usually are not.\n\n${lines.join("\n")}`,
+    });
+  }
+
+  if (signals.keyDates.length > 0) {
+    const lines = signals.keyDates.map(
+      (entry) => `- ${entry.iso}  ("${entry.printed}")  ...${entry.clause}...`,
+    );
+
+    const collisionLines = signals.dateCollisions.map(
+      (collision) =>
+        `- ${collision.a.iso} and ${collision.b.iso} are ${collision.daysApart} days apart and are ` +
+        `DIFFERENT dates. Do not merge them, and do not use one where the other belongs.`,
+    );
+
+    blocks.push({
+      type: "text",
+      text:
+        `EVERY DATE STATED IN TODAY'S FILINGS\n\n` +
+        `Extracted mechanically with the words around each one, so that a date is never read out of ` +
+        `context.${
+          collisionLines.length > 0
+            ? `\n\nCLOSE PAIRS — CHECK THESE BEFORE WRITING ANY DEADLINE:\n${collisionLines.join("\n")}\n\n` +
+              `Two dates a few days apart in one announcement are almost always two different ` +
+              `deadlines — a closing date and a withdrawal date, a record date and a payment date. ` +
+              `State each one for what it is, or state neither.`
+            : ""
+        }\n\n${lines.join("\n")}`,
+    });
+  }
+
+  return blocks;
+}
 
 /**
  * The evidence blocks, built once and sent identically by every call in the
@@ -1733,6 +1870,9 @@ ${input.selection.rationale}${
       type: "text",
       text: `EVIDENCE — THIS COMPANY'S EARLIER FILINGS (${row.ticker}, most recent first; price-sensitive announcements plus its annual, half-year and quarterly reports — this is the source for the business description, the segment detail, the accounts and the history)\n\n${historyBlock}`,
     },
+    ...(input.researchSignals
+      ? formatResearchSignals(input.researchSignals)
+      : []),
     {
       type: "text",
       text:
@@ -1778,6 +1918,8 @@ export async function writeReport(
     filingTimeline: EvidenceInput["filingTimeline"];
     /** What kind of figure the move is — see `EvidenceInput.moveWindow`. */
     moveWindow?: MoveWindow | null;
+    /** Reference follow-ups, event chain, personnel and dates. */
+    researchSignals?: ResearchSignals | null;
     /**
      * The first draft and what the Accuracy Gate found in it.
      *
@@ -2282,6 +2424,8 @@ export async function checkReport(
     filingTimeline: EvidenceInput["filingTimeline"];
     /** What kind of figure the move is — see `EvidenceInput.moveWindow`. */
     moveWindow?: MoveWindow | null;
+    /** Reference follow-ups, event chain, personnel and dates. */
+    researchSignals?: ResearchSignals | null;
   },
   usage: TokenUsage,
 ): Promise<{ review: AccuracyReview; usage: TokenUsage }> {

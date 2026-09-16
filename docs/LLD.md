@@ -514,6 +514,32 @@ Every kind also carries an optional `sourceNote`, which the page schema marks **
 
 **Charts carry a conclusion or they do not ship.** `validateReportDoc` rejects a `chart` page without its one-line "what to notice", and `normalisePage` drops one that arrives without a plottable series. Three forms exist and no more: `columns` for a series over time, `bars` for named categories whose labels will not fit under a column, and `waterfall` for a build-up. Deliberately not a general charting layer — a second axis or a scatter would be new ways to produce a chart nobody can read.
 
+**Source selection runs on today's announcement, in this order.** `planCorpus`
+(`lib/drafts/research-signals.ts`) is called after today's filings are downloaded
+and before any history is: `extractDocumentReferences` → `resolveReferences` →
+`buildEventChain` → `rankHistoricalFilings`. The inversion is the point. The old
+order chose history from headlines and recency, then read today, so the document
+that says which history matters arrived after the decision it should have driven
+— which is how a settled-buy-back report ended up without the Buy-Back Booklet
+its own announcement referred to by name and date.
+
+Scoring is ordinal rather than tuned (`SCORE` in `lib/asx/references.ts`):
+referenced (1000) ≫ chain origin (60) > chain (40) > legal/regulatory when today
+is legal/regulatory (45) > accounts (35) > shared headline terms (8 each, capped
+32) > price-sensitive (10) > recency (0–12), and routine paperwork at −500, which
+only a reference can pull back. Referenced documents are admitted *above* the
+target, not in competition with it; series still collapse to their newest member
+unless a reference names one specifically. `FilingClass` gained `legal-regulatory`
+(30k char budget — orders and reasons, not authorities) and `routine` (6k, and
+only reachable via a reference).
+
+Four signal blocks reach the prompt, each from a failure: referenced documents,
+the event chain (carrying the "what is new today vs already public" instruction),
+personnel sentences quoted verbatim, and every stated date with close pairs
+flagged. All are extracted deterministically — a regex that guessed at who was
+appointed to what would invent findings, which is worse than missing them, so the
+extractors surface evidence and the prompt does the reasoning.
+
 **The move's window is data, not prose.** `describeMoveWindow` (`lib/drafts/trading-day.ts`) reads the moment the board was taken and returns "morning trade", "intraday" or "the close"; `buildEvidenceContent` states it in the market data block, and `writeReport` sets `moveType` and `moveWindowLabel` from it rather than from the model — the same rule as `movePct`, which comes from the feed. The first SBM draft wrote "Shares Closed Up ~17.8%" for a figure read at midday with three hours of trading left, which is the wrong window and the wrong number in one phrase, and no amount of prompt wording fixes a fact the prompt was never given. A regenerate reads the window from the *stored* screen, so re-running an old draft in the evening still describes the midday figure as a midday figure.
 
 **A cash balance is a waterfall.** An $880 million pro-forma balance plotted as a single column answers none of the questions a reader has: how much arrived with the deal, how much is already committed to the declared dividend, the announced buy-back and committed capex, and what is actually free. A `waterfall` takes an opening total (`isTotal`), the signed steps, and a closing total; the renderer folds the steps into running spans in `waterfallSpans` and floats each bar between the running totals either side of it. Two guards: `normalisePage` demotes a waterfall whose points are all totals to a column chart, because as a waterfall it renders as full-height bars that do not build, and `validateReportDoc` reports the same shape as a problem if it reaches the renderer another way.

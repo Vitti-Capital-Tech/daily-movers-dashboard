@@ -13,7 +13,7 @@ import {
   type ScreenerRow,
 } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
-import { isBackgroundFiling, prioritiseAnnouncements } from "@/lib/asx/filings";
+import { planCorpus, type ResearchSignals } from "./research-signals";
 import {
   loadAnnouncementDocuments,
   type AnnouncementDocument,
@@ -460,47 +460,37 @@ async function runPipeline(
   const todayAnnouncements = allAnnouncements.filter(
     (item) => item.date === moveDate && item.isPriceSensitive,
   );
-  /**
-   * Which of the company's earlier filings are worth reading.
-   *
-   * Not simply the newest N. Measured on a real corpus, 16 of 25
-   * price-sensitive announcements and 55% of the tokens were takeover
-   * procedure -- six sequential offer-period extensions, five Takeovers Panel
-   * receipt notices, and an 89-page implementation deed. `prioritiseAnnouncements`
-   * collapses each sequential series to its latest member and gives long legal
-   * instruments a smaller reading budget, so the target count is spent on
-   * evidence the report can actually cite. See `lib/asx/filings.ts`.
-   */
-  const priority = prioritiseAnnouncements(
-    allAnnouncements.filter(
-      (item) => item.isPriceSensitive && item.date !== moveDate,
-    ),
-    { target: ANNOUNCEMENTS_TARGET },
-  );
 
   /**
-   * The accounts, on top of the announcements.
+   * Today's filings are read **before** the history is chosen.
    *
-   * The price-sensitive flag is the right filter for the filing that caused the
-   * move and the wrong one for the company's background: the Appendix 4E is
-   * flagged, the annual report that follows it usually isn't, and the annual
-   * report is where the segment note, the cash flow statement and the debt
-   * maturities are. Instruction 2 ranks those sources second and third, above
-   * anything else here, so a corpus of flagged announcements alone was writing
-   * about the business without reading its accounts.
+   * This ordering is the whole point. It used to be the other way round: the
+   * earlier filings were picked from their headlines and a recency ranking,
+   * then today's announcement was downloaded, then the report was written -- so
+   * the one document guaranteed to say which history mattered arrived after the
+   * history had already been decided.
    *
-   * Capped at `BACKGROUND_TARGET` and read on a smaller character budget (see
-   * `CHAR_BUDGET.background`), because these are the longest documents a company
-   * files and the report needs their front halves, not their appendices.
+   * The cost of that showed up on a settled buy-back dispute. Today's release
+   * said the buy-back would continue "on the terms set out in the Buy-Back
+   * Booklet dated 12 August". The booklet held the mechanics and the
+   * calculation date; the corpus held old dividend notifications instead,
+   * because those were more recent. Nothing was broken -- the ranking did
+   * exactly what it was asked to do, which was the wrong thing.
+   *
+   * See `planCorpus` in `./research-signals.ts`.
    */
-  const backgroundAnnouncements = allAnnouncements
-    .filter((item) => item.date !== moveDate && isBackgroundFiling(item))
-    .slice(0, BACKGROUND_TARGET);
-
-  const historyAnnouncements = [...priority.keep, ...backgroundAnnouncements]
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-
   const todayDocuments = await loadAnnouncementDocuments(todayAnnouncements);
+
+  const plan = planCorpus({
+    moveDate,
+    todayAnnouncements,
+    todayDocuments,
+    allAnnouncements,
+    target: ANNOUNCEMENTS_TARGET,
+    accountsTarget: BACKGROUND_TARGET,
+  });
+
+  const historyAnnouncements = plan.history;
 
   await setProgress(
     draftId,
@@ -547,17 +537,29 @@ async function runPipeline(
         readToday: todayDocuments.length,
         readHistory: historyDocuments.length,
         /**
-         * Superseded series members and filings beyond the target, kept so the
-         * audit trail says what was *not* read as well as what was.
+         * Why each kept filing earned its slot, and why the rest did not.
+         *
+         * The ranking is no longer "the newest fifteen that were flagged", so
+         * the audit trail has to carry its reasoning or a reviewer cannot tell
+         * a deliberate omission from a bug. `reasons` is what scored it;
+         * `skipped` says what was dropped and on what grounds.
          */
-        skipped: priority.collapsed.map((item) => ({
+        ranking: historyAnnouncements.map((item) => ({
           idsId: item.idsId,
           date: item.date,
           headline: item.headline,
-          reason: item.seriesKey
-            ? `superseded (${item.seriesKey})`
-            : "beyond the reading target",
+          filingClass: item.filingClass,
+          score: Math.round(item.score),
+          reasons: item.reasons,
         })),
+        skipped: plan.dropped,
+        /**
+         * What today's announcement pointed at, who it moved, and which dates
+         * it stated. Stored because these are the claims most worth spot-checking
+         * in review -- a missed reference or a merged pair of dates is invisible
+         * in the finished report.
+         */
+        signals: plan.signals,
       },
       progress: STAGES.writing,
     })
@@ -574,6 +576,7 @@ async function runPipeline(
     volumeProfile,
     filingTimeline,
     moveWindow: describeMoveWindow(new Date(screen.fetchedAt)),
+    researchSignals: plan.signals,
     startedAt,
     usage,
   });
@@ -601,6 +604,14 @@ export type DraftEvidence = {
   filingTimeline: { date: string; isPriceSensitive: boolean; headline: string }[];
   /** What kind of figure the move is: intraday, morning trade, or a close. */
   moveWindow: MoveWindow | null;
+  /**
+   * What today's announcement pointed at, who it moved, and what it dated.
+   *
+   * Optional so `regenerateDraft` — which re-runs a stored draft through the
+   * current prompt without re-reading anything — still compiles and still
+   * works. Absent, the prompt simply omits those blocks.
+   */
+  researchSignals?: ResearchSignals | null;
   /** When the run began, so the optional stages can be budgeted against it. */
   startedAt: number;
   /** Tokens already spent — the selection call, on a full run. */
@@ -622,6 +633,7 @@ export async function finishDraft(
     volumeProfile,
     filingTimeline,
     moveWindow,
+    researchSignals,
     startedAt,
   } = input;
   let usage = input.usage;
@@ -637,6 +649,7 @@ export async function finishDraft(
       volumeProfile,
       filingTimeline,
       moveWindow,
+      researchSignals,
     },
     usage,
   );
@@ -685,6 +698,7 @@ export async function finishDraft(
           volumeProfile,
           filingTimeline,
           moveWindow,
+          researchSignals,
         },
         usage,
       );
@@ -726,6 +740,7 @@ export async function finishDraft(
             volumeProfile,
             filingTimeline,
             moveWindow,
+            researchSignals,
             corrections: { doc: report.doc, findings: accuracy.findings },
           },
           usage,
