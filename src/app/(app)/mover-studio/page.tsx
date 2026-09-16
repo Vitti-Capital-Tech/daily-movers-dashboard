@@ -16,6 +16,7 @@ import {
   getFocusDraftId,
   listDrafts,
 } from "@/lib/drafts/queries";
+import { loadScreenCriteria } from "@/lib/drafts/screen-settings";
 import { isDraftInFlight } from "@/lib/drafts/types";
 import { exchangeDate } from "@/lib/drafts/trading-day";
 
@@ -127,7 +128,7 @@ export default async function MoverStudioPage({
         <DraftPoller draftId={draft.id} />
       ) : null}
 
-      <StartDraftForm today={exchangeDate()} />
+      <StartDraftForm today={exchangeDate()} screen={await loadScreenCriteria()} />
 
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <DraftQueue

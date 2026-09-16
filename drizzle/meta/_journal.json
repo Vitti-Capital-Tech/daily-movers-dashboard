@@ -64,6 +64,13 @@
       "when": 1788596823149,
       "tag": "0008_draft_accuracy_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789519861604,
+      "tag": "0009_majestic_blob",
+      "breakpoints": true
     }
   ]
 }

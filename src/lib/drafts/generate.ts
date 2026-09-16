@@ -6,7 +6,6 @@ import { getDb } from "@/db";
 import { analysts, dailyMovers, moverDrafts } from "@/db/schema";
 import {
   asxData,
-  DEFAULT_SCREEN,
   screenBoards,
   type Announcement,
   type ScreenCriteria,
@@ -38,6 +37,7 @@ import {
   tradedOn,
   type MoveWindow,
 } from "./trading-day";
+import { loadScreenCriteria } from "./screen-settings";
 import { warrantsRewrite, type AccuracyReview } from "./types";
 
 /**
@@ -836,7 +836,13 @@ export async function generateDraft(
 ): Promise<GenerateOutcome> {
   const db = getDb();
   const moveDate = options.moveDate ?? exchangeDate();
-  const criteria = options.criteria ?? DEFAULT_SCREEN;
+  /**
+   * Explicit criteria win; otherwise the screen the desk last saved in the
+   * Studio. `loadScreenCriteria` falls back to `DEFAULT_SCREEN` on its own when
+   * nothing has been saved or the table is unreadable, so this never throws and
+   * the scheduled run always has a screen to work with.
+   */
+  const criteria = options.criteria ?? (await loadScreenCriteria());
 
   let draftId: number;
   try {

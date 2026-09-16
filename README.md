@@ -178,6 +178,14 @@ published a Daily Mover for the day**, or if a scheduled draft for the day
 already exists. `?force=1` with the cron secret skips only the time-of-day check,
 for re-running a session that was missed.
 
+**The screen controls are a setting, not a per-run override.** Whatever you
+submit in the Studio's *Screen settings* panel is saved to the `screen_settings`
+row and becomes the screen the 06:00 scheduled run uses, until it is changed
+again. The panel always renders the stored values, so the screen in force is
+visible rather than implied. `DEFAULT_SCREEN` in `lib/asx/types.ts` is the
+fallback when nothing has been saved — and, deliberately, when the settings read
+fails, so a settings problem can never be why a draft didn't happen.
+
 **Who calls it: Supabase `pg_cron`, not Vercel.** `vercel.json` has no `crons`
 key. The schedule lives in [`drizzle/cron-setup.sql`](drizzle/cron-setup.sql) as
 a single pg_cron job at `30 0 * * 1-5` UTC, and `pg_net` makes the HTTP call with
@@ -439,7 +447,7 @@ src/
     admin-unlock-dialog.tsx modal dialog for unlocking admin write mode with passcode
     company-logo.tsx     high-contrast adaptive company logo with institutional monogram fallback
     daily-movers/        filter bar, table, form dialog, row actions, combobox, report-upload, download-reports-button
-    mover-studio/        review queue, draft review card + approve/reject, inline report preview, evidence list, screen controls
+    mover-studio/        review queue, draft review card + approve/reject, inline report preview, evidence list, screen controls (saved, not per-run)
     post-studio/         track-record table, assessment + post variants with copy-to-clipboard
     ui/                  shadcn primitives (Base UI / Radix)
     theme-provider.tsx   next-themes client wrapper

@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_SCREEN_VALUES, SCREEN_FIELDS } from "./screen-fields";
+import type { ScreenCriteria } from "@/lib/asx/types";
+
+import { SCREEN_FIELDS } from "./screen-fields";
 
 /**
  * Starts a draft off-schedule, with the liquidity screen exposed as controls.
@@ -19,14 +21,23 @@ import { DEFAULT_SCREEN_VALUES, SCREEN_FIELDS } from "./screen-fields";
  * session date off the feed's own timestamps instead. Offering a date field
  * would promise something the screen cannot deliver.
  *
- * The screen is adjustable rather than fixed because the defaults are
- * deliberately conservative — they exist to keep nano-caps that traded a few
- * thousand dollars off the shortlist — and an analyst who wants a genuinely
- * interesting micro-cap covered should be able to widen them for one run
- * instead of asking for a code change. Collapsed by default, since the default
- * screen is the right answer nearly every day.
+ * The screen is adjustable rather than fixed so an analyst who wants a
+ * genuinely interesting micro-cap covered can widen it without asking for a
+ * code change. Collapsed by default, since the screen in force is the right
+ * answer nearly every day.
+ *
+ * `screen` is the *stored* screen, read on the server, not the compiled
+ * `DEFAULT_SCREEN`. Submitting the form saves these values, so what is shown
+ * here is also what the 06:00 scheduled run will use — a standing setting that
+ * happens to live behind a button, not a per-run override.
  */
-export function StartDraftForm({ today }: { today: string }) {
+export function StartDraftForm({
+  today,
+  screen,
+}: {
+  today: string;
+  screen: ScreenCriteria;
+}) {
   const [state, formAction, isPending] = useActionState<
     DraftActionState,
     FormData
@@ -82,9 +93,12 @@ export function StartDraftForm({ today }: { today: string }) {
 
           {/* Always in the DOM, so a collapsed panel still submits its values
               rather than falling back to the defaults on the server. */}
-          <div
-            className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${showScreen ? "" : "hidden"}`}
-          >
+          <div className={`space-y-3 ${showScreen ? "" : "hidden"}`}>
+            <p className="text-[11px] text-muted-foreground">
+              Saved when you start a draft. The scheduled 06:00 IST run uses
+              these too — they are not just for this one draft.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {SCREEN_FIELDS.map((field) => (
               <div key={field.name} className="space-y-1">
                 <Label
@@ -100,7 +114,7 @@ export function StartDraftForm({ today }: { today: string }) {
                   min={field.min}
                   max={field.max}
                   step={field.step}
-                  defaultValue={DEFAULT_SCREEN_VALUES[field.name]}
+                  defaultValue={screen[field.name]}
                   className="h-8 font-mono text-xs"
                 />
                 <p className="text-[10px] leading-snug text-muted-foreground/80">
@@ -108,6 +122,7 @@ export function StartDraftForm({ today }: { today: string }) {
                 </p>
               </div>
             ))}
+            </div>
           </div>
 
           {state?.ok === false && state.message ? (

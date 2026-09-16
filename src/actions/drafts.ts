@@ -13,6 +13,7 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import { DEFAULT_SCREEN, type ScreenCriteria } from "@/lib/asx";
+import { saveScreenCriteria } from "@/lib/drafts/screen-settings";
 import { SCREEN_LIMITS } from "@/lib/asx/types";
 import {
   generateDraft,
@@ -100,12 +101,29 @@ export async function startDraftAction(
     throw error;
   }
 
-  const criteria: ScreenCriteria = {
+  const submitted: ScreenCriteria = {
     minTurnover: readCriterion(formData, "minTurnover"),
     minMarketCap: readCriterion(formData, "minMarketCap"),
     minAbsChangePct: readCriterion(formData, "minAbsChangePct"),
     perSide: readCriterion(formData, "perSide"),
   };
+
+  /**
+   * Starting a draft is also how the screen is set.
+   *
+   * These four controls used to apply to one run and then vanish, which made
+   * the Studio's most visible settings quietly inert: the 06:00 scheduled run
+   * went back to the compiled defaults the next morning regardless of what had
+   * been typed here. Saving treats the form as what it looks like -- the desk's
+   * standing instruction -- and the scheduled run reads the same row.
+   *
+   * The consequence worth knowing: a one-off experiment is not one-off. Widen
+   * the screen to see what a $1m-cap board looks like and tomorrow's 06:00 run
+   * screens that way too, until someone sets it back. What the form renders is
+   * the stored row, so the screen in force is at least always on display rather
+   * than implied.
+   */
+  const criteria = await saveScreenCriteria(submitted, actor.email);
 
   const rawDate = formData.get("moveDate");
   const moveDate =

@@ -92,6 +92,39 @@ export const appUsers = pgTable("app_users", {
 }).enableRLS();
 
 /**
+ * The screen the next draft will run with. Exactly one row, `id = 1`.
+ *
+ * The Studio's screen controls used to be per-run only: an analyst who widened
+ * the board got a wider board once, and the 06:00 scheduled run went on using
+ * the compiled `DEFAULT_SCREEN` the next morning as if nothing had happened.
+ * When the desk changes those four fields it means "screen like this from now
+ * on", so they are stored.
+ *
+ * A singleton table rather than a settings blob, because these numbers are read
+ * on every scheduled run and are worth being able to read and correct with one
+ * obvious SQL statement at 06:05 when a board comes back empty.
+ *
+ * `DEFAULT_SCREEN` is still live code, not history: it seeds this row and it is
+ * what `loadScreenCriteria` falls back to when the row is missing or the table
+ * has not been migrated yet -- which is exactly the state production is in
+ * between a deploy and `npm run db:apply`.
+ */
+export const screenSettings = pgTable("screen_settings", {
+  /** Always 1. The table is a singleton; there is nothing to key it by. */
+  id: integer("id").primaryKey(),
+  /** Session dollar turnover floor. 0 means "do not gate on turnover". */
+  minTurnover: integer("min_turnover").notNull(),
+  minMarketCap: integer("min_market_cap").notNull(),
+  minAbsChangePct: integer("min_abs_change_pct").notNull(),
+  perSide: integer("per_side").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  /** Which admin saved it. Null on the seeded row, which nobody chose. */
+  updatedBy: text("updated_by"),
+}).enableRLS();
+
+/**
  * One row per listed company. Daily movers reference this by id, never by
  * ticker string -- that FK is what makes research history reliable. If we
  * matched on text, "JBH" and "JBH.AX" would silently split one company's
@@ -569,4 +602,5 @@ export type NewLinkedinPost = typeof linkedinPosts.$inferInsert;
 export type PostVerdict = (typeof postVerdictEnum.enumValues)[number];
 export type PostStatus = (typeof postStatusEnum.enumValues)[number];
 export type AppUser = typeof appUsers.$inferSelect;
+export type ScreenSettingsRow = typeof screenSettings.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
