@@ -3,7 +3,7 @@ import "server-only";
 import { renderToBuffer } from "@react-pdf/renderer";
 
 import { DailyMoverReport } from "./template";
-import { validateReportDoc, type ReportDoc } from "./types";
+import { isSnapshotDoc, validateReportDoc, type ReportDoc } from "./types";
 
 /**
  * Renders a report document to PDF bytes.
@@ -37,9 +37,17 @@ export async function renderReportPdf(doc: ReportDoc): Promise<Buffer> {
  * Deliberately a warning rather than a failure. An over-long report is
  * publishable and a reviewer can see it; refusing to render one would cost the
  * desk the day's draft over a layout defect.
+ *
+ * **The snapshot expects no disclaimer sheet**, and getting that wrong would
+ * disable the check exactly where it matters most. On the one-pager an overflow
+ * is invisible to a reader — there is no stray caption on a seventh sheet to
+ * notice, just a risk card that is no longer on the page — so this counter is
+ * the only thing that reports it. With the deck's `+ 1` still applied, a
+ * snapshot that spilled onto a second sheet would render 2 against an expected
+ * 2 and pass in silence.
  */
 async function warnOnOverflow(pdf: Buffer, doc: ReportDoc): Promise<void> {
-  const expected = doc.pages.length + 1;
+  const expected = isSnapshotDoc(doc) ? doc.pages.length : doc.pages.length + 1;
   try {
     const { getDocumentProxy } = await import("unpdf");
     const rendered = (await getDocumentProxy(new Uint8Array(pdf))).numPages;

@@ -23,6 +23,8 @@ import {
   CLOSING_SIGN_OFF,
   DISCLAIMER_HEADING,
   DISCLAIMER_PARAGRAPHS,
+  ONE_PAGE_DISCLAIMER,
+  isSnapshotDoc,
   formatEyebrow,
   formatReportDate,
   MANAGEMENT_QUESTION_HEADING,
@@ -635,6 +637,138 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  /** Snapshot (the one-page sheet) ------------------------------------- */
+  /**
+   * A fixed grid, not a flow.
+   *
+   * Every band below has a stated height and the sheet adds up to the 540pt
+   * page on purpose: chrome and footer take roughly 110, leaving ~430 for
+   * these. react-pdf will happily push a sixth timeline step past the bottom
+   * edge without complaining, so the heights are the contract and `fit.ts`
+   * cuts the content to match. Change one number here and check the preview.
+   */
+  snapLabel: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 2.4,
+    color: PALETTE.faint,
+    marginBottom: 3,
+  },
+  snapCompany: {
+    fontFamily: "Helvetica",
+    fontSize: 12.5,
+    color: PALETTE.muted,
+    marginBottom: 2,
+  },
+  snapHeadline: {
+    fontFamily: "Times-Bold",
+    fontSize: 20,
+    lineHeight: 1.16,
+    color: PALETTE.paper,
+  },
+  snapTileRow: { flexDirection: "row", marginTop: 12 },
+  snapTile: {
+    flexGrow: 1,
+    flexBasis: 0,
+    backgroundColor: PALETTE.card,
+    borderRadius: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginRight: 8,
+  },
+  snapTileValue: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 17,
+    color: PALETTE.paper,
+  },
+  snapTileLabel: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 6,
+    letterSpacing: 1.5,
+    color: PALETTE.faint,
+    marginTop: 3,
+  },
+  snapColumns: { flexDirection: "row", marginTop: 12 },
+  snapColumn: { flexGrow: 1, flexBasis: 0, marginRight: 14 },
+  snapColHead: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 2,
+    marginBottom: 5,
+  },
+  snapItem: { flexDirection: "row", marginBottom: 3.5 },
+  snapItemNum: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    width: 11,
+    marginTop: 0.6,
+  },
+  snapItemText: {
+    flexGrow: 1,
+    flexBasis: 0,
+    fontSize: 8.5,
+    lineHeight: 1.32,
+    color: PALETTE.body,
+  },
+  snapBandHead: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 2,
+    marginTop: 11,
+    marginBottom: 5,
+  },
+  snapTrack: { flexDirection: "row", alignItems: "flex-start" },
+  snapStep: { flexGrow: 1, flexBasis: 0, paddingRight: 8 },
+  snapStepDot: { width: 5, height: 5, borderRadius: 2.5, marginBottom: 4 },
+  snapStepDate: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    color: PALETTE.paper,
+  },
+  snapStepText: {
+    fontSize: 7.5,
+    lineHeight: 1.28,
+    color: PALETTE.muted,
+    marginTop: 1.5,
+  },
+  snapRiskRow: { flexDirection: "row" },
+  snapRisk: {
+    flexGrow: 1,
+    flexBasis: 0,
+    backgroundColor: PALETTE.card,
+    borderRadius: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    marginRight: 8,
+  },
+  snapRiskLabel: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+    color: PALETTE.paper,
+    marginBottom: 2.5,
+  },
+  snapRiskText: { fontSize: 7.5, lineHeight: 1.3, color: PALETTE.muted },
+  snapQuote: {
+    marginTop: 11,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: PALETTE.hairline,
+  },
+  snapQuoteText: {
+    fontFamily: "Times-Italic",
+    fontSize: 10.5,
+    lineHeight: 1.3,
+    color: PALETTE.paper,
+  },
+  /** The compliance line, set small under the by-line on the one-pager. */
+  snapDisclaimer: {
+    fontSize: 5.6,
+    lineHeight: 1.25,
+    color: PALETTE.faint,
+    marginTop: 1.5,
+    maxWidth: 640,
+  },
+
   /** Footer ------------------------------------------------------------ */
   footer: {
     position: "absolute",
@@ -999,8 +1133,16 @@ function pointLabel(value: number, display?: string | null): string {
   return display?.trim() || String(value);
 }
 
+/**
+ * Sheets in the finished PDF.
+ *
+ * The deck adds a compliance sheet; the snapshot does not, because a one-page
+ * report that prints as two pages is not a one-page report. Its compliance line
+ * goes in the footer instead — see `ONE_PAGE_DISCLAIMER`, which is the desk's
+ * own published short form and not an abbreviation invented here.
+ */
 function sheetCount(doc: ReportDoc): number {
-  return doc.pages.length + 1;
+  return isSnapshotDoc(doc) ? doc.pages.length : doc.pages.length + 1;
 }
 
 function Chrome({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
@@ -1032,12 +1174,20 @@ function Chrome({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
  * the worst way to find out that it happened.
  */
 function Footer({ doc, pageNumber }: { doc: ReportDoc; pageNumber: number }) {
+  const snapshot = isSnapshotDoc(doc);
   return (
     <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>
-        <Text style={styles.footerStrong}>Daily Mover Report</Text>
-        {`   |   ${formatReportDate(doc.moveDate)}   |   Analyst: ${doc.analystName}`}
-      </Text>
+      <View>
+        <Text style={styles.footerText}>
+          <Text style={styles.footerStrong}>
+            {snapshot ? "Daily Mover Snapshot" : "Daily Mover Report"}
+          </Text>
+          {`   |   ${formatReportDate(doc.moveDate)}   |   Analyst: ${doc.analystName}`}
+        </Text>
+        {snapshot ? (
+          <Text style={styles.snapDisclaimer}>{ONE_PAGE_DISCLAIMER}</Text>
+        ) : null}
+      </View>
       <Text style={styles.footerPage}>
         {`${pageNumber} / ${sheetCount(doc)}`}
       </Text>
@@ -1115,7 +1265,7 @@ function PageHeading({
           {chip.toUpperCase()}
         </Text>
       ) : null}
-      <Text style={styles.heading}>{page.title}</Text>
+      <Text style={styles.heading}>{"title" in page ? page.title : ""}</Text>
       <View style={[styles.headingRule, { backgroundColor: accent }]} />
       {"intro" in page && page.intro?.trim() ? (
         <Rich style={styles.intro}>{page.intro}</Rich>
@@ -2100,6 +2250,114 @@ function ClosingBody({
   );
 }
 
+/**
+ * The one-page sheet.
+ *
+ * Reproduces what the desk publishes (PIA, 16 September 2026): the figures, why
+ * it moved and what that changes side by side, how the story got here, what is
+ * still open, and one line of judgement. No heading block above it -- the
+ * headline *is* the heading, so `DailyMoverReport` skips `PageHeading` for this
+ * kind exactly as it does for the cover.
+ *
+ * Numbered lists rather than bullets, because the published sheet numbers them
+ * and because a reader comparing two columns wants to count items in each.
+ */
+function SnapshotBody({
+  page,
+  theme,
+}: {
+  page: Extract<ReportPage, { kind: "snapshot" }>;
+  theme: DeckTheme;
+}) {
+  const column = (heading: string, items: string[], accent: string) => (
+    <View style={styles.snapColumn}>
+      <Text style={[styles.snapColHead, { color: accent }]}>
+        {heading.toUpperCase()}
+      </Text>
+      {items.map((item, index) => (
+        <View key={index} style={styles.snapItem}>
+          <Text style={[styles.snapItemNum, { color: accent }]}>
+            {index + 1}
+          </Text>
+          <Rich style={styles.snapItemText}>{item}</Rich>
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <View style={styles.body}>
+      <Text style={styles.snapLabel}>ONE-PAGE SNAPSHOT</Text>
+      <Text style={styles.snapCompany}>{page.companyName}</Text>
+      <Text style={styles.snapHeadline}>{page.headline}</Text>
+
+      <View style={styles.snapTileRow}>
+        {page.kpis.slice(0, 4).map((kpi, index) => (
+          <View key={index} style={styles.snapTile}>
+            <Text style={styles.snapTileValue}>{kpi.value}</Text>
+            <Text style={styles.snapTileLabel}>
+              {kpi.label.toUpperCase()}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.snapColumns}>
+        {column("Why it moved", page.whyItMoved, theme.accent)}
+        {column("What changes now", page.whatChangesNow, PALETTE.cobalt)}
+      </View>
+
+      {page.timeline.length > 0 ? (
+        <View>
+          <Text style={[styles.snapBandHead, { color: theme.accent }]}>
+            HOW WE GOT HERE
+          </Text>
+          <View style={styles.snapTrack}>
+            {page.timeline.map((event, index) => (
+              <View key={index} style={styles.snapStep}>
+                <View
+                  style={[
+                    styles.snapStepDot,
+                    { backgroundColor: theme.accent },
+                  ]}
+                />
+                <Text style={styles.snapStepDate}>{event.date}</Text>
+                <Text style={styles.snapStepText}>{event.text}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {page.risks.length > 0 ? (
+        <View>
+          <Text style={[styles.snapBandHead, { color: PALETTE.coral }]}>
+            KEY RISKS REMAINING
+          </Text>
+          <View style={styles.snapRiskRow}>
+            {page.risks.map((risk, index) => (
+              <View key={index} style={styles.snapRisk}>
+                <Text style={styles.snapRiskLabel}>{risk.label}</Text>
+                <Text style={styles.snapRiskText}>{risk.text}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {page.pullQuote?.trim() ? (
+        <View style={styles.snapQuote}>
+          <Text style={styles.snapQuoteText}>
+            {`\u201C${page.pullQuote.trim()}\u201D`}
+          </Text>
+        </View>
+      ) : null}
+
+      <SourceLine note={page.sourceNote} />
+    </View>
+  );
+}
+
 function PageBody({
   doc,
   page,
@@ -2112,6 +2370,9 @@ function PageBody({
   const accent = pageAccent(page.kind, theme);
 
   switch (page.kind) {
+    case "snapshot":
+      return <SnapshotBody page={page} theme={theme} />;
+
     case "cover":
       return <CoverBody doc={doc} page={page} theme={theme} />;
 
@@ -2230,13 +2491,13 @@ export function DailyMoverReport({ doc }: { doc: ReportDoc }) {
     >
       {doc.pages.map((page, index) => (
         <Sheet key={index} doc={doc} pageNumber={index + 1} theme={theme}>
-          {page.kind === "cover" ? null : (
+          {page.kind === "cover" || page.kind === "snapshot" ? null : (
             <PageHeading page={page} accent={pageAccent(page.kind, theme)} />
           )}
           <PageBody doc={doc} page={page} theme={theme} />
         </Sheet>
       ))}
-      <DisclaimerPage doc={doc} theme={theme} />
+      {isSnapshotDoc(doc) ? null : <DisclaimerPage doc={doc} theme={theme} />}
     </Document>
   );
 }

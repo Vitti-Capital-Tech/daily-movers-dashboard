@@ -8,9 +8,7 @@ import { formatMoneyCompact, type ScreenResult, type ScreenerRow } from "@/lib/a
 import {
   REPORT_ICONS,
   REPORT_LIMITS,
-  REPORT_MAX_SHEETS,
   REPORT_PAGE_KINDS,
-  REPORT_PAGE_TARGET,
   type ReportCallout,
   type ReportChart,
   type ReportChartPoint,
@@ -314,11 +312,72 @@ export type DraftedReport = {
 const PAGE_SCHEMA = {
   type: "object",
   properties: {
+    whyItMoved: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 2,
+      maxItems: 3,
+      description:
+        "SNAPSHOT ONLY. Left column, 'Why It Moved': two or three single-clause lines saying what actually " +
+        "happened today. No sentences, no lead-ins, no full stops needed — these are set as a numbered list " +
+        "next to the figures. Around 60-100 characters each; longer is cut. Example: " +
+        "\"Settlement removes the legal overhang around the Buy-Back\".",
+    },
+    whatChangesNow: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      maxItems: 4,
+      description:
+        "SNAPSHOT ONLY. Right column, 'What Changes Now': up to four single-clause lines on what today's news " +
+        "actually changes from here — deadlines that move, people who arrive or leave, mandates that transfer, " +
+        "conditions that remain. This is where board and management change belongs, and where a date the " +
+        "reader must diarise belongs. Do NOT restate the 'why it moved' points here.",
+    },
+    timeline: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "'27 Jul 2026' — short form, as the filing dates it." },
+          text: { type: "string", description: "The step, in four or five words. 'EGM approves Buy-Back'." },
+        },
+        required: ["date", "text"],
+      },
+      minItems: 2,
+      maxItems: 5,
+      description:
+        "SNAPSHOT ONLY. 'How We Got Here': the dated steps that led to today, OLDEST FIRST, ending with today " +
+        "and (where the filings give one) the next scheduled date. Use the EVENT CHAIN block in the evidence " +
+        "for this — it is the same sequence, already assembled. Keep each step to four or five words; they are " +
+        "set side by side along a rule and a long one wraps into its neighbour.",
+    },
+    risks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string", description: "Three or four words naming the risk." },
+          text: { type: "string", description: "One sentence, under 120 characters, on why it is unresolved." },
+        },
+        required: ["label", "text"],
+      },
+      minItems: 1,
+      maxItems: 3,
+      description:
+        "SNAPSHOT ONLY. 'Key Risks Remaining': exactly three cards where the evidence supports three. These are " +
+        "what is still open AFTER today's news, not generic market risk. A snapshot without real risks is " +
+        "promotional material and will be rejected.",
+    },
     kind: {
       type: "string",
       enum: [...REPORT_PAGE_KINDS],
       description:
-        "Page layout. 'cover' (first page only): company name, headline, two hero KPI cards, and one line under them. " +
+        "Page layout. 'snapshot' is the ONLY value you may use: the whole report is one snapshot page. " +
+        "It carries the company name, the headline, four KPI tiles, the two numbered columns " +
+        "(whyItMoved / whatChangesNow), the dated timeline, three risk cards and the closing pullQuote. " +
+        "The kinds that follow are legacy layouts for the older multi-page deck and are NOT to be emitted. " +
+        "'cover' (first page only): company name, headline, two hero KPI cards, and one line under them. " +
         "'kpis': a title and 3-6 big-number cards in rows of three — the page for a project or a deal economics, " +
         "and the right answer whenever the page is carrying figures rather than an argument. " +
         "'chart': one plotted series with the conclusion line under it — use this instead of a paragraph whenever the story is a trend or a build-up. " +
@@ -599,7 +658,12 @@ const PAGE_SCHEMA = {
       type: "string",
       maxLength: REPORT_LIMITS.pullQuoteChars,
       description:
-        "'closing' pages: ONE sentence, set large in the house colour above the sign-off — the line you would " +
+        "REQUIRED on a 'snapshot' page, where it is the closing line of judgement set in italic under a rule at " +
+        "the foot of the sheet: one sentence saying what the day settles and what it leaves open — the desk's " +
+        "read, not a summary of the page above it. " +
+        "\"PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio " +
+        "looks like once they've chosen.\" " +
+        "Also used on 'closing' pages: ONE sentence, set large in the house colour above the sign-off — the line you would " +
         "want a portfolio manager to remember a week later. It is a summary of the debate, never a recommendation, " +
         "and it must not repeat a statement verbatim.",
     },
@@ -864,18 +928,17 @@ const REPORT_TOOL: Anthropic.Tool = {
       },
       pages: {
         type: "array",
-        minItems: REPORT_PAGE_TARGET.min,
-        maxItems: REPORT_PAGE_TARGET.max,
+        minItems: 1,
+        maxItems: 1,
         description:
-          `The report body: ${REPORT_PAGE_TARGET.min} to ${REPORT_PAGE_TARGET.max} pages, in the order that ` +
-          "tells this company's story best. The first page MUST be 'cover', the last MUST be 'closing', and " +
-          "there MUST be a 'risks' page somewhere between them. The compliance disclaimer and the closing " +
-          "sign-off line are appended automatically — never write either. " +
-          `The disclaimer is a sheet too, so ${REPORT_PAGE_TARGET.max} content pages is a ` +
-          `${REPORT_MAX_SHEETS}-page PDF, which is the hard ceiling. ` +
-          "This is a SHORT note by design: with the cover, the risks page and the closing fixed, you have one " +
-          "or two pages for the analysis, so spend them on the numbers and the contrast rather than on prose. " +
-          "Each page is a 16:9 slide and must FIT ON ONE SHEET.",
+          "EXACTLY ONE page, and its kind MUST be 'snapshot'. The Daily Mover is a single 16:9 sheet — " +
+          "not a deck, not a summary of a longer note. Do not emit 'cover', 'closing', 'risks' or any other " +
+          "page kind: the one snapshot page carries all of it, including the risks. The compliance line is " +
+          "appended automatically — never write it. " +
+          "Everything you have to say must fit in the fields of that one page, and the fields are small on " +
+          "purpose: four figures, three reasons, up to four consequences, five dated steps, three risks and " +
+          "one closing line. Choosing what to leave out IS the job. A sheet that tries to carry six risks " +
+          "does not become longer, it overruns the page and the overflow is silently cut.",
         items: PAGE_SCHEMA,
       },
     },
@@ -918,7 +981,9 @@ The report's job is not to summarise the announcement. It is to explain why the 
 
 === 1. WHAT A DAILY MOVER IS ===
 
-A ${REPORT_PAGE_TARGET.min}-${REPORT_PAGE_TARGET.max} page SLIDE DECK — 16:9 pages, not an A4 note — one idea per page, and a ${REPORT_MAX_SHEETS}-page PDF once the compliance sheet is appended. That is a hard ceiling. A reader should get the main story in 30 to 60 seconds and still have enough detail to investigate further. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
+A ONE-PAGE SNAPSHOT — a single 16:9 sheet, not an A4 note and not a deck. One page is the whole document: the figures, why it moved, what that changes, how the story got here, what is still open, and one line of judgement. A reader gets the main story in 30 to 60 seconds and still has enough detail to investigate further. It is read by portfolio managers who may never have looked at the company before, and it is filed in an archive so that when the company comes up again the desk can see what was said last time.
+
+This was a four-to-five page deck until September 2026. It is not any more. If you find yourself planning a cover page, a risks page and a closing page, you are writing the old format.
 
 Every page is a heading, a small amount of text, and something visual: big-number tiles, a chart, a comparison table, a dated timeline, icon cards, a two-column split. A page that is four paragraphs of prose is a page that has been written the wrong way. The house rule is FEWER WORDS, MORE STRUCTURE — if a page can be a chart, a table or a set of tiles, it must not be paragraphs.
 
@@ -1019,94 +1084,45 @@ VALUATION. Include it only when it helps explain the market reaction or the risk
 
 EXPECTATIONS. Compare against consensus only if a reliable figure appears in the evidence (a company-compiled consensus, a broker figure quoted in a filing). Never invent or recall a consensus number. If there isn't one, compare against the company's own prior guidance instead, or leave the comparison out.
 
-=== 9. STRUCTURE: ${REPORT_PAGE_TARGET.min} TO ${REPORT_PAGE_TARGET.max} PAGES, SO EVERY PAGE HAS TO EARN ITS PLACE ===
+=== 9. STRUCTURE: ONE SHEET, AND EVERY FIELD IS FIXED ===
 
-Fixed points, and only these:
-- Page 1 is the cover: company name, the share-move headline, exactly two hero tiles — the move, and the single most important number from the announcement — and one line under them carrying the main qualification on that number.
-- A risks page appears somewhere. It is never optional.
-- The last page is the closing.
+The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a summary of a longer note. Emit EXACTLY ONE page and its kind is 'snapshot'. There is no cover, no separate risks page, no closing page. Every part below is required:
 
-That leaves one or two pages for the analysis. Spend them on the two things a reader cannot get from the announcement: THE NUMBERS THAT DECIDE IT, and THE CONTRAST that makes them mean something. In order of preference:
+- companyName, then headline. The headline is the whole story in one line: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing.
+- FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
+- whyItMoved — two or three clauses on what happened TODAY.
+- whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
+- timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled.
+- risks — three cards on what is still open AFTER today.
+- pullQuote — one line of judgement.
 
-1. A 'kpis' page of 3-6 tiles — the deal or project economics.
-2. A 'chart' page — a waterfall for a cash build-up, columns for a trend, bars for a split.
-3. A 'comparison' page — what changed, or what is received against what is given up.
-4. A 'timeline' page — when the sequence is the story, especially a transaction that has not completed.
-5. A 'market-vs-reality' page — when the announcement and the reaction point different ways.
-6. A 'narrative' page — only when the point is genuinely an argument rather than a set of figures.
+The two columns answer different questions and must never repeat each other. If a point explains the move, it is on the left. If it changes what happens next, it is on the right. A point that appears in both columns is a wasted line on a page that has eight of them.
 
-Useful shapes, to adapt rather than copy:
-- Divestment or transaction: cover -> deal economics ('kpis') -> what is received against what is given up ('comparison') or the cash build-up ('chart', waterfall) -> risks -> closing.
-- Earnings result: cover -> the result in tiles ('kpis') -> what changed ('comparison') or the trend ('chart') -> risks -> closing.
-- Contract win: cover -> what is actually committed ('kpis' or 'comparison') -> the existing business ('narrative' or 'entities') -> risks -> closing.
-- Mining or development: cover -> project economics ('kpis' or 'entities') -> the timetable ('timeline') -> risks -> closing.
-- Negative mover: cover -> what changed ('comparison') -> is the core business still working ('kpis' or 'chart') -> risks -> closing.
+=== 10. THE TILES AND THE LINES ===
 
-ONE PAGE, ONE QUESTION. Every page heading should tell the reader the page's conclusion. Write "Is the Balance Sheet a Problem?" not "Balance Sheet & Cash Flow"; "What SBM Gets, and What It Gives Up" not "Transaction Detail"; "Were the FY26 Numbers Actually Weak?" not "FY26 Results"; "What Could Make the Story Worse?" not "Risks".
+THE TILES CARRY THE NUMBERS. There are no charts, no tables and no prose blocks on this sheet — the four tiles are where every important figure goes, so choose them last, once you know what the story is. A tile whose number does not change the reader's understanding is a wasted quarter of the page.
 
-=== 10. THE VISUAL PAGES ===
+WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Sixty to a hundred characters. The timeline steps are shorter still: four or five words, because they are set side by side along a rule and a long one collides with its neighbour.
 
-TILES ('kpis'). Three to six big numbers in rows of three, each with a label and a one-line note. The note is where the condition on the figure goes — "Payable on completion", "Company figure at a 5% discount rate". This is the page that answers the desk's complaint that these notes carry too few numbers, so use it: deal economics, project economics, the result.
-
-CHARTS ('chart'). **Include at least one chart or tile page in every report, and a chart wherever there is a series or a build-up.** Two figures are a chart: FY25 revenue against FY26 revenue is a two-column chart and it beats the same two numbers in a sentence.
-
-  - waterfall: a balance and what moves it. Opening balance (isTotal), the additions and subtractions as signed steps, closing balance (isTotal). This is the right chart for cash: where it started, the proceeds, the dividend, the buy-back, the capex, and what is actually free.
-  - columns: a series over time — revenue, EBITDA, NPAT, margin, production, cash burn by period.
-  - bars: a split by name — segments, geographies, projects.
-
-  Every chart carries a one-line conclusion saying what to notice. A chart without one is decoration, and decoration does not go in a Daily Mover.
-
-TIMELINE ('timeline'). The dated steps, oldest first, two to eight of them. Use it when the order of events is the point: how a transaction came together, what is still outstanding, what completes when. It is also the honest way to show that something has not happened yet — a step dated "Pending" cannot be misread as done.
-
-COMPARISON ('comparison'). Two figures against a label, at most six rows. Three uses: what changed since the last disclosure; consensus against actual, where the evidence gives a reliable consensus; and what is received against what is given up in a transaction. Table only the rows that materially moved.
-
-  Every cell is ONE LINE — about 88 characters, and the schema cuts it there. A cell that needs a parenthetical to make sense ("1,275koz gold (50% attributable basis; ~1.0Moz on the 40% basis used in the transaction comparables)") is a cell carrying the page's argument: put the figure in the cell and the qualification in the conclusion line. Six rows of two lines each is the one combination that pushes this page onto a second sheet.
-
-MARKET VS REALITY ('market-vs-reality'). Whenever the headline and the reaction point different ways: strong results that sold off, weak results that rallied, a large consideration with conditions attached. Three blocks — what was announced, what investors appear to have reacted to (worded as a reading, not a fact), and the issue that decides the story from here.
-
-ENTITIES ('entities'). Named blocks with a dense stat line each — the projects a company has left, its segments, its geographies. The stat line is where project economics go: "NPV $340M - 95koz a year - AISC $1,750/oz - capex $140M".
-
-VOLUME. The market data block gives the session's volume against the company's trailing average. A large move on three or more times average volume is the market transacting on the news; the same move on ordinary turnover is a thin market re-pricing itself. Those are different reports. Put the multiple on the cover tile note or in a chart when it is unusual.
-
-MANAGEMENT ('management'). Only when the evidence names the people running the company, and only where a report has a page to spare — which at this length it usually does not. List only people the evidence names, with tenure and shareholding only where a filing gives them. Never supply a name, a date or a holding from your own knowledge.
-
-VITTI VIEW ('vitti-view') and OUTLOOK ('outlook'). A read of the setup and the checkable things that would change it. Company-specific only. At this length they are optional, and they lose to a page of numbers.
-
-QUESTION FOR MANAGEMENT. One question, coming out of your own research, about something the public documents leave open. It goes on the Vitti View page or the closing page — not both.
+EVERY FIGURE IS SOURCED. The sourceNote line at the foot names the filings this sheet drew on — "Source: ASX announcements, 16 Sep 2026". A figure whose source cannot be named is usually a figure that was not read anywhere.
 
 === 11. RISKS ===
 
-Real risks, specific to this company, each a short card with an icon: customer or supplier concentration, margin pressure, commodity exposure, regulation and approvals, trial failure, project delay, funding need, integration, debt, cash burn, counterparty performance, dependence on one product or contract, and the fact that the shares have just re-rated. Do not pad with generic risks to look balanced, and do not exaggerate one for the same reason. Six at the most; three real ones beat six padded.
+Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 120 characters.
 
-=== 12. THE CLOSING PAGE ===
+Do not pad with generic market risk to look balanced, and do not exaggerate one for the same reason. A snapshot whose risks are "market volatility" and "execution risk" is promotional material with a risk heading on it.
 
-Three or four standalone statements leaving the reader with a clear investment debate: what remains strong, what changed, what the key concern or opportunity is, and what to watch next. Then one pull quote — the sentence you would want remembered a week later. Do not restate the financial detail from earlier pages. The house sign-off line is appended automatically — do not write it yourself.
+=== 12. THE CLOSING LINE ===
+
+One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 190 characters. The compliance line is appended automatically; never write it.
 
 === 13. LENGTH — READ THIS TWICE ===
 
-The reason the ceiling is ${REPORT_PAGE_TARGET.max} pages is a real review of a real report: an eleven-sheet note where the dividend, the buy-back, deal completion and project execution each appeared on three or four pages. The verdict was that a Daily Mover is read in about a minute, and four or five pages is where it should land. Short is the house style, and it is a rule, not a preference.
+The sheet does not grow. This is the difference between this format and a page in a deck, and it is the thing that goes wrong: a fifth timeline step, a fourth risk card or a hundred-and-eighty-character clause does not make the page denser, it pushes content off the bottom edge where the reader never sees it and nobody notices it went. The counts in section 9 are the layout, not a style preference.
 
-THE DOCUMENT. ${REPORT_PAGE_TARGET.min} to ${REPORT_PAGE_TARGET.max} content pages. The renderer adds the compliance sheet, so ${REPORT_PAGE_TARGET.max} content pages is a ${REPORT_MAX_SHEETS}-page PDF and there is no way to publish a longer one. Do not lengthen the report because more information was available — include what changes the reader's understanding of the company or the move, and leave out the rest. If the evidence is genuinely thin, write a shorter, honest report and say what could not be established.
+So choosing what to leave out IS the job. Three risks, not six. Four tiles, not five. Three reasons the stock moved, not the seven things the announcement mentioned. If the evidence supports more, that is a sign you have found the story — pick the part of it that a portfolio manager needs in the sixty seconds this sheet gets, and drop the rest without apology.
 
-THE PAGE. Every page must fit on ONE 16:9 sheet. The page budget, which the tool schema also enforces:
-
-- narrative: at most 3 paragraphs, each 2-3 sentences and about 55 words. Two is usually better than three. Plus at most 2 callouts if there are paragraphs, 3 if there are not.
-- intro: one sentence. It frames the page; it is not the first paragraph.
-- kpis: 3-6 tiles, each with at most a one-line note, and at most 2 lines of context under them.
-- entities: at most 5 blocks, one line of comment each.
-- risks: at most 6 cards, each one or two sentences.
-- market-vs-reality: three blocks, 2-3 sentences each.
-- comparison: at most 6 rows, plus a one-sentence conclusion.
-- chart: 2-8 points and ONE conclusion sentence.
-- timeline: 2-8 events, one short line each.
-- management: at most 4 people, one line of background each, at most 4 changes.
-- vitti-view: at most 4 ratings with a few words of justification, one sentence of debate, one of catalyst.
-- outlook: at most 4 items a side, one line each.
-- closing: 3-4 sentences, one sentence each, plus one pull quote.
-
-THE SENTENCE. Short sentences. If a sentence has three clauses, it is two sentences. Cut every phrase that does not carry a fact: "in terms of", "with respect to", "it is also the case that", "going forward", "as previously mentioned". A paragraph that survives its own last sentence being deleted was one sentence too long.
-
-WHEN A PAGE WILL NOT FIT. That is the signal that the content is the wrong shape, not that the limit is wrong. Three ways out, in order: turn the numbers into a chart, tiles or a comparison table; turn the prose into callouts; or cut the second idea and let it be its own page — or no page at all. Never solve it by writing longer paragraphs, and never by adding a page beyond the ceiling.
+If the evidence is genuinely thin, say so on the sheet rather than padding it. A snapshot that states plainly what could not be established from the filings is a useful document. One that fills its four tiles with numbers that do not matter is not.
 
 === 14. WHEN THE JOB IS TO CHECK A DRAFT ===
 
@@ -1128,7 +1144,7 @@ What to verify, in order of how much damage it does:
 
 7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding.
 
-8. REPETITION AND LENGTH — sections 7 and 13. The same point made on more than one page, a narrative page with four or more paragraphs, a paragraph running past about 55 words, a page carrying two ideas, an "intro" that is really a paragraph, or a report over ${REPORT_PAGE_TARGET.max} content pages. Findings, not blocking on their own — but name the page and what to cut, because the desk's readers stop reading a page that looks like an essay.
+8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 120 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
 
 9. INTERNAL CONSISTENCY. The same metric must not carry two different values on two pages, and the closing page must not contradict the body.
 
@@ -1345,6 +1361,49 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
   const sourceNote = asString(page?.sourceNote) || null;
 
   switch (kind) {
+    /**
+     * The one-page sheet.
+     *
+     * Tolerant about where the lists arrive, because the model reaches for the
+     * generic field names it has used on every other page kind: `events` for a
+     * timeline and `items`/`callouts` for risks. Rejecting the page over that
+     * costs the whole report, so both spellings are accepted and the snapshot's
+     * own names win where both are present.
+     */
+    case "snapshot": {
+      const headline = asString(page.headline);
+      if (!headline) return null;
+
+      const timelineEvents = asTimelineEvents(page.timeline);
+      const timeline =
+        timelineEvents.length > 0 ? timelineEvents : asTimelineEvents(page.events);
+
+      const riskCallouts = asCallouts(page.risks);
+      const risks =
+        riskCallouts.length > 0
+          ? riskCallouts
+          : asCallouts(page.callouts).length > 0
+            ? asCallouts(page.callouts)
+            : asEntities(page.items).map((entity) => ({
+                label: entity.name,
+                text: [entity.stat, entity.comment].filter(Boolean).join(" "),
+                icon: null,
+              }));
+
+      return {
+        kind: "snapshot",
+        companyName: asString(page.companyName) || fallbackCompanyName,
+        headline,
+        kpis: asKpis(page.kpis).slice(0, 4),
+        whyItMoved: asStringArray(page.whyItMoved).slice(0, 3),
+        whatChangesNow: asStringArray(page.whatChangesNow).slice(0, 4),
+        timeline: timeline.slice(0, 5),
+        risks: risks.slice(0, 3),
+        pullQuote: asString(page.pullQuote),
+        sourceNote,
+      };
+    }
+
     case "cover": {
       const kpis = asKpis(page.kpis).slice(0, 2);
       const headline = asString(page.headline);
@@ -2152,6 +2211,28 @@ function formatReportForReview(doc: ReportDoc): string {
       const body: string[] = [];
 
       switch (page.kind) {
+        case "snapshot":
+          body.push(page.companyName, page.headline);
+          body.push(...page.kpis.map(kpiLine));
+          body.push(
+            "WHY IT MOVED:",
+            ...page.whyItMoved.map((item, index) => `  ${index + 1}. ${item}`),
+          );
+          body.push(
+            "WHAT CHANGES NOW:",
+            ...page.whatChangesNow.map((item, index) => `  ${index + 1}. ${item}`),
+          );
+          body.push(
+            "HOW WE GOT HERE:",
+            ...page.timeline.map((event) => `  ${event.date} — ${event.text}`),
+          );
+          body.push(
+            "KEY RISKS REMAINING:",
+            ...page.risks.map((risk) => `  ${risk.label}: ${risk.text}`),
+          );
+          if (page.pullQuote) body.push(`CLOSING LINE: ${page.pullQuote}`);
+          break;
+
         case "cover":
           body.push(page.companyName, page.headline);
           body.push(...page.kpis.map(kpiLine));

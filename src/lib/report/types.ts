@@ -225,6 +225,48 @@ export type ReportPage = PageCommon &
         items: ReportCallout[];
       }
     /**
+     * The whole report, on one sheet.
+     *
+     * This is what the desk actually publishes now. The multi-page deck above
+     * is still supported and still renders, but the reference file changed: on
+     * 16 September 2026 the desk published PIA as a single 960x540 sheet
+     * (`daily_movers` id 65, "pia-one-page-snapshot-v7"), and the drafts coming
+     * out of the Studio were four and five pages against it.
+     *
+     * A one-pager is not a short deck. Every part of it is fixed and every part
+     * is required, because the layout has no slack: four figures, two short
+     * numbered lists side by side, five dated steps, three risks, one line of
+     * judgement. Nothing is optional and nothing expands — an eight-item list
+     * does not spill onto a second sheet, it overruns the page. That is why the
+     * renderer truncates rather than trusting the model to count, and why the
+     * schema states the counts twice.
+     *
+     * `whyItMoved` and `whatChangesNow` are deliberately separate fields rather
+     * than one `callouts` array: they answer different questions (what happened
+     * / what it changes) and the published sheet sets them as two columns. One
+     * array would let the model put six items in the left column and none in
+     * the right.
+     */
+    | {
+        kind: "snapshot";
+        /** Full registered name, above the headline. */
+        companyName: string;
+        /** The one-line "what happened", as a title. */
+        headline: string;
+        /** Exactly four. The renderer takes the first four and pads nothing. */
+        kpis: ReportKpi[];
+        /** Left column, numbered. Three lines, one clause each. */
+        whyItMoved: string[];
+        /** Right column, numbered. Up to four lines. */
+        whatChangesNow: string[];
+        /** "How we got here" — the dated steps, along a rule. */
+        timeline: ReportTimelineEvent[];
+        /** "Key risks remaining" — three cards, label and one sentence. */
+        risks: ReportCallout[];
+        /** The closing line of judgement, set as a rule-topped pull quote. */
+        pullQuote: string;
+      }
+    /**
      * A chart with the one-line conclusion that says what to notice in it.
      *
      * The conclusion is required, not optional. A chart without it is
@@ -412,6 +454,7 @@ export type ReportDoc = {
 
 /** Page kinds the model is allowed to emit. `disclaimer` is not one of them. */
 export const REPORT_PAGE_KINDS = [
+  "snapshot",
   "cover",
   "narrative",
   "kpis",
@@ -436,6 +479,28 @@ export const REPORT_PAGE_KINDS = [
  * of the schema entirely means there is no path by which it can vary.
  */
 export const DISCLAIMER_HEADING = "Disclaimer:";
+
+/**
+ * The one-page sheet's compliance line, set in the footer.
+ *
+ * A single sheet cannot carry a full disclaimer page without becoming two
+ * sheets, which defeats the format. This is the short form **transcribed
+ * verbatim from the desk's own published one-pager** (PIA, 16 September 2026)
+ * rather than abbreviated from `DISCLAIMER_PARAGRAPHS` here — shortening
+ * regulated text is a compliance decision and not one this file gets to make.
+ *
+ * If compliance wants different wording on the one-pager, change it here; do
+ * not let the model write it, for the same reason the long form is not in the
+ * schema.
+ */
+export const ONE_PAGE_DISCLAIMER =
+  "General information only. This is not personal financial advice. Vitti Capital is a " +
+  "Corporate Authorised Representative of Point Capital Group Pty Ltd (AFSL 518031).";
+
+/** Whether a document is the single-sheet snapshot rather than the deck. */
+export function isSnapshotDoc(doc: { pages: ReportPage[] }): boolean {
+  return doc.pages.length === 1 && doc.pages[0]?.kind === "snapshot";
+}
 
 export const DISCLAIMER_PARAGRAPHS: readonly string[] = [
   "This information is of a general nature only and has been prepared without taking into account your objectives, financial situation or needs. You should consider the appropriateness of the information, having regard to your circumstances, before making any investment decisions.",
@@ -642,6 +707,41 @@ export function validateReportDoc(doc: ReportDoc): string[] {
     return problems;
   }
 
+  /**
+   * The snapshot is validated as a whole document, then returns.
+   *
+   * None of the deck's structural rules apply to it — there is no cover, no
+   * closing page and no four-page minimum on a document that is one page by
+   * definition. What carries over is the rule that matters: a report must state
+   * its risks. That is enforced here too, because it is the one editorial rule
+   * whose absence turns explanatory research into promotional material, and a
+   * shorter format is not a reason to drop it.
+   */
+  if (doc.pages[0].kind === "snapshot") {
+    const page = doc.pages[0];
+    if (doc.pages.length !== 1) {
+      problems.push(`snapshot report has ${doc.pages.length} pages, expected 1`);
+    }
+    if (!page.headline?.trim()) problems.push("snapshot has no headline");
+    if (page.kpis.length < 3) {
+      problems.push(`snapshot has ${page.kpis.length} KPI tiles, expected 4`);
+    }
+    if (page.whyItMoved.length < 2) {
+      problems.push("snapshot needs at least two 'why it moved' points");
+    }
+    if (page.whatChangesNow.length < 1) {
+      problems.push("snapshot needs at least one 'what changes now' point");
+    }
+    if (page.timeline.length < 2) {
+      problems.push("snapshot needs at least two dated steps");
+    }
+    if (page.risks.length < 1) {
+      problems.push("snapshot has no risks");
+    }
+    if (!page.pullQuote?.trim()) problems.push("snapshot has no closing line");
+    return problems;
+  }
+
   if (doc.pages[0].kind !== "cover") {
     problems.push(`first page is "${doc.pages[0].kind}", expected "cover"`);
   }
@@ -735,6 +835,9 @@ export function validateReportDoc(doc: ReportDoc): string[] {
  */
 export function pageNavLabel(page: ReportPage): string {
   if (page.kind === "cover") return "Overview";
+  // The snapshot is the whole document; its own headline is the only label
+  // there could be, and there is no rail to put it on.
+  if (page.kind === "snapshot") return "Snapshot";
   const title = page.title?.trim();
   if (!title) return page.kind;
   return title.length <= 48 ? title : `${title.slice(0, 47).trimEnd()}…`;

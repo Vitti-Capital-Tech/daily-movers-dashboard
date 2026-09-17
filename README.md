@@ -21,7 +21,7 @@ Studio**, which drafts each weekday's Daily Mover for an analyst to approve, and
 | AI Extraction | Claude Sonnet 4.6 — reads an uploaded report and fills the form |
 | AI Drafting | Claude Sonnet 5 — screens the board, reads ~25 filings, writes the report, then checks its own figures |
 | AI Post Copy | Claude Sonnet 5 — judges whether a published call was borne out, then drafts LinkedIn copy |
-| PDF Generation | `@react-pdf/renderer` — a 16:9 slide deck, no Chromium |
+| PDF Generation | `@react-pdf/renderer` — a single 16:9 sheet, no Chromium |
 | Market Data | Yahoo Finance (`yahoo-finance2`) — quotes and session moves |
 | ASX Data | ASX company directory + company announcements (see caveat below) |
 | Database | Postgres (Supabase) |
@@ -108,8 +108,8 @@ archive exactly as a manual upload would.
    `daily_movers` columns, so the archive row and the PDF cannot disagree.
 6. **Check every figure.** A second call verifies the report against the same
    filings and triggers one rewrite when it finds a wrong fact.
-7. **Render and file.** `@react-pdf/renderer` produces a four-to-five page
-   16:9 deck into a `drafts/` prefix, and the row goes to `pending`.
+7. **Render and file.** `@react-pdf/renderer` produces a one-page 16:9 sheet
+   into a `drafts/` prefix, and the row goes to `pending`.
 
 Two to three minutes and roughly **US$0.55** per draft at list price
 (~$12/month over 22 trading days). `ANTHROPIC_DRAFT_MODEL=claude-opus-5` moves
@@ -218,7 +218,7 @@ is in `net._http_response`. Both queries are in `drizzle/cron-setup.sql`.
 **`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
 higher value fails the *build* on Hobby rather than failing at runtime. A run
 measured at 120 seconds before the Accuracy Gate and about 200 with it, on
-Sonnet 5 writing seven pages; the report is now four or five pages, which only
+Sonnet 5 writing seven pages; the report is now a single page, which only
 moves that down. The deadline guards in `lib/drafts/generate.ts` are what keep
 the invocation inside the ceiling either way.
 
@@ -471,7 +471,7 @@ src/
                          arithmetic
     posts/               track-record reads, post shapes, compliance footer
     report/              typed report blocks, the length budget, the inlined
-                         house mark, and the react-pdf 16:9 deck template
+                         house mark, and the react-pdf 16:9 sheet template
     market/              Yahoo Finance provider & price refresh logic
     movers.ts            types + constants shared with client components
     table.ts             shared paging/search params and clamping
@@ -689,6 +689,13 @@ The cause is fixed where it belongs (comparison cells now have a character
 budget, and rows are tighter), and the counter is there so the next one shows up
 in the log rather than in front of a client.
 
+The counter matters more on the one-pager than it ever did on the deck, because
+there the overflow is *invisible*: no stray caption on an extra sheet, just a
+risk card that is no longer on the page. So `warnOnOverflow` expects
+`pages.length` for a snapshot and `pages.length + 1` for a deck — with the
+deck'"'"'s figure applied to a one-pager, a sheet that spilled would render 2
+against an expected 2 and pass in silence.
+
 **The window comes from the clock, not from the model.** The board is read
 while the market is still open, so its percentage is an *intraday* figure with
 hours of trading left — and the first SBM draft wrote "Shares Closed Up ~17.8%"
@@ -724,13 +731,20 @@ discarding those silently hid it for a week: the model emitted chart pages
 without their conclusion line, `normalisePage` threw them away, and the reports
 simply had no charts with nothing anywhere saying why.
 
-**The report is a 16:9 deck, not an A4 note.** The template rendered portrait
-on white until a generated draft was put next to what the desk actually
-publishes — the Focus Minerals report of 11 September 2026, a deep-navy slide
-deck with a mint rule top and bottom, the wordmark in the corner, and content in
-tiles, icon cards, dated timelines and before/now card tables. Next to it the
-portrait draft read as a memo someone had typed, and a reader scanning it had to
-work to find the numbers. `lib/report/template.tsx` now renders 960x540 to match.
+**The report is one 16:9 sheet, not an A4 note and no longer a deck.** The
+template rendered portrait on white until a generated draft was put next to what
+the desk actually publishes — a deep-navy slide on a mint rule, the wordmark in
+the corner, content in tiles and dated timelines rather than paragraphs. Next to
+it the portrait draft read as a memo someone had typed.
+
+It was then a four-to-five page deck until 16 September 2026, when the desk
+published PIA as a **single sheet** (`daily_movers` id 65,
+`pia-one-page-snapshot-v7.pdf`) and the Studio was still drafting five pages
+against it. `ReportPage` gained a `snapshot` kind carrying the whole report —
+company name, headline, four KPI tiles, two numbered columns (*Why It Moved* /
+*What Changes Now*), a *How We Got Here* timeline, three *Key Risks Remaining*
+cards and a closing pull quote. The deck page kinds all still render, so stored
+drafts from before the change open unchanged.
 
 **Colour carries meaning, never decoration.** Mint is the house accent and it
 marks the finding — the eyebrow, a highlighted tile, the conclusion band, the
@@ -740,20 +754,33 @@ takes cash out. Cobalt is a fact without a verdict. Body copy is one off-white
 and one grey and nothing else, because coloured body text on a dark ground makes
 a slide look like a warning label.
 
-**Four or five pages, and the ceiling is enforced in three places.** The desk
-reviewed an eleven-sheet note where the dividend, the buy-back, deal completion
-and project execution each appeared on three or four pages, and set the length
-at four to five. `REPORT_PAGE_TARGET` bounds the tool schema, `fitReportPages`
-drops from the back of an over-long document, and `validateReportDoc` refuses to
-render one — because a model told "at most five pages" in prose will still
-sometimes send six.
+**The sheet does not grow, which is the whole hazard of the format.** A page in
+a deck that runs long wraps onto a second sheet and looks wrong; a one-pager that
+runs long pushes its last risk card off the bottom edge, and nothing anywhere
+says it happened. So the counts are the layout, not a style preference: four
+tiles, three *why* clauses, four *what changes* clauses, five dated steps, three
+risks. `fitReportPages` truncates every one of those rather than trusting the
+model to count, the tool schema pins `minItems`/`maxItems` to 1 page of kind
+`snapshot`, and `validateReportDoc` checks the shape as a whole document. A
+render that comes back as one page is the proof it fitted — react-pdf would have
+paginated otherwise.
+
+**The compliance line is transcribed, not abbreviated.** A single sheet cannot
+carry the full disclaimer page without becoming two sheets, so the footer sets
+the short form in `ONE_PAGE_DISCLAIMER` — copied verbatim from the desk's own
+published one-pager rather than shortened from `DISCLAIMER_PARAGRAPHS` in code,
+because abbreviating regulated text is a compliance decision and not one this
+repo gets to make.
 
 **The layout is checked by looking at the rendered page.** A spacing bug looks
 plausible in the style object and wrong on the page: the KPI card once inherited
 the page's 1.5 line height and put a label's baseline 8pt below a 21pt number's,
 inside its descender depth. `npm run report:preview` renders the template
-without an API call — a fixture that exercises every page kind, or a stored draft
-by id — so a layout change is checked against real copy for nothing.
+without an API call. `npm run report:preview -- snapshot out.pdf` renders the
+one-pager from a fixture holding the **real published PIA copy**, which is the
+only version of the question worth asking: a fixture written to flatter the grid
+renders beautifully and proves nothing. `-- fixture` still exercises every deck
+page kind, and `-- <draftId>` renders a stored draft.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

@@ -20,6 +20,7 @@ import {
  * a second opinion.
  */
 const PAGE_ACCENT: Record<ReportPage["kind"], string> = {
+  snapshot: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
   cover: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
   narrative: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
   entities: "bg-sky-500/10 text-sky-700 dark:text-sky-400",

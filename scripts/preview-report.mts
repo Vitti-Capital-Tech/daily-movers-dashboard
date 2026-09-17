@@ -299,6 +299,73 @@ const FIXTURE: ReportDoc = {
   ],
 };
 
+/**
+ * The one-page sheet, with the copy the desk actually published.
+ *
+ * Taken from PIA, 16 September 2026 (`daily_movers` id 65) so that the preview
+ * answers the only question worth asking about this layout: does the real
+ * volume of copy fit on one 960x540 sheet? A fixture written to flatter the
+ * grid would render beautifully and prove nothing.
+ *
+ *   npm run report:preview -- snapshot out/snapshot.pdf
+ */
+const SNAPSHOT_FIXTURE: ReportDoc = {
+  ticker: "PIA",
+  companyName: "Pengana International Equities Limited",
+  moveDate: "2026-09-16",
+  analystName: "Prasham Doshi",
+  movePct: 10.2,
+  pages: [
+    {
+      kind: "snapshot",
+      companyName: "Pengana International Equities Limited",
+      headline:
+        "Buy-Back Settlement Clears Path for Antipodes Manager Transition",
+      kpis: [
+        { value: "+10.2%", label: "Share move (intraday)" },
+        { value: "$1.1972", label: "Post-tax NTA / share" },
+        { value: "3.7x", label: "Average trading volume" },
+        { value: "29 Sep", label: "Anticipated buy-back completion" },
+      ],
+      whyItMoved: [
+        "Settlement removes the legal overhang around the Buy-Back",
+        "Court proceedings to be discontinued by consent",
+        "PCG to seek consent to end the Takeovers Panel case",
+      ],
+      whatChangesNow: [
+        "Withdrawal window for already tendered shareholders extended to 24 Sep 2026",
+        "Frank Gooch and Brendan O'Dea join the Board now",
+        "Jollie, Wilson, Hamilton and Martin are expected to exit after completion",
+        "Antipodes (Global SMID) to become sub-investment manager after completion",
+      ],
+      timeline: [
+        { date: "27 Jul 2026", text: "EGM approves Buy-Back" },
+        { date: "29 Jul 2026", text: "Court challenge filed" },
+        { date: "31 Aug 2026", text: "Takeovers Panel application" },
+        { date: "16 Sep 2026", text: "Settlement reached" },
+        { date: "29 Sep 2026", text: "Anticipated Buy-Back completion" },
+      ],
+      risks: [
+        {
+          label: "Panel closure still pending",
+          text: "PCG still needs Takeovers Panel consent to end its application.",
+        },
+        {
+          label: "Buy-Back participation / scale",
+          text: "PCG and its subsidiaries will not participate; final register size remains uncertain.",
+        },
+        {
+          label: "Minimum viable entity threshold",
+          text: "PIA must stay above the Board's viability threshold after the Buy-Back.",
+        },
+      ],
+      pullQuote:
+        "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen.",
+      sourceNote: "Source: ASX announcements, 16 Sep 2026",
+    },
+  ],
+};
+
 async function loadDraft(id: number): Promise<ReportDoc> {
   const { getDb } = await import("../src/db");
   const { moverDrafts } = await import("../src/db/schema");
@@ -325,7 +392,11 @@ async function loadDraft(id: number): Promise<ReportDoc> {
 }
 
 const [target = "fixture", outArg] = process.argv.slice(2);
-const doc = /^\d+$/.test(target) ? await loadDraft(Number(target)) : FIXTURE;
+const doc = /^\d+$/.test(target)
+  ? await loadDraft(Number(target))
+  : target === "snapshot"
+    ? { ...SNAPSHOT_FIXTURE, pages: fitReportPages(SNAPSHOT_FIXTURE.pages, "PIA (snapshot)") }
+    : FIXTURE;
 
 /**
  * Validation is reported, not enforced.
@@ -343,4 +414,7 @@ if (problems.length > 0) {
 const out = path.resolve(outArg ?? `preview-${doc.ticker.toLowerCase()}.pdf`);
 await mkdir(path.dirname(out), { recursive: true });
 await writeFile(out, await renderToBuffer(DailyMoverReport({ doc })));
-console.log(`${doc.pages.length + 1} sheets -> ${out}`);
+const { isSnapshotDoc } = await import("../src/lib/report/types");
+console.log(
+  `${isSnapshotDoc(doc) ? doc.pages.length : doc.pages.length + 1} sheets -> ${out}`,
+);

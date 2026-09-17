@@ -162,6 +162,39 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
     };
   }
 
+  /**
+   * The snapshot has no slack at all, so it is cut here rather than trusted.
+   *
+   * Every other page kind can afford a long list -- the deck simply gets a
+   * denser page. This one is a fixed grid on a single 960x540 sheet: a fifth
+   * timeline step or a fourth risk card does not make the page busier, it
+   * pushes content off the bottom edge where nobody sees it go. The counts
+   * below are what the published PIA sheet uses and what the renderer lays out.
+   */
+  if (page.kind === "snapshot") {
+    return {
+      ...page,
+      headline: trim.text(page.headline, 110, "snapshot headline"),
+      kpis: page.kpis.slice(0, 4),
+      whyItMoved: page.whyItMoved
+        .slice(0, 3)
+        .map((item) => trim.text(item, 110, "why it moved")),
+      whatChangesNow: page.whatChangesNow
+        .slice(0, 4)
+        .map((item) => trim.text(item, 110, "what changes now")),
+      timeline: page.timeline.slice(0, 5).map((event) => ({
+        ...event,
+        text: trim.text(event.text, 46, "timeline step"),
+      })),
+      risks: page.risks.slice(0, 3).map((risk) => ({
+        ...risk,
+        label: trim.text(risk.label, 42, "risk label"),
+        text: trim.text(risk.text, 120, "risk detail"),
+      })),
+      pullQuote: trim.text(page.pullQuote, 190, "pull quote"),
+    };
+  }
+
   const title = trim.text(page.title, REPORT_LIMITS.titleChars, "title");
 
   switch (page.kind) {
