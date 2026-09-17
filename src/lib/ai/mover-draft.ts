@@ -320,7 +320,7 @@ const PAGE_SCHEMA = {
       description:
         "SNAPSHOT ONLY. Left column, 'Why It Moved': two or three single-clause lines saying what actually " +
         "happened today. No sentences, no lead-ins, no full stops needed — these are set as a numbered list " +
-        "next to the figures. Around 55-75 characters each; longer is CUT MID-WORD, so write short. Example: " +
+        "next to the figures. Around 55-70 characters each - the sheet CUTS MID-WORD past 76, so write short. Example: " +
         "\"Settlement removes the legal overhang around the Buy-Back\".",
     },
     whatChangesNow: {
@@ -358,7 +358,7 @@ const PAGE_SCHEMA = {
         type: "object",
         properties: {
           label: { type: "string", description: "Three or four words naming the risk." },
-          text: { type: "string", description: "One sentence, under 84 characters, on why it is unresolved." },
+          text: { type: "string", description: "One sentence, under 78 characters, on why it is unresolved." },
         },
         required: ["label", "text"],
       },
@@ -659,7 +659,7 @@ const PAGE_SCHEMA = {
       maxLength: REPORT_LIMITS.pullQuoteChars,
       description:
         "REQUIRED on a 'snapshot' page, where it is the closing line of judgement set in italic under a rule at " +
-        "the foot of the sheet: one sentence under 155 characters saying what the day settles and what it leaves open — the desk's " +
+        "the foot of the sheet: one sentence under 148 characters saying what the day settles and what it leaves open — the desk's " +
         "read, not a summary of the page above it. " +
         "\"PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio " +
         "looks like once they've chosen.\" " +
@@ -1088,7 +1088,7 @@ EXPECTATIONS. Compare against consensus only if a reliable figure appears in the
 
 The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a summary of a longer note. Emit EXACTLY ONE page and its kind is 'snapshot'. There is no cover, no separate risks page, no closing page. Every part below is required:
 
-- companyName, then headline. The headline is the whole story in one line: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing.
+- companyName, then headline. The headline is the whole story in one line, under 88 characters: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing.
 - FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
 - whyItMoved — two or three clauses on what happened TODAY.
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
@@ -1102,19 +1102,19 @@ The two columns answer different questions and must never repeat each other. If 
 
 THE TILES CARRY THE NUMBERS. There are no charts, no tables and no prose blocks on this sheet — the four tiles are where every important figure goes, so choose them last, once you know what the story is. A tile whose number does not change the reader's understanding is a wasted quarter of the page.
 
-WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Sixty to a hundred characters. The timeline steps are shorter still: four or five words, because they are set side by side along a rule and a long one collides with its neighbour.
+WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Fifty-five to seventy characters: the sheet cuts anything past 76 mid-word, so aim under the limit rather than at it. The timeline steps are shorter still: four or five words, because they are set side by side along a rule and a long one collides with its neighbour.
 
 EVERY FIGURE IS SOURCED. The sourceNote line at the foot names the filings this sheet drew on — "Source: ASX announcements, 16 Sep 2026". A figure whose source cannot be named is usually a figure that was not read anywhere.
 
 === 11. RISKS ===
 
-Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 84 characters.
+Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 78 characters.
 
 Do not pad with generic market risk to look balanced, and do not exaggerate one for the same reason. A snapshot whose risks are "market volatility" and "execution risk" is promotional material with a risk heading on it.
 
 === 12. THE CLOSING LINE ===
 
-One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 155 characters. The compliance line is appended automatically; never write it.
+One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 148 characters. The compliance line is appended automatically; never write it.
 
 === 13. LENGTH — READ THIS TWICE ===
 

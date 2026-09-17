@@ -478,8 +478,11 @@ export function fitReportPages(pages: ReportPage[], label: string): ReportPage[]
   if (trim.notes.length > 0) {
     console.warn(
       `draft ${label}: report ran over the page budget and was trimmed — ` +
-        `${trim.notes.join("; ")}. If this happens every day, the prompt's length ` +
-        `rules (section 12) are not landing.`,
+        `${trim.notes.join("; ")}. Expected when re-fitting a draft written before ` +
+        `the current caps; if it happens on FRESH drafts, the prompt's length rules ` +
+        `(sections 10 and 13) are not landing and the numbers there should be cut ` +
+        `rather than this trimmer relied on — it cuts mid-clause, which reads worse ` +
+        `than a shorter sentence would have.`,
     );
   }
 
