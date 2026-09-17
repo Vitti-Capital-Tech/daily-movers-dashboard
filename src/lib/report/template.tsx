@@ -637,6 +637,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  /**
+   * The snapshot body spreads, rather than stacking from the top.
+   *
+   * The bands are sized by their content, and the content does not reliably add
+   * up to the sheet: the first NZK draft left 59pt — a ninth of the page —
+   * sitting empty between the source line and the footer, which reads as an
+   * unfinished slide rather than a composed one. `space-between` hands that
+   * slack back to the gaps between bands instead of pooling it at the bottom,
+   * so a short day's copy breathes and a long day's does not change at all.
+   *
+   * It is also why the heading trio is wrapped in its own View: without that,
+   * the label, the company name and the headline would each be pushed apart by
+   * the same distribution, and those three are one block.
+   */
+  snapBody: {
+    flexGrow: 1,
+    marginTop: 16,
+    justifyContent: "space-between",
+  },
+
   /** Snapshot (the one-page sheet) ------------------------------------- */
   /**
    * A fixed grid, not a flow.
@@ -649,20 +669,20 @@ const styles = StyleSheet.create({
    */
   snapLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
+    fontSize: 7.95,
     letterSpacing: 2.4,
     color: PALETTE.faint,
     marginBottom: 3,
   },
   snapCompany: {
     fontFamily: "Helvetica",
-    fontSize: 12.5,
+    fontSize: 13.25,
     color: PALETTE.muted,
     marginBottom: 2,
   },
   snapHeadline: {
     fontFamily: "Times-Bold",
-    fontSize: 20,
+    fontSize: 21.2,
     lineHeight: 1.16,
     color: PALETTE.paper,
   },
@@ -678,12 +698,12 @@ const styles = StyleSheet.create({
   },
   snapTileValue: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 17,
+    fontSize: 18.02,
     color: PALETTE.paper,
   },
   snapTileLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 6,
+    fontSize: 6.36,
     letterSpacing: 1.5,
     color: PALETTE.faint,
     marginTop: 3,
@@ -692,27 +712,27 @@ const styles = StyleSheet.create({
   snapColumn: { flexGrow: 1, flexBasis: 0, marginRight: 14 },
   snapColHead: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
+    fontSize: 7.95,
     letterSpacing: 2,
     marginBottom: 5,
   },
   snapItem: { flexDirection: "row", marginBottom: 3.5 },
   snapItemNum: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
+    fontSize: 7.95,
     width: 11,
     marginTop: 0.6,
   },
   snapItemText: {
     flexGrow: 1,
     flexBasis: 0,
-    fontSize: 8.5,
+    fontSize: 9.01,
     lineHeight: 1.32,
     color: PALETTE.body,
   },
   snapBandHead: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
+    fontSize: 7.95,
     letterSpacing: 2,
     marginTop: 11,
     marginBottom: 5,
@@ -722,11 +742,11 @@ const styles = StyleSheet.create({
   snapStepDot: { width: 5, height: 5, borderRadius: 2.5, marginBottom: 4 },
   snapStepDate: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.5,
+    fontSize: 7.95,
     color: PALETTE.paper,
   },
   snapStepText: {
-    fontSize: 7.5,
+    fontSize: 7.95,
     lineHeight: 1.28,
     color: PALETTE.muted,
     marginTop: 1.5,
@@ -743,11 +763,11 @@ const styles = StyleSheet.create({
   },
   snapRiskLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 8,
+    fontSize: 8.48,
     color: PALETTE.paper,
     marginBottom: 2.5,
   },
-  snapRiskText: { fontSize: 7.5, lineHeight: 1.3, color: PALETTE.muted },
+  snapRiskText: { fontSize: 7.95, lineHeight: 1.3, color: PALETTE.muted },
   snapQuote: {
     marginTop: 11,
     paddingTop: 8,
@@ -756,13 +776,13 @@ const styles = StyleSheet.create({
   },
   snapQuoteText: {
     fontFamily: "Times-Italic",
-    fontSize: 10.5,
+    fontSize: 11.13,
     lineHeight: 1.3,
     color: PALETTE.paper,
   },
   /** The compliance line, set small under the by-line on the one-pager. */
   snapDisclaimer: {
-    fontSize: 5.6,
+    fontSize: 7.5,
     lineHeight: 1.25,
     color: PALETTE.faint,
     marginTop: 1.5,
@@ -2286,10 +2306,12 @@ function SnapshotBody({
   );
 
   return (
-    <View style={styles.body}>
-      <Text style={styles.snapLabel}>ONE-PAGE SNAPSHOT</Text>
-      <Text style={styles.snapCompany}>{page.companyName}</Text>
-      <Text style={styles.snapHeadline}>{page.headline}</Text>
+    <View style={styles.snapBody}>
+      <View>
+        <Text style={styles.snapLabel}>ONE-PAGE SNAPSHOT</Text>
+        <Text style={styles.snapCompany}>{page.companyName}</Text>
+        <Text style={styles.snapHeadline}>{page.headline}</Text>
+      </View>
 
       <View style={styles.snapTileRow}>
         {page.kpis.slice(0, 4).map((kpi, index) => (

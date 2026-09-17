@@ -174,24 +174,24 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
   if (page.kind === "snapshot") {
     return {
       ...page,
-      headline: trim.text(page.headline, 110, "snapshot headline"),
+      headline: trim.text(page.headline, 96, "snapshot headline"),
       kpis: page.kpis.slice(0, 4),
       whyItMoved: page.whyItMoved
         .slice(0, 3)
-        .map((item) => trim.text(item, 110, "why it moved")),
+        .map((item) => trim.text(item, 76, "why it moved")),
       whatChangesNow: page.whatChangesNow
         .slice(0, 4)
-        .map((item) => trim.text(item, 110, "what changes now")),
+        .map((item) => trim.text(item, 76, "what changes now")),
       timeline: page.timeline.slice(0, 5).map((event) => ({
         ...event,
-        text: trim.text(event.text, 46, "timeline step"),
+        text: trim.text(event.text, 36, "timeline step"),
       })),
       risks: page.risks.slice(0, 3).map((risk) => ({
         ...risk,
         label: trim.text(risk.label, 42, "risk label"),
-        text: trim.text(risk.text, 120, "risk detail"),
+        text: trim.text(risk.text, 84, "risk detail"),
       })),
-      pullQuote: trim.text(page.pullQuote, 190, "pull quote"),
+      pullQuote: trim.text(page.pullQuote, 158, "pull quote"),
     };
   }
 

@@ -765,6 +765,22 @@ model to count, the tool schema pins `minItems`/`maxItems` to 1 page of kind
 render that comes back as one page is the proof it fitted — react-pdf would have
 paginated otherwise.
 
+**The type size is set by the worst case, not by a nice-looking draft.** The
+first NZK sheet left 59pt — a ninth of the page — empty under the source line,
+because that day'"'"'s copy happened to be shorter than the caps allowed. Enlarging
+the type to fill it would have overflowed the moment a draft used its full
+allowance. So `npm run report:preview -- stress` renders a fixture with every
+list at its maximum count and every string at its character cap, and the type
+scale is whatever that fixture will carry: currently about 6% above the original
+sizes, with the caps cut to match (76 characters a clause, 84 a risk, 36 a
+timeline step). Two dials, and only two — the type or the caps.
+
+**Leftover height is distributed, not pooled at the bottom.** The bands are
+sized by their content and the content never adds up to exactly 540pt, so the
+body is `justify-content: space-between`: a short day'"'"'s copy breathes and a long
+day'"'"'s is unchanged. Every draft now fills the sheet identically rather than
+trailing off into white space.
+
 **The compliance line is transcribed, not abbreviated.** A single sheet cannot
 carry the full disclaimer page without becoming two sheets, so the footer sets
 the short form in `ONE_PAGE_DISCLAIMER` — copied verbatim from the desk's own
@@ -780,7 +796,8 @@ without an API call. `npm run report:preview -- snapshot out.pdf` renders the
 one-pager from a fixture holding the **real published PIA copy**, which is the
 only version of the question worth asking: a fixture written to flatter the grid
 renders beautifully and proves nothing. `-- fixture` still exercises every deck
-page kind, and `-- <draftId>` renders a stored draft.
+page kind, `-- stress` proves the worst case fits, and `-- <draftId>` renders a
+stored draft.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

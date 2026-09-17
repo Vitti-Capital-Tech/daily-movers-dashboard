@@ -366,6 +366,68 @@ const SNAPSHOT_FIXTURE: ReportDoc = {
   ],
 };
 
+/**
+ * The worst case the layout is ever asked to hold.
+ *
+ * Every list at its maximum count and every string at its `fit.ts` character
+ * cap, so the question it answers is not "does today's draft fit" but "does
+ * anything the fitter will ever emit fit". That distinction matters more here
+ * than on the deck: a long page in a deck wrapped onto a second sheet and
+ * looked wrong, whereas a long one-pager drops its last band off the bottom and
+ * says nothing. If this renders two sheets, the type is too big or the caps are
+ * too loose — those are the only two dials.
+ *
+ *   npm run report:preview -- stress out/stress.pdf
+ */
+const pad = (text: string, length: number) =>
+  text.length >= length ? text.slice(0, length) : text.padEnd(length, " word");
+
+const STRESS_FIXTURE: ReportDoc = {
+  ticker: "STRS",
+  companyName: "Stress Test Holdings International Limited",
+  moveDate: "2026-09-17",
+  analystName: "Prasham Doshi",
+  movePct: -12.4,
+  pages: [
+    {
+      kind: "snapshot",
+      companyName: "Stress Test Holdings International Limited",
+      headline: pad("Shares Fall as Much as ~12.4% in Morning Trade After ", 110),
+      kpis: [
+        { value: "-12.4%", label: "Share move (intraday)" },
+        { value: "$1,234.5M", label: "New FY26 EBITDA guidance range" },
+        { value: "5,950-6,050MT", label: "FY26 harvest volume guidance" },
+        { value: "30 Sep", label: "Anticipated completion date" },
+      ],
+      whyItMoved: [
+        pad("First reason the stock moved today, stated as one clause ", 88),
+        pad("Second reason the stock moved today, stated as one clause ", 88),
+        pad("Third reason the stock moved today, stated as one clause ", 88),
+      ],
+      whatChangesNow: [
+        pad("First thing that changes from here, stated as one clause ", 88),
+        pad("Second thing that changes from here, stated as one clause ", 88),
+        pad("Third thing that changes from here, stated as one clause ", 88),
+        pad("Fourth thing that changes from here, stated as one clause ", 88),
+      ],
+      timeline: [
+        { date: "17 Apr 2026", text: pad("First step in the chain ", 40) },
+        { date: "26 May 2026", text: pad("Second step in the chain ", 40) },
+        { date: "6 Aug 2026", text: pad("Third step in the chain ", 40) },
+        { date: "17 Sep 2026", text: pad("Fourth step in the chain ", 40) },
+        { date: "30 Sep 2026", text: pad("Fifth step in the chain ", 40) },
+      ],
+      risks: [
+        { label: pad("First risk label here ", 42), text: pad("The first risk, explained in one sentence ", 96) },
+        { label: pad("Second risk label here ", 42), text: pad("The second risk, explained in one sentence ", 96) },
+        { label: pad("Third risk label here ", 42), text: pad("The third risk, explained in one sentence ", 96) },
+      ],
+      pullQuote: pad("The closing line of judgement, saying what the day settles and what it leaves open ", 190),
+      sourceNote: pad("Source: Stress Market Update, ASX 17 Sep 2026; Stress Investor Presentation, ASX 26 May 2026 ", 150),
+    },
+  ],
+};
+
 async function loadDraft(id: number): Promise<ReportDoc> {
   const { getDb } = await import("../src/db");
   const { moverDrafts } = await import("../src/db/schema");
@@ -396,7 +458,9 @@ const doc = /^\d+$/.test(target)
   ? await loadDraft(Number(target))
   : target === "snapshot"
     ? { ...SNAPSHOT_FIXTURE, pages: fitReportPages(SNAPSHOT_FIXTURE.pages, "PIA (snapshot)") }
-    : FIXTURE;
+    : target === "stress"
+      ? { ...STRESS_FIXTURE, pages: fitReportPages(STRESS_FIXTURE.pages, "stress") }
+      : FIXTURE;
 
 /**
  * Validation is reported, not enforced.

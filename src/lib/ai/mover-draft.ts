@@ -320,7 +320,7 @@ const PAGE_SCHEMA = {
       description:
         "SNAPSHOT ONLY. Left column, 'Why It Moved': two or three single-clause lines saying what actually " +
         "happened today. No sentences, no lead-ins, no full stops needed — these are set as a numbered list " +
-        "next to the figures. Around 60-100 characters each; longer is cut. Example: " +
+        "next to the figures. Around 55-75 characters each; longer is CUT MID-WORD, so write short. Example: " +
         "\"Settlement removes the legal overhang around the Buy-Back\".",
     },
     whatChangesNow: {
@@ -358,7 +358,7 @@ const PAGE_SCHEMA = {
         type: "object",
         properties: {
           label: { type: "string", description: "Three or four words naming the risk." },
-          text: { type: "string", description: "One sentence, under 120 characters, on why it is unresolved." },
+          text: { type: "string", description: "One sentence, under 84 characters, on why it is unresolved." },
         },
         required: ["label", "text"],
       },
@@ -659,7 +659,7 @@ const PAGE_SCHEMA = {
       maxLength: REPORT_LIMITS.pullQuoteChars,
       description:
         "REQUIRED on a 'snapshot' page, where it is the closing line of judgement set in italic under a rule at " +
-        "the foot of the sheet: one sentence saying what the day settles and what it leaves open — the desk's " +
+        "the foot of the sheet: one sentence under 155 characters saying what the day settles and what it leaves open — the desk's " +
         "read, not a summary of the page above it. " +
         "\"PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio " +
         "looks like once they've chosen.\" " +
@@ -1108,13 +1108,13 @@ EVERY FIGURE IS SOURCED. The sourceNote line at the foot names the filings this 
 
 === 11. RISKS ===
 
-Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 120 characters.
+Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 84 characters.
 
 Do not pad with generic market risk to look balanced, and do not exaggerate one for the same reason. A snapshot whose risks are "market volatility" and "execution risk" is promotional material with a risk heading on it.
 
 === 12. THE CLOSING LINE ===
 
-One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 190 characters. The compliance line is appended automatically; never write it.
+One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 155 characters. The compliance line is appended automatically; never write it.
 
 === 13. LENGTH — READ THIS TWICE ===
 
@@ -1144,7 +1144,7 @@ What to verify, in order of how much damage it does:
 
 7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding.
 
-8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 120 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
+8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 84 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
 
 9. INTERNAL CONSISTENCY. The same metric must not carry two different values on two pages, and the closing page must not contradict the body.
 
