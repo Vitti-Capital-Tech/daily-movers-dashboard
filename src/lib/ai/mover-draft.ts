@@ -865,7 +865,39 @@ const PAGE_SCHEMA = {
         "pages — if a statement could have been written before reading the filings, it is not one of these.",
     },
   },
-  required: ["kind", "sourceNote"],
+  /**
+   * Everything the one-page sheet cannot render without.
+   *
+   * This was `["kind", "sourceNote"]`, which made every snapshot field optional
+   * and cost a real draft: NZK on 17 September 2026 came back with no `risks`,
+   * `validateReportDoc` refused it, and the desk got "Draft failed — nothing was
+   * published" instead of a report. The model was never told the field was
+   * mandatory, so nothing about that was its fault.
+   *
+   * It also defeated the reason this schema is one flat object rather than a
+   * `oneOf` over the page shapes: that choice exists so a whole report is never
+   * lost to a single schema error, and an optional-everything object simply
+   * moves the same failure from the API to `validateReportDoc`.
+   *
+   * Listing the snapshot's fields here is safe because `snapshot` is the only
+   * kind the model may emit — the enum description says so. The legacy deck
+   * kinds are retained for rendering stored drafts, not for generation, so they
+   * never have to satisfy this list. **If deck kinds are ever generated again,
+   * this list has to move behind a per-kind branch first**, or every deck page
+   * will be asked for fields it has no use for.
+   */
+  required: [
+    "kind",
+    "sourceNote",
+    "companyName",
+    "headline",
+    "kpis",
+    "whyItMoved",
+    "whatChangesNow",
+    "timeline",
+    "risks",
+    "pullQuote",
+  ],
 } as const;
 
 const REPORT_TOOL: Anthropic.Tool = {
@@ -1980,6 +2012,20 @@ export async function writeReport(
     /** Reference follow-ups, event chain, personnel and dates. */
     researchSignals?: ResearchSignals | null;
     /**
+     * A previous attempt that `validateReportDoc` refused, and why.
+     *
+     * Different in kind from `corrections`, which carries accuracy findings, so
+     * it is a different field and a different instruction. An accuracy finding
+     * says "this number is wrong" and invites a judgement; this says "the
+     * document cannot be rendered at all", and the fix is to supply what is
+     * absent. Conflating them would ask the model to reconsider prose when what
+     * is missing is an empty array.
+     *
+     * Takes priority over `corrections` when both are set: there is no point
+     * polishing figures on a document that cannot be published.
+     */
+    repair?: { doc: ReportDoc; problems: string[] };
+    /**
      * The first draft and what the Accuracy Gate found in it.
      *
      * Present only on the rewrite. The draft itself is included, not just the
@@ -2001,7 +2047,19 @@ export async function writeReport(
     ...buildEvidenceContent(input),
     {
       type: "text" as const,
-      text: input.corrections?.findings.length
+      text: input.repair
+        ? `The previous attempt at this report COULD NOT BE RENDERED. It is reproduced below, followed by ` +
+          `exactly what was wrong with it.\n\n` +
+          `THE PREVIOUS ATTEMPT\n\n${formatReportForReview(input.repair.doc)}\n\n\n` +
+          `WHY IT WAS REFUSED\n\n` +
+          input.repair.problems.map((problem) => `- ${problem}`).join("\n") +
+          `\n\nPublish a corrected report with the publish_daily_mover_draft tool. Fix EVERY problem listed ` +
+          `above: each names a field that is missing, empty, or below its minimum, and the document is ` +
+          `refused until all of them are right. Keep everything that was already correct — this is a repair, ` +
+          `not a fresh attempt — and do not drop content to make room. If a required field was left out ` +
+          `because the evidence seemed thin, say plainly in it what the filings do not establish rather than ` +
+          `omitting it again. The by-line analyst is ${input.analystName}.`
+        : input.corrections?.findings.length
         ? `A first draft of this report was written and then checked against the evidence above. It is ` +
           `reproduced below, followed by what the check found.\n\n` +
           `THE FIRST DRAFT\n\n${formatReportForReview(input.corrections.doc)}\n\n\n` +

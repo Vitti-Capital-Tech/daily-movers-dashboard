@@ -28,6 +28,7 @@ import {
 } from "@/lib/ai/mover-draft";
 import { draftModel, ZERO_USAGE, type TokenUsage } from "@/lib/ai/client";
 import { buildDraftPath, renderReportPdf } from "@/lib/report/render";
+import { validateReportDoc } from "@/lib/report/types";
 import { REPORTS_BUCKET } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -763,6 +764,98 @@ export async function finishDraft(
         findings: [],
       };
     }
+  }
+
+  /**
+   * One repair pass when the document cannot be rendered at all.
+   *
+   * `validateReportDoc` refuses a report that is structurally incomplete, and
+   * until now that refusal ended the run: NZK on 17 September 2026 came back
+   * without its `risks` array and the desk got "Draft failed — nothing was
+   * published" in place of a report, after the full corpus had been read and
+   * three model calls had been paid for.
+   *
+   * The Accuracy Gate already established the shape of the answer — name the
+   * problem, ask for one rewrite, spend the money once — and a missing required
+   * field is a far more mechanical fix than a disputed figure. So the same move
+   * is made here, with the validator's own messages handed over verbatim.
+   *
+   * Exactly one attempt, and only when there is time for it. A second failure
+   * falls through to the reporting below with the document kept, which is the
+   * other half of this: a draft that cannot be rendered is still worth more to
+   * an analyst than an empty row.
+   */
+  let structural = validateReportDoc(report.doc);
+
+  if (structural.length > 0) {
+    console.warn(
+      `draft ${draftId}: document refused (${structural.join("; ")}) — repairing`,
+    );
+
+    if (elapsedMs() > REWRITE_DEADLINE_MS) {
+      console.warn(`draft ${draftId}: no time left for a repair pass`);
+    } else {
+      await setProgress(draftId, STAGES.revising);
+      try {
+        const repaired = await writeReport(
+          {
+            moveDate,
+            row,
+            selection,
+            analystName: analyst.name,
+            todayDocuments,
+            historyDocuments,
+            volumeProfile,
+            filingTimeline,
+            moveWindow,
+            researchSignals,
+            repair: { doc: report.doc, problems: structural },
+          },
+          usage,
+        );
+        usage = repaired.usage;
+        const remaining = validateReportDoc(repaired.report.doc);
+        // Only take the repair if it actually is one. A second attempt that
+        // fixes the risks and drops the timeline is not progress.
+        if (remaining.length < structural.length) {
+          report = repaired.report;
+          structural = remaining;
+        }
+      } catch (error) {
+        console.warn(`draft ${draftId}: repair pass failed`, error);
+      }
+    }
+  }
+
+  /**
+   * A document that still will not render is stored, not discarded.
+   *
+   * The row ends `failed` either way — nothing unrenderable reaches the archive
+   * — but the report JSON goes in with it. Without that the failure is a dead
+   * row carrying one line of error text, and the only way to find out what the
+   * model actually wrote is to pay for the whole run again. With it, the
+   * analyst can read the draft, see that four of five bands were fine, and fix
+   * the fifth by hand.
+   */
+  if (structural.length > 0) {
+    const reason = `Report document is not renderable: ${structural.join("; ")}`;
+    await db
+      .update(moverDrafts)
+      .set({
+        status: "failed",
+        error: reason,
+        report: { ...report.doc, citedIdsIds: report.citedIdsIds },
+        accuracy,
+        model: draftModel(),
+        inputTokens: usage.inputTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        outputTokens: usage.outputTokens,
+        progress: null,
+      })
+      .where(eq(moverDrafts.id, draftId));
+
+    throw new Error(reason);
   }
 
   await setProgress(draftId, STAGES.rendering);
