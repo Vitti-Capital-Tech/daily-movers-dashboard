@@ -11,6 +11,7 @@ import { asxData, type Announcement, type ScreenerRow } from "@/lib/asx";
 import { ANNOUNCEMENTS_TARGET } from "@/lib/asx/types";
 import type { VolumeProfile } from "@/lib/market/volume";
 
+import type { ResearchSignals } from "./research-signals";
 import { describeMoveWindow } from "./trading-day";
 
 import { finishDraft, type GenerateOutcome } from "./generate";
@@ -60,6 +61,19 @@ export type RegenerationPlan = {
   volumeProfile: VolumeProfile | null;
   /** When the original board was read, so the move keeps its own window. */
   fetchedAt: string | null;
+  /**
+   * The signals the original run derived from today's announcement.
+   *
+   * Replayed from storage rather than recomputed, for the same reason the
+   * announcement list is: a regenerate exists to change *only* the code that
+   * wrote the report, and re-deriving the references and the event chain would
+   * make the two drafts differ by their evidence as well.
+   *
+   * Null for a draft written before the signals existed, which is exactly what
+   * the optional field on `DraftEvidence` is for -- the prompt then omits those
+   * blocks instead of pretending to have them.
+   */
+  signals: ResearchSignals | null;
 };
 
 /**
@@ -122,6 +136,7 @@ export async function planRegeneration(options: {
     today?: Announcement[];
     history?: Announcement[];
     volumeProfile?: VolumeProfile | null;
+    signals?: ResearchSignals | null;
   };
   const selection = source.selection as MoverSelection | null;
   const ticker = source.ticker;
@@ -186,6 +201,7 @@ export async function planRegeneration(options: {
       today: sources.today,
       history: sources.history,
       volumeProfile: sources.volumeProfile ?? null,
+      signals: sources.signals ?? null,
       fetchedAt:
         (source.screen as { fetchedAt?: string } | null)?.fetchedAt ?? null,
     },
@@ -234,6 +250,15 @@ export async function runRegeneration(
       moveWindow: plan.fetchedAt
         ? describeMoveWindow(new Date(plan.fetchedAt))
         : null,
+      /**
+       * Without this the one-page sheet loses its spine. "How We Got Here" is
+       * the event chain, and the chain is assembled by `planCorpus` from
+       * today's announcement text -- which a regenerate does not re-read. Left
+       * out, the model would rebuild a timeline from the bare date-and-headline
+       * index and produce a worse version of a section it already had the
+       * answer to, on a draft whose whole purpose is an honest comparison.
+       */
+      researchSignals: plan.signals,
       startedAt,
       usage: ZERO_USAGE,
     });
