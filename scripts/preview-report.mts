@@ -388,6 +388,9 @@ const STRESS_FIXTURE: ReportDoc = {
   moveDate: "2026-09-17",
   analystName: "Prasham Doshi",
   movePct: -12.4,
+  reportPrice: 0.018,
+  moveTime: "10:42 am",
+  moveIsClose: false,
   pages: [
     {
       kind: "snapshot",
@@ -422,6 +425,22 @@ const STRESS_FIXTURE: ReportDoc = {
         { label: pad("Second risk label here ", 42), text: pad("The second risk, explained in one sentence ", 96) },
         { label: pad("Third risk label here ", 42), text: pad("The third risk, explained in one sentence ", 96) },
       ],
+      /**
+       * The chart shares the timeline's slot, so the stress sheet carries BOTH:
+       * the renderer prefers the chart, and the worst case is whichever is
+       * taller. Five points with the longest labels the fitter allows.
+       */
+      chart: {
+        type: "columns",
+        unit: "$ million",
+        points: [
+          { label: pad("First period ", 14), value: 19, display: "$19m" },
+          { label: pad("Second period ", 14), value: 27, display: "$27m" },
+          { label: pad("Third period ", 14), value: 34, display: "$34m" },
+          { label: pad("Fourth period ", 14), value: 39, display: "$39m" },
+          { label: pad("Fifth period ", 14), value: 42, display: "$42m", highlight: true },
+        ],
+      },
       pullQuote: pad("The closing line of judgement, saying what the day settles and what it leaves open ", 190),
       sourceNote: pad("Source: Stress Market Update, ASX 17 Sep 2026; Stress Investor Presentation, ASX 26 May 2026 ", 150),
     },

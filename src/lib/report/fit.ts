@@ -182,6 +182,20 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
       whatChangesNow: page.whatChangesNow
         .slice(0, 4)
         .map((item) => trim.text(item, 76, "what changes now")),
+      /**
+       * The chart shares the timeline's slot, so it is capped just as hard.
+       * Five columns is what the band's width carries with labels under them
+       * that are still readable; a sixth makes every label wrap.
+       */
+      chart: page.chart
+        ? {
+            ...page.chart,
+            points: page.chart.points.slice(0, 5).map((point) => ({
+              ...point,
+              label: trim.text(point.label, 14, "chart label"),
+            })),
+          }
+        : null,
       timeline: page.timeline.slice(0, 5).map((event) => ({
         ...event,
         text: trim.text(event.text, 46, "timeline step"),

@@ -224,6 +224,9 @@ function pageKindLabel(kind: ReportPage["kind"]): string | null {
   }
 }
 
+/** Tallest a column may draw. The band has ~34pt; the value label takes the rest. */
+const SNAP_BAR_MAX = 22;
+
 const styles = StyleSheet.create({
   page: {
     backgroundColor: PALETTE.navy,
@@ -801,6 +804,38 @@ const styles = StyleSheet.create({
     color: PALETTE.muted,
     marginTop: 1.5,
   },
+  /**
+   * The compact chart, sized to the timeline band it replaces.
+   *
+   * 34pt of plot. That is not much, and it is deliberate: at this size the
+   * chart is a SHAPE with figures printed on it, not a chart with axes and
+   * gridlines. A reader takes "four upgrades, each bigger than the last" from
+   * the silhouette in about a second, which is the entire reason it is here —
+   * a taller chart would buy precision the printed values already give.
+   */
+  snapChartPlot: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    height: SNAP_BAR_MAX + 12,
+  },
+  snapChartCol: { flexGrow: 1, flexBasis: 0, alignItems: "center", paddingHorizontal: 3 },
+  snapChartValue: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.4,
+    color: PALETTE.paper,
+    marginBottom: 2.5,
+  },
+  snapChartBar: { width: "68%", borderTopLeftRadius: 2, borderTopRightRadius: 2 },
+  snapChartLabels: { flexDirection: "row", marginTop: 3.5 },
+  snapChartLabel: {
+    flexGrow: 1,
+    flexBasis: 0,
+    textAlign: "center",
+    fontSize: 6.8,
+    color: PALETTE.faint,
+    paddingHorizontal: 2,
+  },
+
   snapRiskRow: { flexDirection: "row" },
   /** Coral edge, so the risk band is identifiable before it is read. */
   snapRisk: {
@@ -2388,7 +2423,16 @@ function leadTile(
 ): { value: string; label: string } {
   if (typeof doc.movePct !== "number") return fallback;
 
-  const signed = `${doc.movePct > 0 ? "+" : doc.movePct < 0 ? "\u2212" : ""}${Math.abs(doc.movePct).toFixed(1)}%`;
+  /**
+   * A plain ASCII hyphen, not U+2212.
+   *
+   * The typographic minus is not in Helvetica's WinAnsi encoding, so react-pdf
+   * dropped it silently: the tile printed "12.4%" on a day the stock fell,
+   * reintroducing character for character the missing-sign fault this function
+   * exists to prevent. Anything outside WinAnsi must be checked in a rendered
+   * PDF before it is trusted here.
+   */
+  const signed = `${doc.movePct > 0 ? "+" : doc.movePct < 0 ? "-" : ""}${Math.abs(doc.movePct).toFixed(1)}%`;
 
   const parts: string[] = [];
   if (typeof doc.reportPrice === "number" && Number.isFinite(doc.reportPrice)) {
@@ -2403,6 +2447,76 @@ function leadTile(
   );
 
   return { value: signed, label: `Share move \u00B7 ${parts.join(" \u00B7 ")}` };
+}
+
+/**
+ * The snapshot's chart band.
+ *
+ * Every type is drawn as vertical columns. `bars` and `waterfall` have their
+ * own layouts on the deck's full-page chart, and neither survives being shrunk
+ * to 34pt — a waterfall in particular needs its floating steps to be legible or
+ * it misleads. So the shape is fixed here and the prompt asks for `columns`;
+ * anything else is drawn as columns rather than drawn badly.
+ *
+ * Heights are proportional to the absolute value, so a negative figure draws
+ * upward in coral rather than below a baseline there is no room for. The
+ * printed value keeps its sign, which is what a reader actually reads.
+ */
+function SnapshotChart({
+  chart,
+  theme,
+}: {
+  chart: ReportChart;
+  theme: DeckTheme;
+}) {
+  const points = chart.points.slice(0, 5);
+  const largest = Math.max(...points.map((point) => Math.abs(point.value)), 0);
+  // A flat series (every figure identical) would divide by zero; draw it as a
+  // row of equal columns, which is the honest picture of "nothing moved".
+  const scale = (value: number) =>
+    largest > 0 ? Math.max(3, (Math.abs(value) / largest) * SNAP_BAR_MAX) : SNAP_BAR_MAX;
+
+  // Nothing flagged: the last column is where the series has got to, which
+  // matches the timeline band marking its last step.
+  const flagged = points.some((point) => point.highlight);
+
+  return (
+    <View>
+      <View style={styles.snapChartPlot}>
+        {points.map((point, index) => {
+          const lead = flagged ? point.highlight : index === points.length - 1;
+          return (
+            <View key={index} style={styles.snapChartCol}>
+              <Text style={styles.snapChartValue}>
+                {pointLabel(point.value, point.display)}
+              </Text>
+              <View
+                style={[
+                  styles.snapChartBar,
+                  {
+                    height: scale(point.value),
+                    backgroundColor:
+                      point.value < 0
+                        ? PALETTE.coral
+                        : lead
+                          ? theme.accent
+                          : PALETTE.steel,
+                  },
+                ]}
+              />
+            </View>
+          );
+        })}
+      </View>
+      <View style={styles.snapChartLabels}>
+        {points.map((point, index) => (
+          <Text key={index} style={styles.snapChartLabel}>
+            {point.label}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
 }
 
 function SnapshotBody({
@@ -2478,7 +2592,18 @@ function SnapshotBody({
         {column("What changes now", page.whatChangesNow, PALETTE.cobalt, true)}
       </View>
 
-      {page.timeline.length > 0 ? (
+      {/**
+       * One band, two possible contents. The chart wins when the model supplied
+       * one, because it chose the figures over the dates deliberately.
+       */}
+      {page.chart && page.chart.points.length >= 2 ? (
+        <View>
+          <Text style={[styles.snapBandHead, { color: theme.accent }]}>
+            {`HOW WE GOT HERE${page.chart.unit ? `  \u00B7  ${page.chart.unit.toUpperCase()}` : ""}`}
+          </Text>
+          <SnapshotChart chart={page.chart} theme={theme} />
+        </View>
+      ) : page.timeline.length > 0 ? (
         <View>
           <Text style={[styles.snapBandHead, { color: theme.accent }]}>
             HOW WE GOT HERE

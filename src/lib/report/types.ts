@@ -261,6 +261,22 @@ export type ReportPage = PageCommon &
         whatChangesNow: string[];
         /** "How we got here" — the dated steps, along a rule. */
         timeline: ReportTimelineEvent[];
+        /**
+         * A small column chart that takes the timeline band's place.
+         *
+         * The two answer the same question — how the story got here — and the
+         * sheet has room for one of them, so they share a slot rather than
+         * compete for height. Dated steps are right when the story is a
+         * sequence of events; the chart is right when it is a progression of
+         * figures, and a reader takes a shape in far less time than five dates:
+         * four guidance upgrades climbing $19m -> $27m -> $34m -> $39m is one
+         * glance, and the same thing as prose is four clauses nobody finishes.
+         *
+         * Rendered compact (about 36pt of plot), so it is a shape with figures
+         * on it rather than a chart with axes. When both are present the chart
+         * wins; when neither is, the band is simply absent.
+         */
+        chart?: ReportChart | null;
         /** "Key risks remaining" — three cards, label and one sentence. */
         risks: ReportCallout[];
         /** The closing line of judgement, set as a rule-topped pull quote. */
@@ -754,8 +770,14 @@ export function validateReportDoc(doc: ReportDoc): string[] {
     if (page.whatChangesNow.length < 1) {
       problems.push("snapshot needs at least one 'what changes now' point");
     }
-    if (page.timeline.length < 2) {
-      problems.push("snapshot needs at least two dated steps");
+    // Either band satisfies this: the chart and the timeline are alternatives
+    // for the same slot, so requiring the timeline would refuse a valid sheet
+    // that chose the chart.
+    const chartPoints = page.chart?.points?.length ?? 0;
+    if (page.timeline.length < 2 && chartPoints < 2) {
+      problems.push(
+        "snapshot needs at least two dated steps, or a chart with at least two points",
+      );
     }
     if (page.risks.length < 1) {
       problems.push("snapshot has no risks");

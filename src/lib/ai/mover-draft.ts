@@ -447,7 +447,13 @@ const PAGE_SCHEMA = {
     chart: {
       type: "object",
       description:
-        "'chart' pages only. One series of labelled figures, all of them read from the evidence.",
+        "One series of labelled figures, all of them read from the evidence. On a 'snapshot' page this is " +
+        "OPTIONAL and REPLACES the timeline: supply it instead of 'timeline' when the story that got here is a " +
+        "progression of NUMBERS rather than a sequence of events — four guidance upgrades climbing through the " +
+        "year, three capital raises, production by half, margin by period. Two to five points, type 'columns', " +
+        "and put the printed figure in each point's 'display'. A reader takes the shape in a second, which five " +
+        "dated lines never achieve. Use 'timeline' instead when the steps are events with no common unit " +
+        "(approval, challenge, settlement) — those do not plot. Supply one or the other, never both.",
       properties: {
         type: {
           type: "string",
@@ -1124,7 +1130,9 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
 - FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
 - whyItMoved — two or three clauses on what happened TODAY.
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
-- timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled.
+- timeline OR chart — one band, your choice, never both:
+  - timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. Right when the steps are events with no common unit: proposal, approval, challenge, settlement.
+  - chart — two to five labelled figures, type 'columns', each carrying its printed value in 'display'. Right when what got the company here is a progression of NUMBERS in one unit: four guidance upgrades through the year, three capital raises, production by half, net debt by period. Prefer it whenever such a series exists, because a reader takes the shape of four rising columns in a second and will not read four dated lines saying the same thing. It is drawn small, so the printed figures carry the precision and the columns carry the impression.
 - risks — three cards on what is still open AFTER today.
 - pullQuote — one line of judgement.
 
@@ -1450,6 +1458,7 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
         whyItMoved: asStringArray(page.whyItMoved).slice(0, 3),
         whatChangesNow: asStringArray(page.whatChangesNow).slice(0, 4),
         timeline: timeline.slice(0, 5),
+        chart: asChart(page.chart),
         risks: risks.slice(0, 3),
         pullQuote: asString(page.pullQuote),
         sourceNote,

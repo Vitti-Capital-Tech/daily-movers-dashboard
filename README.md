@@ -775,6 +775,24 @@ scale is whatever that fixture will carry: currently about 6% above the original
 sizes, with the caps cut to match (76 characters a clause, 84 a risk, 36 a
 timeline step). Two dials, and only two — the type or the caps.
 
+**The "how we got here" band is a timeline OR a small chart.** They answer the
+same question and share one slot, so the sheet stays one page either way. Dated
+steps are right when the story is a sequence of events with no common unit
+(proposal, approval, challenge, settlement); a two-to-five column chart is right
+when it is a progression of figures in one unit — four guidance upgrades
+climbing through the year, three capital raises, production by half. The chart is
+drawn at ~34pt, so the printed values carry the precision and the columns carry
+the impression. The model picks; the renderer prefers the chart when both arrive.
+
+**The share-move tile is composed by the renderer, not the model.** Its figure,
+the traded price and the time all come from the exchange feed and the clock, the
+same rule as `movePct`. A review found the tile printing "~12.5%" on a day the
+stock fell — no sign, no price, no timestamp — and a Daily Mover published
+mid-session is unreadable without all three. One trap worth knowing: the
+typographic minus (U+2212) is **not** in Helvetica's WinAnsi encoding and
+react-pdf drops it silently, which reproduced the missing-sign bug exactly. It is
+a plain ASCII hyphen for that reason.
+
 **Leftover height is distributed, not pooled at the bottom.** The bands are
 sized by their content and the content never adds up to exactly 540pt, so the
 body is `justify-content: space-between`: a short day'"'"'s copy breathes and a long
