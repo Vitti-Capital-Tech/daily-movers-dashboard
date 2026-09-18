@@ -781,8 +781,9 @@ steps are right when the story is a sequence of events with no common unit
 (proposal, approval, challenge, settlement); a two-to-five column chart is right
 when it is a progression of figures in one unit — four guidance upgrades
 climbing through the year, three capital raises, production by half. The chart is
-drawn at ~34pt, so the printed values carry the precision and the columns carry
-the impression. The model picks; the renderer prefers the chart when both arrive.
+drawn short — no taller than the timeline it replaces, which is what keeps the
+sheet to one page — so the printed values carry the precision and the columns
+carry the impression. The model picks; the renderer prefers the chart when both arrive.
 
 **The share-move tile is composed by the renderer, not the model.** Its figure,
 the traded price and the time all come from the exchange feed and the clock, the
@@ -792,6 +793,14 @@ mid-session is unreadable without all three. One trap worth knowing: the
 typographic minus (U+2212) is **not** in Helvetica's WinAnsi encoding and
 react-pdf drops it silently, which reproduced the missing-sign bug exactly. It is
 a plain ASCII hyphen for that reason.
+
+**`report:preview` reads the page count out of the rendered PDF.** It used to
+print `doc.pages.length` — the document's own page count restated back — so it
+reported "1 sheets" for a snapshot that had overflowed onto a second, blank
+sheet, and every check run through it was worthless. It now reports
+`N sheets (expected M)` from the real PDF and exits non-zero when they differ.
+A preview whose only number is a restatement of its input cannot catch the one
+failure this format has.
 
 **Leftover height is distributed, not pooled at the bottom.** The bands are
 sized by their content and the content never adds up to exactly 540pt, so the

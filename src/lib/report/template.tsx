@@ -224,8 +224,17 @@ function pageKindLabel(kind: ReportPage["kind"]): string | null {
   }
 }
 
-/** Tallest a column may draw. The band has ~34pt; the value label takes the rest. */
-const SNAP_BAR_MAX = 22;
+/**
+ * Tallest a column may draw.
+ *
+ * 18, not 22. The chart shares the timeline band's slot and has to be no taller
+ * than it: at 22 the stress sheet rendered a second, blank page, and the preview
+ * did not catch it because it was printing the document's own page count back
+ * instead of the PDF's. Raise this only against `npm run report:preview --
+ * stress`, which now reads the rendered page count and exits non-zero on
+ * overflow.
+ */
+const SNAP_BAR_MAX = 18;
 
 const styles = StyleSheet.create({
   page: {
@@ -816,7 +825,7 @@ const styles = StyleSheet.create({
   snapChartPlot: {
     flexDirection: "row",
     alignItems: "flex-end",
-    height: SNAP_BAR_MAX + 12,
+    height: SNAP_BAR_MAX + 10,
   },
   snapChartCol: { flexGrow: 1, flexBasis: 0, alignItems: "center", paddingHorizontal: 3 },
   snapChartValue: {
@@ -826,7 +835,7 @@ const styles = StyleSheet.create({
     marginBottom: 2.5,
   },
   snapChartBar: { width: "68%", borderTopLeftRadius: 2, borderTopRightRadius: 2 },
-  snapChartLabels: { flexDirection: "row", marginTop: 3.5 },
+  snapChartLabels: { flexDirection: "row", marginTop: 2.5 },
   snapChartLabel: {
     flexGrow: 1,
     flexBasis: 0,

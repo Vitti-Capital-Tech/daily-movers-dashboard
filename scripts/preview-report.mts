@@ -496,8 +496,28 @@ if (problems.length > 0) {
 
 const out = path.resolve(outArg ?? `preview-${doc.ticker.toLowerCase()}.pdf`);
 await mkdir(path.dirname(out), { recursive: true });
-await writeFile(out, await renderToBuffer(DailyMoverReport({ doc })));
+const pdf = await renderToBuffer(DailyMoverReport({ doc }));
+await writeFile(out, pdf);
+
+/**
+ * The page count is READ BACK OUT OF THE PDF, never computed from the document.
+ *
+ * This line used to print `doc.pages.length`, which is what the document asked
+ * for rather than what react-pdf produced — so it reported "1 sheets" for a
+ * snapshot that had in fact overflowed onto a second, blank sheet, and every
+ * check run through it was worthless. A preview whose only number is a
+ * restatement of its own input cannot catch the one failure this format has.
+ */
 const { isSnapshotDoc } = await import("../src/lib/report/types");
-console.log(
-  `${isSnapshotDoc(doc) ? doc.pages.length : doc.pages.length + 1} sheets -> ${out}`,
-);
+const { getDocumentProxy } = await import("unpdf");
+const expected = isSnapshotDoc(doc) ? doc.pages.length : doc.pages.length + 1;
+const rendered = (await getDocumentProxy(new Uint8Array(pdf))).numPages;
+
+console.log(`${rendered} sheets (expected ${expected}) -> ${out}`);
+if (rendered !== expected) {
+  console.error(
+    `OVERFLOW: rendered ${rendered} sheets, expected ${expected}. ` +
+      `Content is running off the bottom of the sheet — cut a length cap or the type scale.`,
+  );
+  process.exitCode = 1;
+}
