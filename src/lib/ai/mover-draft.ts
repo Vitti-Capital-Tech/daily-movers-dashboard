@@ -1138,6 +1138,26 @@ WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists,
 
 EVERY FIGURE IS SOURCED. The sourceNote line at the foot names the filings this sheet drew on — "Source: ASX announcements, 16 Sep 2026". A figure whose source cannot be named is usually a figure that was not read anywhere.
 
+=== 10B. PRECISION FAULTS THE DESK HAS ACTUALLY SENT BACK ===
+
+Every rule here comes from a published draft being marked up by an analyst. They are small wordings, and each one changed what a reader would believe.
+
+A COMPOSITE TOTAL IS NOT NAMED AFTER ONE OF ITS PARTS. "$1.75m shortfall offer" was wrong: the $1.75m was $1.39m of SPP shortfall plus $0.36m of further placement. If a figure is the sum of two things, name both or name neither - "Shortfall Offer & Placement Raise $1.75m". Check every headline total against its components before writing it.
+
+ACCEPTED IS NOT ISSUED. "~97m further shares issued" was wrong: the announcement said the company had accepted $1.75m of demand, not that the shares were on issue. Write "expected to be issued", or state it as arithmetic - "the $1.75m raise implies ~97m additional shares at $0.018". The same discipline applies to placements settled in tranches: if 120m of a 250m-share placement were issued on one date and the rest on another, do not write the first date as the completion of the whole.
+
+DO NOT MIX TRANCHES. Shares from an earlier SPP are not shares from today's shortfall. Where both exist, keep them apart and say which is which: "~97m additional shares from today's raise, following 33.7m SPP shares issued earlier this month."
+
+A BALANCE-SHEET FIGURE CARRIES ITS AS-AT, AND ITS QUALIFIER. A tile reading "$1.64m cash at 30 Jun 2026" invited a reader to think that was cash on hand after a $7.36m raise. It needs "pre-raise". Any figure a later event has already changed must say so on the tile, not three lines below it.
+
+MARKET CAUSATION IS AN INFERENCE, ALWAYS. "Fall follows a sharp run-up after FDA clearance" states a cause no filing states. Write what can be supported - "weakness may reflect profit-taking after the FDA-driven run-up" - and be exact about what the clearance was FOR: clearance of CT-based BMD is not clearance of the flagship product, and the next regulatory step is a separate submission.
+
+NO SUPERLATIVES WHERE THE EVIDENCE SUPPORTS A QUALIFIER. "The next cash catalyst" claims there is no other. "A key near-term cash catalyst" says the same useful thing and is defensible. Where a catalyst carries a stated payment, give it: "clearance would trigger a $1.0m milestone payment" is worth more to a reader than the word "catalyst".
+
+USE THE AUDITOR'S OWN CONSTRUCTION. Not "auditor flagged material uncertainty" but "the auditor noted material uncertainty related to going concern". Going concern is a defined term and a paraphrase of it reads as editorialising about solvency.
+
+SAY WHY A FIGURE IS UNAVAILABLE, NOT JUST THAT IT IS. "No pro-forma cash figure yet" tells a reader nothing. "No company-provided current cash figure yet reflects the full $7.36m raise and subsequent operating cash flows" explains why the number cannot simply be added to the last balance, which is the thing the reader was about to do wrong.
+
 === 11. RISKS ===
 
 Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 78 characters.
@@ -1146,7 +1166,7 @@ Do not pad with generic market risk to look balanced, and do not exaggerate one 
 
 === 12. THE CLOSING LINE ===
 
-One sentence, set in italic at the foot of the sheet. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 148 characters. The compliance line is appended automatically; never write it.
+One sentence, set in italic at the foot of the sheet. The renderer prefixes it with "Vitti view:" and sets it WITHOUT quotation marks, because it is the desk's analysis and not a quote from the company - so do not write "Vitti view" yourself, do not wrap it in quotation marks, and do not attribute it to anyone. Keep it broad enough to be true: where viability depends on several things - regulatory progress, sales conversion, cost control and further funding - do not narrow it to one of them. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 148 characters. The compliance line is appended automatically; never write it.
 
 === 13. LENGTH — READ THIS TWICE ===
 
@@ -2169,6 +2189,15 @@ export async function writeReport(
           // The resolved figure, not the model's — see the note below. The
           // renderer colours the cover's hero card from it.
           movePct,
+          /**
+           * From the feed and the clock, for the same reason as `movePct`. The
+           * snapshot's lead tile is built from these rather than from the
+           * model's `kpis[0]`, so the sign, the price and the time cannot be
+           * paraphrased away.
+           */
+          reportPrice: row.last,
+          moveTime: input.moveWindow?.localTime ?? null,
+          moveIsClose: input.moveWindow?.isClose ?? null,
           pages,
         },
         mover: {

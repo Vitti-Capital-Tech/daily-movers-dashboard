@@ -184,7 +184,7 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
         .map((item) => trim.text(item, 76, "what changes now")),
       timeline: page.timeline.slice(0, 5).map((event) => ({
         ...event,
-        text: trim.text(event.text, 36, "timeline step"),
+        text: trim.text(event.text, 46, "timeline step"),
       })),
       risks: page.risks.slice(0, 3).map((risk) => ({
         ...risk,
@@ -192,6 +192,7 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
         text: trim.text(risk.text, 84, "risk detail"),
       })),
       pullQuote: trim.text(page.pullQuote, 158, "pull quote"),
+      sourceNote: trim.maybe(page.sourceNote, 150, "source note"),
     };
   }
 

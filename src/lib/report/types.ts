@@ -449,6 +449,28 @@ export type ReportDoc = {
    * falls back to the house navy rather than guessing a direction.
    */
   movePct?: number | null;
+  /**
+   * The traded price the move was read at, and when it was read.
+   *
+   * Both come from the exchange feed and the clock, never from the model — the
+   * same rule as `movePct`, and for the same reason. The snapshot's first tile
+   * is rendered from these three fields rather than from whatever the model put
+   * in `kpis[0]`, because a Daily Mover is published mid-session and a reader
+   * has to be able to tell which price it is talking about and at what time.
+   *
+   * The review that forced this: a CVB draft printed its move as "~12.5%" with
+   * no sign, on a day the stock had fallen, and gave no price or timestamp at
+   * all. A reader could not tell the direction from the figure, and could not
+   * tell an hour later whether it was still true.
+   *
+   * All optional: documents stored before this existed simply fall back to the
+   * model's own tile.
+   */
+  reportPrice?: number | null;
+  /** Local exchange time the board was read: "10:42 am". */
+  moveTime?: string | null;
+  /** Whether that reading is the official close rather than an intraday mark. */
+  moveIsClose?: boolean | null;
   pages: ReportPage[];
 };
 

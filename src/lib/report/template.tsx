@@ -687,11 +687,24 @@ const styles = StyleSheet.create({
     color: PALETTE.paper,
   },
   snapTileRow: { flexDirection: "row", marginTop: 12 },
+  /**
+   * Every tile carries a left edge; only the first one carries it in the
+   * accent.
+   *
+   * The four tiles were identical, which made the sheet read as a grid of
+   * equally important numbers — and one of them is not equally important. The
+   * share move is the reason the page exists, so it gets the accent edge and
+   * the accent figure while the other three stay white on navy. Giving all four
+   * the same 3pt edge keeps their inner widths identical, so the hierarchy is
+   * carried by colour alone rather than by the boxes drifting out of line.
+   */
   snapTile: {
     flexGrow: 1,
     flexBasis: 0,
     backgroundColor: PALETTE.card,
     borderRadius: 5,
+    borderLeftWidth: 3,
+    borderLeftColor: PALETTE.cardSoft,
     paddingVertical: 8,
     paddingHorizontal: 10,
     marginRight: 8,
@@ -710,6 +723,14 @@ const styles = StyleSheet.create({
   },
   snapColumns: { flexDirection: "row", marginTop: 12 },
   snapColumn: { flexGrow: 1, flexBasis: 0, marginRight: 14 },
+  /**
+   * A hairline between the columns.
+   *
+   * The two lists answer different questions and were separated only by a gap,
+   * so at a glance they read as one list that had wrapped. The rule costs no
+   * height and does the separating that the gap was failing to do.
+   */
+  snapColumnDivided: { paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: PALETTE.hairline },
   snapColHead: {
     fontFamily: "Helvetica-Bold",
     fontSize: 7.95,
@@ -738,8 +759,37 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   snapTrack: { flexDirection: "row", alignItems: "flex-start" },
-  snapStep: { flexGrow: 1, flexBasis: 0, paddingRight: 8 },
-  snapStepDot: { width: 5, height: 5, borderRadius: 2.5, marginBottom: 4 },
+  /**
+   * The steps sit on a continuous rule rather than under floating dots.
+   *
+   * Five dots in a row with dates under them read as five separate facts; the
+   * rule is what makes them read as one sequence, which is the entire point of
+   * the band. The rule and the dot are absolutely positioned so the connector
+   * costs no height — the row is the same height it was with the dots alone.
+   */
+  snapStep: {
+    flexGrow: 1,
+    flexBasis: 0,
+    paddingRight: 8,
+    paddingTop: 11,
+    position: "relative",
+  },
+  snapStepRule: {
+    position: "absolute",
+    top: 3,
+    left: 0,
+    right: 8,
+    height: 1.5,
+    backgroundColor: PALETTE.hairline,
+  },
+  snapStepDot: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 7.5,
+    height: 7.5,
+    borderRadius: 3.75,
+  },
   snapStepDate: {
     fontFamily: "Helvetica-Bold",
     fontSize: 7.95,
@@ -752,11 +802,14 @@ const styles = StyleSheet.create({
     marginTop: 1.5,
   },
   snapRiskRow: { flexDirection: "row" },
+  /** Coral edge, so the risk band is identifiable before it is read. */
   snapRisk: {
     flexGrow: 1,
     flexBasis: 0,
     backgroundColor: PALETTE.card,
     borderRadius: 5,
+    borderLeftWidth: 3,
+    borderLeftColor: PALETTE.coral,
     paddingVertical: 7,
     paddingHorizontal: 9,
     marginRight: 8,
@@ -768,11 +821,32 @@ const styles = StyleSheet.create({
     marginBottom: 2.5,
   },
   snapRiskText: { fontSize: 7.95, lineHeight: 1.3, color: PALETTE.muted },
+  /**
+   * A left accent bar rather than a rule above.
+   *
+   * The rule read as a divider — the page ending — when the quote is the one
+   * line of judgement on the sheet and should read as the conclusion. Moving
+   * the mark to the left edge also hands back 11pt of height, which is most of
+   * what the rest of this pass spends.
+   */
   snapQuote: {
     marginTop: 11,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: PALETTE.hairline,
+    paddingLeft: 12,
+    borderLeftWidth: 3,
+  },
+  snapQuoteLead: { fontFamily: "Helvetica-Bold" },
+  /**
+   * Bigger than the deck's source line, and given room to breathe.
+   *
+   * At 8pt it was the smallest type on a sheet whose whole job is to be read at
+   * a glance, and a long provenance line had nowhere to go. This is the line
+   * that makes every figure on the sheet checkable, so it is set to be read.
+   */
+  snapSource: {
+    fontSize: 8.5,
+    lineHeight: 1.35,
+    color: PALETTE.muted,
+    marginTop: 8,
   },
   snapQuoteText: {
     fontFamily: "Times-Italic",
@@ -2282,15 +2356,71 @@ function ClosingBody({
  * Numbered lists rather than bullets, because the published sheet numbers them
  * and because a reader comparing two columns wants to count items in each.
  */
+/**
+ * A traded price at a sensible number of decimals.
+ *
+ * Four decimals is right for a stock at $0.018 and absurd for one at $31.40,
+ * and the Daily Mover screens both on the same morning.
+ */
+function tradedPrice(value: number): string {
+  if (Math.abs(value) < 1) return `$${value.toFixed(4)}`;
+  if (Math.abs(value) < 10) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+/**
+ * The lead tile, built from the feed rather than from the model.
+ *
+ * Three faults in one review, all of them from letting the model write this
+ * tile: the move printed as "~12.5%" on a day the stock fell — no sign, so the
+ * direction was invisible — with no traded price and no time against it. A
+ * Daily Mover goes out mid-session, so "down 12.5%" is only meaningful next to
+ * the price it was read at and the moment it was read.
+ *
+ * So the figure is composed here from `movePct`, `reportPrice` and `moveTime`,
+ * which all come from the exchange feed and the clock. The model's own
+ * `kpis[0]` is used only as the fallback label, and only when the document
+ * predates these fields.
+ */
+function leadTile(
+  doc: ReportDoc,
+  fallback: ReportKpi,
+): { value: string; label: string } {
+  if (typeof doc.movePct !== "number") return fallback;
+
+  const signed = `${doc.movePct > 0 ? "+" : doc.movePct < 0 ? "\u2212" : ""}${Math.abs(doc.movePct).toFixed(1)}%`;
+
+  const parts: string[] = [];
+  if (typeof doc.reportPrice === "number" && Number.isFinite(doc.reportPrice)) {
+    parts.push(tradedPrice(doc.reportPrice));
+  }
+  parts.push(
+    doc.moveIsClose
+      ? "at the close"
+      : doc.moveTime
+        ? `as at ${doc.moveTime}`
+        : "intraday",
+  );
+
+  return { value: signed, label: `Share move \u00B7 ${parts.join(" \u00B7 ")}` };
+}
+
 function SnapshotBody({
+  doc,
   page,
   theme,
 }: {
+  doc: ReportDoc;
   page: Extract<ReportPage, { kind: "snapshot" }>;
   theme: DeckTheme;
 }) {
-  const column = (heading: string, items: string[], accent: string) => (
-    <View style={styles.snapColumn}>
+  const column = (
+    heading: string,
+    items: string[],
+    accent: string,
+    divided = false,
+  ) => (
+    <View style={[styles.snapColumn, divided ? styles.snapColumnDivided : {}]}>
       <Text style={[styles.snapColHead, { color: accent }]}>
         {heading.toUpperCase()}
       </Text>
@@ -2314,19 +2444,38 @@ function SnapshotBody({
       </View>
 
       <View style={styles.snapTileRow}>
-        {page.kpis.slice(0, 4).map((kpi, index) => (
-          <View key={index} style={styles.snapTile}>
-            <Text style={styles.snapTileValue}>{kpi.value}</Text>
-            <Text style={styles.snapTileLabel}>
-              {kpi.label.toUpperCase()}
-            </Text>
-          </View>
-        ))}
+        {page.kpis.slice(0, 4).map((rawKpi, index) => {
+          // The first tile is the share move — the fact the report exists for,
+          // and the one tile the renderer composes itself. See `leadTile`.
+          const lead = index === 0;
+          const kpi = lead ? leadTile(doc, rawKpi) : rawKpi;
+          return (
+            <View
+              key={index}
+              style={[
+                styles.snapTile,
+                lead ? { borderLeftColor: theme.accent } : {},
+              ]}
+            >
+              <Text
+                style={[
+                  styles.snapTileValue,
+                  lead ? { color: theme.accent } : {},
+                ]}
+              >
+                {kpi.value}
+              </Text>
+              <Text style={styles.snapTileLabel}>
+                {kpi.label.toUpperCase()}
+              </Text>
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.snapColumns}>
         {column("Why it moved", page.whyItMoved, theme.accent)}
-        {column("What changes now", page.whatChangesNow, PALETTE.cobalt)}
+        {column("What changes now", page.whatChangesNow, PALETTE.cobalt, true)}
       </View>
 
       {page.timeline.length > 0 ? (
@@ -2337,10 +2486,18 @@ function SnapshotBody({
           <View style={styles.snapTrack}>
             {page.timeline.map((event, index) => (
               <View key={index} style={styles.snapStep}>
+                <View style={styles.snapStepRule} />
                 <View
                   style={[
                     styles.snapStepDot,
-                    { backgroundColor: theme.accent },
+                    {
+                      // The last step is where the story has got to; the
+                      // earlier ones are behind it and read quieter.
+                      backgroundColor:
+                        index === page.timeline.length - 1
+                          ? theme.accent
+                          : PALETTE.steel,
+                    },
                   ]}
                 />
                 <Text style={styles.snapStepDate}>{event.date}</Text>
@@ -2368,14 +2525,27 @@ function SnapshotBody({
       ) : null}
 
       {page.pullQuote?.trim() ? (
-        <View style={styles.snapQuote}>
+        <View style={[styles.snapQuote, { borderLeftColor: theme.accent }]}>
+          {/**
+           * No quotation marks.
+           *
+           * They were read as a quote from the company. This line is the desk's
+           * own analysis, and attributing it to anyone else is the kind of error
+           * that matters in a client document — so it is labelled as what it is
+           * and set without quote marks.
+           */}
           <Text style={styles.snapQuoteText}>
-            {`\u201C${page.pullQuote.trim()}\u201D`}
+            <Text style={[styles.snapQuoteLead, { color: theme.accent }]}>
+              Vitti view:{" "}
+            </Text>
+            {page.pullQuote.trim()}
           </Text>
         </View>
       ) : null}
 
-      <SourceLine note={page.sourceNote} />
+      {page.sourceNote?.trim() ? (
+        <Text style={styles.snapSource}>{page.sourceNote.trim()}</Text>
+      ) : null}
     </View>
   );
 }
@@ -2393,7 +2563,7 @@ function PageBody({
 
   switch (page.kind) {
     case "snapshot":
-      return <SnapshotBody page={page} theme={theme} />;
+      return <SnapshotBody doc={doc} page={page} theme={theme} />;
 
     case "cover":
       return <CoverBody doc={doc} page={page} theme={theme} />;
