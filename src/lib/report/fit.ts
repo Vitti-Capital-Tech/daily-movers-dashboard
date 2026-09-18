@@ -187,18 +187,34 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
        * Five columns is what the band's width carries with labels under them
        * that are still readable; a sixth makes every label wrap.
        */
+      /**
+       * Two series, four categories, and short labels.
+       *
+       * The band's width carries eight columns before the printed values start
+       * colliding, so four categories is the ceiling with two series and the
+       * fitter enforces it rather than trusting the count twice in the prompt.
+       * Every series is cut to the same categories as the first, because a
+       * second series with five points against the first's four would draw its
+       * extra column over the axis.
+       */
       chart: page.chart
         ? {
             ...page.chart,
-            points: page.chart.points.slice(0, 5).map((point) => ({
-              ...point,
-              label: trim.text(point.label, 14, "chart label"),
+            title: trim.text(page.chart.title, 68, "chart title"),
+            note: trim.maybe(page.chart.note, 46, "chart note"),
+            footnote: trim.maybe(page.chart.footnote, 92, "chart footnote"),
+            series: page.chart.series.slice(0, 2).map((series) => ({
+              name: trim.text(series.name, 22, "series name"),
+              points: series.points.slice(0, 4).map((point) => ({
+                ...point,
+                label: trim.text(point.label, 10, "chart label"),
+              })),
             })),
           }
         : null,
-      timeline: page.timeline.slice(0, 5).map((event) => ({
+      timeline: page.timeline.slice(0, 6).map((event) => ({
         ...event,
-        text: trim.text(event.text, 46, "timeline step"),
+        text: trim.text(event.text, 62, "timeline step"),
       })),
       risks: page.risks.slice(0, 3).map((risk) => ({
         ...risk,

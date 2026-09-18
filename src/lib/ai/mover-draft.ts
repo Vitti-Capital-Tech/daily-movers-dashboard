@@ -4,6 +4,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 import { CATALYST_SLUGS, isCatalystSlug, type CatalystSlug } from "@/lib/catalysts";
 import type { ResearchSignals } from "@/lib/drafts/research-signals";
+import type { SnapshotChart } from "@/lib/report/types";
 import { formatMoneyCompact, type ScreenResult, type ScreenerRow } from "@/lib/asx/types";
 import {
   REPORT_ICONS,
@@ -340,16 +341,16 @@ const PAGE_SCHEMA = {
         type: "object",
         properties: {
           date: { type: "string", description: "'27 Jul 2026' — short form, as the filing dates it." },
-          text: { type: "string", description: "The step, in four or five words. 'EGM approves Buy-Back'." },
+          text: { type: "string", description: "What happened at that step, in a short phrase under 62 characters: 'FDA 510(k) clearance for CT-based BMD technology'." },
         },
         required: ["date", "text"],
       },
       minItems: 2,
-      maxItems: 5,
+      maxItems: 6,
       description:
         "SNAPSHOT ONLY. 'How We Got Here': the dated steps that led to today, OLDEST FIRST, ending with today " +
         "and (where the filings give one) the next scheduled date. Use the EVENT CHAIN block in the evidence " +
-        "for this — it is the same sequence, already assembled. Keep each step to four or five words; they are " +
+        "for this — it is the same sequence, already assembled. Up to SIX steps, each under 62 characters; they are " +
         "set side by side along a rule and a long one wraps into its neighbour.",
     },
     risks: {
@@ -447,73 +448,94 @@ const PAGE_SCHEMA = {
     chart: {
       type: "object",
       description:
-        "One series of labelled figures, all of them read from the evidence. On a 'snapshot' page this is " +
-        "OPTIONAL and REPLACES the timeline: supply it instead of 'timeline' when the story that got here is a " +
-        "progression of NUMBERS rather than a sequence of events — four guidance upgrades climbing through the " +
-        "year, three capital raises, production by half, margin by period. Two to five points, type 'columns', " +
-        "and put the printed figure in each point's 'display'. A reader takes the shape in a second, which five " +
-        "dated lines never achieve. Use 'timeline' instead when the steps are events with no common unit " +
-        "(approval, challenge, settlement) — those do not plot. Supply one or the other, never both.",
+        "OPTIONAL on a 'snapshot' page, and it REPLACES the timeline - supply one or the other, never both. " +
+        "Use it when what got the company here is a PROGRESSION OF FIGURES rather than a sequence of events: " +
+        "revenue and operating loss by financial year, capital raised by round, production by half, net debt " +
+        "by period, guidance upgrades through the year. Prefer it whenever such a series exists in the filings, " +
+        "because a reader takes a shape in a second and will not read four dated lines saying the same thing. " +
+        "Use 'timeline' instead when the steps are events with no common unit - proposal, approval, court " +
+        "challenge, settlement - because those do not plot. " +
+        "EVERY figure must be read from the evidence; never interpolate a missing period, and never invent a " +
+        "series to have a chart.",
       properties: {
-        type: {
+        form: {
           type: "string",
-          enum: ["columns", "bars", "waterfall"],
+          enum: ["columns", "line"],
           description:
-            "'columns' for a series over time (quarters, halves, years) — it reads left to right and plots " +
-            "negatives below the baseline. 'bars' when the labels are names (segments, countries, projects) " +
-            "and are too long to sit under a column. 'waterfall' for a BUILD-UP: a starting figure, the things " +
-            "that add to or subtract from it, and what is left. A waterfall is the right chart for a cash " +
-            "balance, and it is much better than a single column: 'cash now, sale proceeds, dividend, buy-back, " +
-            "capex, what is actually free' answers the question a reader has about an $880 million balance, " +
-            "which a single $880 million bar does not.",
+            "'columns' for a few periods where the COMPARISON is the point - four financial years of revenue " +
+            "against operating loss, three capital raises. This is the usual answer and the one the desk's own " +
+            "sheet uses. 'line' only for a longer run where the SHAPE is the point and no single value matters " +
+            "- a cash balance drawn down month by month, a price series through a quarter. Below about six " +
+            "points a line is a worse column chart. There is no candlestick or OHLC form: this pipeline stores " +
+            "one price per day, so the opens, highs and lows do not exist and must not be invented.",
+        },
+        title: {
+          type: "string",
+          description:
+            "What is plotted and over what period: 'Revenue vs Operating Loss | FY23 to FY26'. Printed in caps " +
+            "above the chart. Under 68 characters.",
+        },
+        note: {
+          type: "string",
+          description:
+            "The one thing to notice, set in the accent colour beside the title: 'FY26 revenue -28% YoY'. This " +
+            "is the chart's conclusion - a chart without one is decoration. Under 46 characters.",
         },
         unit: {
           type: "string",
-          description:
-            "Optional axis note saying what the numbers are: '% change on prior corresponding period', '$ million'.",
+          description: "What the axis numbers are: 'A$ million', '%', 'koz'. Always state it.",
         },
-        points: {
+        footnote: {
+          type: "string",
+          description:
+            "An accounting caveat where the figures need one: 'Operating Loss is a non-IFRS measure reported " +
+            "by the company.' Omit when there is nothing to qualify. Under 92 characters.",
+        },
+        series: {
           type: "array",
-          minItems: 2,
-          maxItems: REPORT_LIMITS.chartPoints,
+          minItems: 1,
+          maxItems: 2,
+          description:
+            "One or two series. Two is how a contrast is shown - revenue against the loss it is measured " +
+            "against - and both MUST carry the same category labels in the same order, because they are drawn " +
+            "side by side against one axis. Negative values are allowed and draw below a zero baseline.",
           items: {
             type: "object",
             properties: {
-              label: {
+              name: {
                 type: "string",
-                description: "Short axis label: 'Q1 FY26', 'Jul-26', 'New Zealand', 'Dividend'.",
+                description: "Legend label: 'Revenue', 'Operating Loss'. Under 22 characters.",
               },
-              value: {
-                type: "number",
-                description:
-                  "The plotted magnitude, signed. Use the same unit for every point in the series — mixing " +
-                  "percentages and dollars in one chart plots a nonsense shape. On a 'waterfall' this is the " +
-                  "STEP, not the running total: a build-up from $470M by +$410M and -$88M is 470, 410, -88.",
-              },
-              display: {
-                type: "string",
-                description:
-                  "How the figure prints, WITH its sign and unit: '+6.0%', '-0.5%', '$55.4M', '-$88M'. " +
-                  "Always set it on a waterfall — a build-up printed as '427 410 43 880' tells the reader " +
-                  "nothing about which of those are movements and which are balances.",
-              },
-              highlight: {
-                type: "boolean",
-                description:
-                  "True for the one or two points the conclusion is about — they draw in the house colour.",
-              },
-              isTotal: {
-                type: "boolean",
-                description:
-                  "'waterfall' only: this bar is a total rather than a step, so it sits on the baseline. The " +
-                  "opening balance and the closing balance are totals; everything between them is a step.",
+              points: {
+                type: "array",
+                minItems: 2,
+                maxItems: 4,
+                items: {
+                  type: "object",
+                  properties: {
+                    label: {
+                      type: "string",
+                      description: "The period, short: 'FY24', '1H26', 'Jul-26'. Under 10 characters.",
+                    },
+                    value: {
+                      type: "number",
+                      description:
+                        "The plotted magnitude, SIGNED and in the stated unit. A loss is negative.",
+                    },
+                    display: {
+                      type: "string",
+                      description: "How it prints on the column: '$8.06m', '-$15.21m'.",
+                    },
+                  },
+                  required: ["label", "value", "display"],
+                },
               },
             },
-            required: ["label", "value"],
+            required: ["name", "points"],
           },
         },
       },
-      required: ["type", "points"],
+      required: ["title", "series"],
     },
     events: {
       type: "array",
@@ -1132,7 +1154,7 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
 - timeline OR chart — one band, your choice, never both:
   - timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. Right when the steps are events with no common unit: proposal, approval, challenge, settlement.
-  - chart — two to five labelled figures, type 'columns', each carrying its printed value in 'display'. Right when what got the company here is a progression of NUMBERS in one unit: four guidance upgrades through the year, three capital raises, production by half, net debt by period. Prefer it whenever such a series exists, because a reader takes the shape of four rising columns in a second and will not read four dated lines saying the same thing. It is drawn small, so the printed figures carry the precision and the columns carry the impression.
+  - chart — one or TWO series of two to four figures, with a title, a unit, a one-line note saying what to notice, and an optional footnote for an accounting caveat. Right when what got the company here is a progression of NUMBERS: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. PREFER IT whenever such a series exists in the filings — a reader takes a shape in a second and will not read four dated lines saying the same thing, and two series side by side (revenue against the loss it is measured against) is the single most useful picture this sheet can carry. Choose 'columns' unless the series is long enough that its SHAPE is the finding, in which case 'line'. Losses are negative and draw below a zero baseline — do not flip their sign to make them plot upward. Every figure comes from the evidence: never interpolate a missing period, and never invent a series just to have a chart.
 - risks — three cards on what is still open AFTER today.
 - pullQuote — one line of judgement.
 
@@ -1142,7 +1164,7 @@ The two columns answer different questions and must never repeat each other. If 
 
 THE TILES CARRY THE NUMBERS. There are no charts, no tables and no prose blocks on this sheet — the four tiles are where every important figure goes, so choose them last, once you know what the story is. A tile whose number does not change the reader's understanding is a wasted quarter of the page.
 
-WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Fifty-five to seventy characters: the sheet cuts anything past 76 mid-word, so aim under the limit rather than at it. The timeline steps are shorter still: four or five words, because they are set side by side along a rule and a long one collides with its neighbour.
+WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Fifty-five to seventy characters: the sheet cuts anything past 76 mid-word, so aim under the limit rather than at it. The timeline steps are shorter still — under 62 characters, up to six of them — because they are set side by side along one continuous line and a long one collides with its neighbour.
 
 EVERY FIGURE IS SOURCED. The sourceNote line at the foot names the filings this sheet drew on — "Source: ASX announcements, 16 Sep 2026". A figure whose source cannot be named is usually a figure that was not read anywhere.
 
@@ -1258,6 +1280,48 @@ function asCallouts(value: unknown): ReportCallout[] {
       };
     })
     .filter((callout) => callout.label && callout.text);
+}
+
+/**
+ * The snapshot's chart, read defensively.
+ *
+ * A chart with one usable series still draws; a chart with none is dropped so
+ * the renderer falls back to the timeline rather than printing an empty axis.
+ */
+function asSnapshotChart(value: unknown): SnapshotChart | null {
+  const raw = value as Record<string, unknown>;
+  if (!raw || typeof raw !== "object") return null;
+
+  const rawSeries = Array.isArray(raw.series) ? raw.series : [];
+  const series = rawSeries
+    .map((entry) => {
+      const item = entry as Record<string, unknown>;
+      const points = (Array.isArray(item?.points) ? item.points : [])
+        .map((p) => {
+          const point = p as Record<string, unknown>;
+          const numeric = Number(point?.value);
+          if (!Number.isFinite(numeric)) return null;
+          return {
+            label: asString(point?.label),
+            value: numeric,
+            display: asString(point?.display) || null,
+          };
+        })
+        .filter((point): point is NonNullable<typeof point> => point !== null);
+
+      return { name: asString(item?.name), points };
+    })
+    .filter((entry) => entry.points.length >= 2);
+
+  if (series.length === 0) return null;
+
+  return {
+    title: asString(raw.title),
+    note: asString(raw.note) || null,
+    unit: asString(raw.unit) || null,
+    footnote: asString(raw.footnote) || null,
+    series,
+  };
 }
 
 function asChart(value: unknown): ReportChart | null {
@@ -1458,7 +1522,7 @@ function normalisePage(raw: unknown, fallbackCompanyName: string): ReportPage | 
         whyItMoved: asStringArray(page.whyItMoved).slice(0, 3),
         whatChangesNow: asStringArray(page.whatChangesNow).slice(0, 4),
         timeline: timeline.slice(0, 5),
-        chart: asChart(page.chart),
+        chart: asSnapshotChart(page.chart),
         risks: risks.slice(0, 3),
         pullQuote: asString(page.pullQuote),
         sourceNote,

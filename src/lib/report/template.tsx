@@ -30,6 +30,7 @@ import {
   MANAGEMENT_QUESTION_HEADING,
   type ReportCallout,
   type ReportChart,
+  type SnapshotChart,
   type ReportChartPoint,
   type ReportComparisonRow,
   type ReportDoc,
@@ -88,6 +89,24 @@ Font.registerHyphenationCallback((word) => [word]);
  * tiles sit in a row with air around them.
  */
 const PAGE_SIZE: [number, number] = [960, 540];
+
+/**
+ * The one-pager is a taller sheet than the deck.
+ *
+ * Measured off what the desk publishes: the CVB snapshot of 18 September 2026 is
+ * **1092 x 876**, where the earlier PIA sheet was 960 x 540. The desk moved to
+ * the taller page for a reason that is obvious once both are open — the extra
+ * 336pt is what a real chart needs, with an axis, a legend and two series, and
+ * on 540pt there was never room for one.
+ *
+ * The deck keeps 960 x 540. Only the snapshot changes size, so stored multi-page
+ * drafts still render exactly as they did.
+ */
+const SNAPSHOT_PAGE_SIZE: [number, number] = [1092, 876];
+
+function pageSizeFor(doc: ReportDoc): [number, number] {
+  return isSnapshotDoc(doc) ? SNAPSHOT_PAGE_SIZE : PAGE_SIZE;
+}
 
 const GUTTER = 46;
 /** The dark band the footer sits in, and the mint hairline under it. */
@@ -225,16 +244,15 @@ function pageKindLabel(kind: ReportPage["kind"]): string | null {
 }
 
 /**
- * Tallest a column may draw.
+ * The chart band's coordinate space.
  *
- * 18, not 22. The chart shares the timeline band's slot and has to be no taller
- * than it: at 22 the stress sheet rendered a second, blank page, and the preview
- * did not catch it because it was printing the document's own page count back
- * instead of the PDF's. Raise this only against `npm run report:preview --
- * stress`, which now reads the rendered page count and exits non-zero on
- * overflow.
+ * The sheet is 1092 wide with a 46pt gutter each side, so the band is 1000pt
+ * across; 46 of that is the tick-label gutter. 150pt of plot is what the taller
+ * page bought — on the old 540pt sheet the whole band had to fit in 34.
  */
-const SNAP_BAR_MAX = 18;
+const SNAP_CHART_W = 1000;
+const SNAP_AXIS_W = 46;
+const SNAP_PLOT_H = 150;
 
 const styles = StyleSheet.create({
   page: {
@@ -681,20 +699,20 @@ const styles = StyleSheet.create({
    */
   snapLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.95,
+    fontSize: 11.6,
     letterSpacing: 2.4,
     color: PALETTE.faint,
     marginBottom: 3,
   },
   snapCompany: {
     fontFamily: "Helvetica",
-    fontSize: 13.25,
+    fontSize: 19.21,
     color: PALETTE.muted,
     marginBottom: 2,
   },
   snapHeadline: {
     fontFamily: "Times-Bold",
-    fontSize: 21.2,
+    fontSize: 30.74,
     lineHeight: 1.16,
     color: PALETTE.paper,
   },
@@ -723,12 +741,12 @@ const styles = StyleSheet.create({
   },
   snapTileValue: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 18.02,
+    fontSize: 26.13,
     color: PALETTE.paper,
   },
   snapTileLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 6.36,
+    fontSize: 9.22,
     letterSpacing: 1.5,
     color: PALETTE.faint,
     marginTop: 3,
@@ -745,104 +763,110 @@ const styles = StyleSheet.create({
   snapColumnDivided: { paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: PALETTE.hairline },
   snapColHead: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.95,
+    fontSize: 11.53,
     letterSpacing: 2,
     marginBottom: 5,
   },
   snapItem: { flexDirection: "row", marginBottom: 3.5 },
   snapItemNum: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.95,
+    fontSize: 11.53,
     width: 11,
     marginTop: 0.6,
   },
   snapItemText: {
     flexGrow: 1,
     flexBasis: 0,
-    fontSize: 9.01,
+    fontSize: 13.06,
     lineHeight: 1.32,
     color: PALETTE.body,
   },
   snapBandHead: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.95,
+    fontSize: 11.53,
     letterSpacing: 2,
     marginTop: 11,
     marginBottom: 5,
   },
-  snapTrack: { flexDirection: "row", alignItems: "flex-start" },
   /**
-   * The steps sit on a continuous rule rather than under floating dots.
+   * One continuous line, and no dots.
    *
-   * Five dots in a row with dates under them read as five separate facts; the
-   * rule is what makes them read as one sequence, which is the entire point of
-   * the band. The rule and the dot are absolutely positioned so the connector
-   * costs no height — the row is the same height it was with the dots alone.
+   * It was a segmented rule with a dot per step, which is how the connector
+   * started life and not how the desk draws it: the published CVB sheet runs a
+   * single unbroken line across the band with the steps hanging off it. Dots
+   * pull the eye to six separate points; the line says "this is one sequence"
+   * before a word is read, which is the only job this band has.
+   *
+   * The line is absolutely positioned inside the track, so adding it costs no
+   * height at all and the steps keep the padding they already had.
    */
-  snapStep: {
-    flexGrow: 1,
-    flexBasis: 0,
-    paddingRight: 8,
-    paddingTop: 11,
-    position: "relative",
-  },
-  snapStepRule: {
+  snapTrack: { flexDirection: "row", alignItems: "flex-start", position: "relative" },
+  snapTrackLine: {
     position: "absolute",
     top: 3,
     left: 0,
-    right: 8,
+    right: 0,
     height: 1.5,
-    backgroundColor: PALETTE.hairline,
   },
-  snapStepDot: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 7.5,
-    height: 7.5,
-    borderRadius: 3.75,
+  snapStep: {
+    flexGrow: 1,
+    flexBasis: 0,
+    paddingRight: 10,
+    paddingTop: 11,
   },
   snapStepDate: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.95,
+    fontSize: 11.53,
     color: PALETTE.paper,
   },
   snapStepText: {
-    fontSize: 7.95,
+    fontSize: 11.53,
     lineHeight: 1.28,
     color: PALETTE.muted,
     marginTop: 1.5,
   },
-  /**
-   * The compact chart, sized to the timeline band it replaces.
-   *
-   * 34pt of plot. That is not much, and it is deliberate: at this size the
-   * chart is a SHAPE with figures printed on it, not a chart with axes and
-   * gridlines. A reader takes "four upgrades, each bigger than the last" from
-   * the silhouette in about a second, which is the entire reason it is here —
-   * a taller chart would buy precision the printed values already give.
-   */
-  snapChartPlot: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    height: SNAP_BAR_MAX + 10,
-  },
-  snapChartCol: { flexGrow: 1, flexBasis: 0, alignItems: "center", paddingHorizontal: 3 },
-  snapChartValue: {
+  /** Chart band ------------------------------------------------------- */
+  snapChartHead: { marginBottom: 7 },
+  snapChartTitle: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 7.4,
-    color: PALETTE.paper,
-    marginBottom: 2.5,
+    fontSize: 12.32,
+    letterSpacing: 1.6,
+    color: PALETTE.muted,
   },
-  snapChartBar: { width: "68%", borderTopLeftRadius: 2, borderTopRightRadius: 2 },
-  snapChartLabels: { flexDirection: "row", marginTop: 2.5 },
+  snapChartNote: { fontFamily: "Helvetica-Bold", fontSize: 13.78, marginTop: 3 },
+  snapChartLegend: { flexDirection: "row", marginTop: 5 },
+  snapLegendItem: { flexDirection: "row", alignItems: "center", marginRight: 16 },
+  snapLegendSwatch: { width: 9, height: 9, borderRadius: 2, marginRight: 5 },
+  snapLegendLabel: { fontSize: 12.32, color: PALETTE.body },
+  snapAxisLabel: {
+    position: "absolute",
+    right: 8,
+    width: SNAP_AXIS_W - 8,
+    textAlign: "right",
+    fontSize: 10.88,
+    color: PALETTE.faint,
+  },
+  snapGrid: { position: "absolute", left: 0, right: 0, height: 0.6 },
+  snapChartValue: {
+    position: "absolute",
+    textAlign: "center",
+    fontFamily: "Helvetica-Bold",
+    fontSize: 11.02,
+    color: PALETTE.paper,
+  },
   snapChartLabel: {
     flexGrow: 1,
     flexBasis: 0,
     textAlign: "center",
-    fontSize: 6.8,
+    fontSize: 12.32,
+    color: PALETTE.muted,
+    marginTop: 6,
+  },
+  snapChartFoot: {
+    fontSize: 10.44,
     color: PALETTE.faint,
-    paddingHorizontal: 2,
+    marginTop: 7,
+    marginLeft: SNAP_AXIS_W,
   },
 
   snapRiskRow: { flexDirection: "row" },
@@ -860,11 +884,11 @@ const styles = StyleSheet.create({
   },
   snapRiskLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 8.48,
+    fontSize: 12.3,
     color: PALETTE.paper,
     marginBottom: 2.5,
   },
-  snapRiskText: { fontSize: 7.95, lineHeight: 1.3, color: PALETTE.muted },
+  snapRiskText: { fontSize: 11.53, lineHeight: 1.3, color: PALETTE.muted },
   /**
    * A left accent bar rather than a rule above.
    *
@@ -887,14 +911,14 @@ const styles = StyleSheet.create({
    * that makes every figure on the sheet checkable, so it is set to be read.
    */
   snapSource: {
-    fontSize: 8.5,
+    fontSize: 12.32,
     lineHeight: 1.35,
     color: PALETTE.muted,
     marginTop: 8,
   },
   snapQuoteText: {
     fontFamily: "Times-Italic",
-    fontSize: 11.13,
+    fontSize: 16.14,
     lineHeight: 1.3,
     color: PALETTE.paper,
   },
@@ -1346,7 +1370,7 @@ function Sheet({
   theme: DeckTheme;
 }) {
   return (
-    <Page size={PAGE_SIZE} style={styles.page}>
+    <Page size={pageSizeFor(doc)} style={styles.page}>
       <View
         style={[styles.edgeTop, { backgroundColor: theme.accentDeep }]}
         fixed
@@ -2461,69 +2485,208 @@ function leadTile(
 /**
  * The snapshot's chart band.
  *
- * Every type is drawn as vertical columns. `bars` and `waterfall` have their
- * own layouts on the deck's full-page chart, and neither survives being shrunk
- * to 34pt — a waterfall in particular needs its floating steps to be legible or
- * it misleads. So the shape is fixed here and the prompt asks for `columns`;
- * anything else is drawn as columns rather than drawn badly.
+ * Modelled on what the desk publishes rather than on what was easy to draw: the
+ * CVB sheet of 18 September 2026 plots revenue against operating loss across
+ * four financial years, with a legend, a zero baseline that negatives hang
+ * below, tick labels in A$ million, and a footnote saying the loss figure is
+ * non-IFRS. All of that is load-bearing — a two-series chart without a legend is
+ * a puzzle, and a chart with negative values and no visible zero is a lie.
  *
- * Heights are proportional to the absolute value, so a negative figure draws
- * upward in coral rather than below a baseline there is no room for. The
- * printed value keeps its sign, which is what a reader actually reads.
+ * Laid out by absolute position from computed pixel offsets rather than by flex.
+ * A chart is a coordinate space; expressing one through nested flex containers
+ * means every change is a negotiation with the layout engine instead of
+ * arithmetic.
  */
-function SnapshotChart({
+function niceTicks(min: number, max: number, count: number): number[] {
+  const span = max - min || Math.abs(max) || 1;
+  const rough = span / Math.max(1, count - 1);
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step =
+    [1, 2, 2.5, 5, 10].find((m) => m * magnitude >= rough) ?? 10;
+  const size = step * magnitude;
+  const first = Math.floor(min / size) * size;
+  const ticks: number[] = [];
+  for (let value = first; value <= max + size / 2; value += size) {
+    // Floating-point accumulation prints "-1.0000000000000002" otherwise.
+    ticks.push(Number(value.toFixed(6)));
+  }
+  return ticks;
+}
+
+function SnapshotChartBand({
   chart,
   theme,
 }: {
-  chart: ReportChart;
+  chart: SnapshotChart;
   theme: DeckTheme;
 }) {
-  const points = chart.points.slice(0, 5);
-  const largest = Math.max(...points.map((point) => Math.abs(point.value)), 0);
-  // A flat series (every figure identical) would divide by zero; draw it as a
-  // row of equal columns, which is the honest picture of "nothing moved".
-  const scale = (value: number) =>
-    largest > 0 ? Math.max(3, (Math.abs(value) / largest) * SNAP_BAR_MAX) : SNAP_BAR_MAX;
+  const series = chart.series.slice(0, 2).filter((s) => s.points.length >= 2);
+  if (series.length === 0) return null;
 
-  // Nothing flagged: the last column is where the series has got to, which
-  // matches the timeline band marking its last step.
-  const flagged = points.some((point) => point.highlight);
+  const categories = series[0].points.map((point) => point.label);
+  const values = series.flatMap((s) => s.points.map((point) => point.value));
+  const ticks = niceTicks(Math.min(...values, 0), Math.max(...values, 0), 5);
+  const low = Math.min(...ticks);
+  const high = Math.max(...ticks);
+  const span = high - low || 1;
+
+  const y = (value: number) =>
+    SNAP_PLOT_H - ((value - low) / span) * SNAP_PLOT_H;
+  const zeroY = y(0);
+
+  const plotW = SNAP_CHART_W - SNAP_AXIS_W;
+  const band = plotW / Math.max(1, categories.length);
+  // Two series share a band; one series gets a wider column in the middle.
+  const colW = series.length > 1 ? band * 0.26 : band * 0.4;
+  const colour = (index: number) =>
+    index === 0 ? theme.accent : PALETTE.cobalt;
 
   return (
     <View>
-      <View style={styles.snapChartPlot}>
-        {points.map((point, index) => {
-          const lead = flagged ? point.highlight : index === points.length - 1;
-          return (
-            <View key={index} style={styles.snapChartCol}>
-              <Text style={styles.snapChartValue}>
-                {pointLabel(point.value, point.display)}
-              </Text>
-              <View
-                style={[
-                  styles.snapChartBar,
-                  {
-                    height: scale(point.value),
-                    backgroundColor:
-                      point.value < 0
-                        ? PALETTE.coral
-                        : lead
-                          ? theme.accent
-                          : PALETTE.steel,
-                  },
-                ]}
-              />
-            </View>
-          );
-        })}
-      </View>
-      <View style={styles.snapChartLabels}>
-        {points.map((point, index) => (
-          <Text key={index} style={styles.snapChartLabel}>
-            {point.label}
+      <View style={styles.snapChartHead}>
+        <Text style={styles.snapChartTitle}>{chart.title.toUpperCase()}</Text>
+        {chart.note?.trim() ? (
+          <Text style={[styles.snapChartNote, { color: theme.accent }]}>
+            {chart.note.trim()}
           </Text>
-        ))}
+        ) : null}
+        <View style={styles.snapChartLegend}>
+          {series.map((s, index) => (
+            <View key={index} style={styles.snapLegendItem}>
+              <View
+                style={[styles.snapLegendSwatch, { backgroundColor: colour(index) }]}
+              />
+              <Text style={styles.snapLegendLabel}>{s.name}</Text>
+            </View>
+          ))}
+        </View>
       </View>
+
+      <View style={{ flexDirection: "row" }}>
+        {/* Tick labels, right-aligned against the plot's left edge. */}
+        <View style={{ width: SNAP_AXIS_W, height: SNAP_PLOT_H }}>
+          {ticks.map((tick, index) => (
+            <Text
+              key={index}
+              style={[styles.snapAxisLabel, { top: y(tick) - 4 }]}
+            >
+              {tick}
+            </Text>
+          ))}
+        </View>
+
+        <View style={{ width: plotW, height: SNAP_PLOT_H, position: "relative" }}>
+          {ticks.map((tick, index) => (
+            <View
+              key={index}
+              style={[
+                styles.snapGrid,
+                {
+                  top: y(tick),
+                  backgroundColor:
+                    tick === 0 ? PALETTE.faint : PALETTE.hairline,
+                },
+              ]}
+            />
+          ))}
+
+          {chart.form === "line" ? (
+            <Svg
+              style={{ position: "absolute", top: 0, left: 0 }}
+              width={plotW}
+              height={SNAP_PLOT_H}
+            >
+              {series.map((s, index) => (
+                <Polyline
+                  key={index}
+                  points={s.points
+                    .map(
+                      (point, i) =>
+                        `${band * i + band / 2},${y(point.value)}`,
+                    )
+                    .join(" ")}
+                  stroke={colour(index)}
+                  strokeWidth={2}
+                  fill="none"
+                />
+              ))}
+            </Svg>
+          ) : (
+            series.map((s, seriesIndex) =>
+              s.points.map((point, i) => {
+                const centre = band * i + band / 2;
+                const offset =
+                  series.length > 1
+                    ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5)
+                    : 0;
+                const top = Math.min(y(point.value), zeroY);
+                const height = Math.max(1.5, Math.abs(y(point.value) - zeroY));
+                return (
+                  <View
+                    key={`${seriesIndex}-${i}`}
+                    style={{
+                      position: "absolute",
+                      left: centre + offset - colW / 2,
+                      top,
+                      width: colW,
+                      height,
+                      backgroundColor: colour(seriesIndex),
+                    }}
+                  />
+                );
+              }),
+            )
+          )}
+
+          {/* Printed figures sit outside the plot geometry, so a long value
+              never changes the height of the column it belongs to. */}
+          {series.map((s, seriesIndex) =>
+            s.points.map((point, i) => {
+              const centre = band * i + band / 2;
+              const offset =
+                series.length > 1
+                  ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5)
+                  : 0;
+              const above = point.value >= 0;
+              const edge = y(point.value);
+              return (
+                <Text
+                  key={`v-${seriesIndex}-${i}`}
+                  style={[
+                    styles.snapChartValue,
+                    {
+                      left: centre + offset - band / 2,
+                      width: band,
+                      top: above ? edge - 11 : edge + 1.5,
+                    },
+                  ]}
+                >
+                  {point.display?.trim() || String(point.value)}
+                </Text>
+              );
+            }),
+          )}
+        </View>
+      </View>
+
+      <View style={{ flexDirection: "row" }}>
+        <View style={{ width: SNAP_AXIS_W }} />
+        <View style={{ width: plotW, flexDirection: "row" }}>
+          {categories.map((label, index) => (
+            <Text key={index} style={styles.snapChartLabel}>
+              {label}
+            </Text>
+          ))}
+        </View>
+      </View>
+
+      {chart.unit?.trim() || chart.footnote?.trim() ? (
+        <Text style={styles.snapChartFoot}>
+          {[chart.unit?.trim(), chart.footnote?.trim()]
+            .filter(Boolean)
+            .join("   ·   ")}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -2605,12 +2768,9 @@ function SnapshotBody({
        * One band, two possible contents. The chart wins when the model supplied
        * one, because it chose the figures over the dates deliberately.
        */}
-      {page.chart && page.chart.points.length >= 2 ? (
+      {page.chart && page.chart.series.length > 0 ? (
         <View>
-          <Text style={[styles.snapBandHead, { color: theme.accent }]}>
-            {`HOW WE GOT HERE${page.chart.unit ? `  \u00B7  ${page.chart.unit.toUpperCase()}` : ""}`}
-          </Text>
-          <SnapshotChart chart={page.chart} theme={theme} />
+          <SnapshotChartBand chart={page.chart} theme={theme} />
         </View>
       ) : page.timeline.length > 0 ? (
         <View>
@@ -2618,22 +2778,11 @@ function SnapshotBody({
             HOW WE GOT HERE
           </Text>
           <View style={styles.snapTrack}>
+            <View
+              style={[styles.snapTrackLine, { backgroundColor: theme.accent }]}
+            />
             {page.timeline.map((event, index) => (
               <View key={index} style={styles.snapStep}>
-                <View style={styles.snapStepRule} />
-                <View
-                  style={[
-                    styles.snapStepDot,
-                    {
-                      // The last step is where the story has got to; the
-                      // earlier ones are behind it and read quieter.
-                      backgroundColor:
-                        index === page.timeline.length - 1
-                          ? theme.accent
-                          : PALETTE.steel,
-                    },
-                  ]}
-                />
                 <Text style={styles.snapStepDate}>{event.date}</Text>
                 <Text style={styles.snapStepText}>{event.text}</Text>
               </View>
@@ -2782,7 +2931,7 @@ function PageBody({
  */
 function DisclaimerPage({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
   return (
-    <Page size={PAGE_SIZE} style={styles.page}>
+    <Page size={pageSizeFor(doc)} style={styles.page}>
       <View
         style={[styles.edgeTop, { backgroundColor: theme.accentDeep }]}
         fixed

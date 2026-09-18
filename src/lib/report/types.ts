@@ -106,6 +106,65 @@ export type ReportChartPoint = {
  * axis or a scatter would all be new ways for a model to produce a chart nobody
  * can read.
  */
+/**
+ * The snapshot's chart, modelled on the one the desk publishes.
+ *
+ * Its own type rather than `ReportChart`, because the published sheet does
+ * things the deck's chart never had to: **two series side by side** (revenue
+ * against operating loss), **negative values below a zero baseline**, a
+ * **legend**, a **stated unit on an axis**, and a **footnote** for the
+ * accounting caveat ("Operating Loss is a non-IFRS measure reported by the
+ * company"). Bolting those onto `ReportChart` would change every deck page that
+ * uses it, for a shape only this page draws.
+ *
+ * Two series is the maximum and it is a real limit, not a round number: at the
+ * band's width four categories times two columns is eight bars, and a third
+ * series makes each one too narrow to carry its printed value.
+ */
+export type SnapshotChartSeries = {
+  /** Legend label: "Revenue", "Operating Loss". */
+  name: string;
+  points: {
+    /** Category, shared across series: "FY24", "1H26". */
+    label: string;
+    /** Signed. Negatives draw below the baseline. */
+    value: number;
+    /** How the figure prints on the column: "$8.06m", "-$15.21m". */
+    display?: string | null;
+  }[];
+};
+
+export type SnapshotChart = {
+  /**
+   * How to draw it, chosen from what the data IS.
+   *
+   * `columns` compares magnitudes at a few points in time and is the default:
+   * revenue by financial year, capital raised by round, production by half. It
+   * is what the desk's own CVB sheet uses.
+   *
+   * `line` is for a series with enough points that the SHAPE is the finding
+   * rather than any single value — a share price through a quarter, a cash
+   * balance drawn down month by month. Below about six points a line is a worse
+   * column chart; above about a dozen columns become a picket fence.
+   *
+   * Deliberately only these two. A candlestick needs an open, high, low and
+   * close for every period, and this pipeline stores none of them — the board
+   * carries one price per ticker per day. Offering the form without the data
+   * would invite a model to invent four figures where it has one.
+   */
+  form?: "columns" | "line";
+  /** "Revenue vs Operating Loss | FY23 to FY26" — states what is plotted and over what. */
+  title: string;
+  /** The one thing to notice: "FY26 revenue -28% YoY". */
+  note?: string | null;
+  /** Axis unit: "A$ million". */
+  unit?: string | null;
+  /** Accounting caveat printed under the plot, where one is needed. */
+  footnote?: string | null;
+  /** One or two series. */
+  series: SnapshotChartSeries[];
+};
+
 export type ReportChart = {
   type: "columns" | "bars" | "waterfall";
   points: ReportChartPoint[];
@@ -276,7 +335,7 @@ export type ReportPage = PageCommon &
          * on it rather than a chart with axes. When both are present the chart
          * wins; when neither is, the band is simply absent.
          */
-        chart?: ReportChart | null;
+        chart?: SnapshotChart | null;
         /** "Key risks remaining" — three cards, label and one sentence. */
         risks: ReportCallout[];
         /** The closing line of judgement, set as a rule-topped pull quote. */
@@ -773,7 +832,7 @@ export function validateReportDoc(doc: ReportDoc): string[] {
     // Either band satisfies this: the chart and the timeline are alternatives
     // for the same slot, so requiring the timeline would refuse a valid sheet
     // that chose the chart.
-    const chartPoints = page.chart?.points?.length ?? 0;
+    const chartPoints = page.chart?.series?.[0]?.points?.length ?? 0;
     if (page.timeline.length < 2 && chartPoints < 2) {
       problems.push(
         "snapshot needs at least two dated steps, or a chart with at least two points",

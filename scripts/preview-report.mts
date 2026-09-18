@@ -414,11 +414,12 @@ const STRESS_FIXTURE: ReportDoc = {
         pad("Fourth thing that changes from here, stated as one clause ", 88),
       ],
       timeline: [
-        { date: "17 Apr 2026", text: pad("First step in the chain ", 40) },
-        { date: "26 May 2026", text: pad("Second step in the chain ", 40) },
-        { date: "6 Aug 2026", text: pad("Third step in the chain ", 40) },
-        { date: "17 Sep 2026", text: pad("Fourth step in the chain ", 40) },
-        { date: "30 Sep 2026", text: pad("Fifth step in the chain ", 40) },
+        { date: "17 Apr 2026", text: pad("First step in the chain ", 62) },
+        { date: "26 May 2026", text: pad("Second step in the chain ", 62) },
+        { date: "6 Aug 2026", text: pad("Third step in the chain ", 62) },
+        { date: "17 Sep 2026", text: pad("Fourth step in the chain ", 62) },
+        { date: "24 Sep 2026", text: pad("Fifth step in the chain ", 62) },
+        { date: "30 Sep 2026", text: pad("Sixth step in the chain ", 62) },
       ],
       risks: [
         { label: pad("First risk label here ", 42), text: pad("The first risk, explained in one sentence ", 96) },
@@ -430,15 +431,37 @@ const STRESS_FIXTURE: ReportDoc = {
        * the renderer prefers the chart, and the worst case is whichever is
        * taller. Five points with the longest labels the fitter allows.
        */
+      /**
+       * Two series, four categories, negatives below a zero baseline - the
+       * shape the desk actually publishes (CVB, 18 Sep 2026: revenue against
+       * operating loss across four financial years). Every string at its
+       * fitter cap, so this proves the worst case fits rather than a tidy one.
+       */
       chart: {
-        type: "columns",
-        unit: "$ million",
-        points: [
-          { label: pad("First period ", 14), value: 19, display: "$19m" },
-          { label: pad("Second period ", 14), value: 27, display: "$27m" },
-          { label: pad("Third period ", 14), value: 34, display: "$34m" },
-          { label: pad("Fourth period ", 14), value: 39, display: "$39m" },
-          { label: pad("Fifth period ", 14), value: 42, display: "$42m", highlight: true },
+        form: "columns",
+        title: pad("Revenue vs Operating Loss | FY23 to FY26 ", 68),
+        note: pad("FY26 revenue -28% YoY ", 46),
+        unit: "A$ million",
+        footnote: pad("Operating Loss is a non-IFRS measure reported by the company. ", 92),
+        series: [
+          {
+            name: "Revenue",
+            points: [
+              { label: "FY23", value: 8.06, display: "$8.06m" },
+              { label: "FY24", value: 6.53, display: "$6.53m" },
+              { label: "FY25", value: 12.1, display: "$12.10m" },
+              { label: "FY26", value: 8.67, display: "$8.67m" },
+            ],
+          },
+          {
+            name: "Operating Loss",
+            points: [
+              { label: "FY23", value: -15.21, display: "-$15.21m" },
+              { label: "FY24", value: -16.29, display: "-$16.29m" },
+              { label: "FY25", value: -11.14, display: "-$11.14m" },
+              { label: "FY26", value: -13.5, display: "-$13.50m" },
+            ],
+          },
         ],
       },
       pullQuote: pad("The closing line of judgement, saying what the day settles and what it leaves open ", 190),
@@ -479,7 +502,23 @@ const doc = /^\d+$/.test(target)
     ? { ...SNAPSHOT_FIXTURE, pages: fitReportPages(SNAPSHOT_FIXTURE.pages, "PIA (snapshot)") }
     : target === "stress"
       ? { ...STRESS_FIXTURE, pages: fitReportPages(STRESS_FIXTURE.pages, "stress") }
-      : FIXTURE;
+      : target === "stress-timeline"
+        ? /**
+           * The same worst case with the chart removed, so the TIMELINE branch
+           * is tested too. The stress fixture carries both and the renderer
+           * prefers the chart, which meant six full-length dated steps were
+           * never actually drawn by any check.
+           */
+          {
+            ...STRESS_FIXTURE,
+            pages: fitReportPages(
+              STRESS_FIXTURE.pages.map((page) =>
+                page.kind === "snapshot" ? { ...page, chart: null } : page,
+              ),
+              "stress-timeline",
+            ),
+          }
+        : FIXTURE;
 
 /**
  * Validation is reported, not enforced.
