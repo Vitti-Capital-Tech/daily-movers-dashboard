@@ -441,7 +441,7 @@ const STRESS_FIXTURE: ReportDoc = {
         form: "columns",
         title: pad("Revenue vs Operating Loss | FY23 to FY26 ", 68),
         note: pad("FY26 revenue -28% YoY ", 46),
-        unit: "A$ million",
+        unit: "$ million",
         footnote: pad("Operating Loss is a non-IFRS measure reported by the company. ", 92),
         series: [
           {
@@ -518,7 +518,45 @@ const doc = /^\d+$/.test(target)
               "stress-timeline",
             ),
           }
-        : FIXTURE;
+        : target === "stress-line"
+          ? /**
+             * The LINE branch at its worst: two series at twelve points each,
+             * every label at its cap. Nothing else draws a line, and until the
+             * parser kept `form` no draft ever reached this code either.
+             */
+            {
+              ...STRESS_FIXTURE,
+              pages: fitReportPages(
+                STRESS_FIXTURE.pages.map((page) =>
+                  page.kind === "snapshot" && page.chart
+                    ? {
+                        ...page,
+                        chart: {
+                          ...page.chart,
+                          form: "line" as const,
+                          title: "Cash Balance | Oct 2025 to Sep 2026",
+                          series: [
+                            { name: "Cash", base: 42, step: -2.6 },
+                            { name: "Committed Spend", base: -3, step: -0.9 },
+                          ].map(({ name, base, step }) => ({
+                            name,
+                            points: Array.from({ length: 12 }, (_, i) => {
+                              const value = Math.round((base + step * i) * 10) / 10;
+                              return {
+                                label: `Mmm-${String(i + 1).padStart(2, "0")}xx`,
+                                value,
+                                display: `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}m`,
+                              };
+                            }),
+                          })),
+                        },
+                      }
+                    : page,
+                ),
+                "stress-line",
+              ),
+            }
+          : FIXTURE;
 
 /**
  * Validation is reported, not enforced.

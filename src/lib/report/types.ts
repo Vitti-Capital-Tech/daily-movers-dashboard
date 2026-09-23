@@ -157,7 +157,7 @@ export type SnapshotChart = {
   title: string;
   /** The one thing to notice: "FY26 revenue -28% YoY". */
   note?: string | null;
-  /** Axis unit: "A$ million". */
+  /** Axis unit: "$ million". */
   unit?: string | null;
   /** Accounting caveat printed under the plot, where one is needed. */
   footnote?: string | null;
@@ -711,6 +711,17 @@ export const REPORT_LIMITS = {
   conclusionChars: 280,
   /** 'chart': eight columns is the most that stays legible at the measure. */
   chartPoints: 8,
+  /**
+   * The snapshot chart's categories, by form.
+   *
+   * Columns print a figure over every bar, so four categories is the ceiling
+   * with two series side by side. A line prints figures only at its ends, which
+   * is what lets it carry a longer run — and below six points a line is a worse
+   * column chart, so a shorter one is drawn as columns instead.
+   */
+  snapshotColumnPoints: 4,
+  snapshotLineMinPoints: 6,
+  snapshotLinePoints: 12,
   /** 'management': the people who actually run it, not the whole board. */
   people: 4,
   personNoteChars: 140,

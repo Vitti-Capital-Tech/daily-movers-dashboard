@@ -3,6 +3,7 @@ import {
   REPORT_PAGE_TARGET,
   type ReportCallout,
   type ReportPage,
+  type SnapshotChart,
 } from "./types";
 
 /**
@@ -122,6 +123,46 @@ function fitCallouts(
   }));
 }
 
+function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
+  const series = chart.series.slice(0, 2);
+  const longest = Math.max(0, ...series.map((s) => s.points.length));
+  const form =
+    chart.form === "line" && longest >= REPORT_LIMITS.snapshotLineMinPoints
+      ? "line"
+      : "columns";
+  const cap =
+    form === "line"
+      ? REPORT_LIMITS.snapshotLinePoints
+      : REPORT_LIMITS.snapshotColumnPoints;
+  if (chart.form === "line" && form === "columns") {
+    trim.notes.push(
+      `chart drawn as columns: a line needs ${REPORT_LIMITS.snapshotLineMinPoints} points, got ${longest}`,
+    );
+  }
+
+  return {
+    ...chart,
+    form,
+    title: trim.text(chart.title, 68, "chart title"),
+    note: trim.maybe(chart.note, 46, "chart note"),
+    footnote: trim.maybe(chart.footnote, 92, "chart footnote"),
+    series: series.map((s) => {
+      if (s.points.length > cap) {
+        trim.notes.push(`chart points cut from ${s.points.length} to the latest ${cap}`);
+      }
+      return {
+        name: trim.text(s.name, 22, "series name"),
+        // The series runs oldest first and ends on the period that matters,
+        // so a cut drops the oldest points rather than today's.
+        points: s.points.slice(-cap).map((point) => ({
+          ...point,
+          label: trim.text(point.label, 10, "chart label"),
+        })),
+      };
+    }),
+  };
+}
+
 /**
  * One page, cut to the budget in `REPORT_LIMITS`.
  *
@@ -183,35 +224,18 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
         .slice(0, 4)
         .map((item) => trim.text(item, 76, "what changes now")),
       /**
-       * The chart shares the timeline's slot, so it is capped just as hard.
-       * Five columns is what the band's width carries with labels under them
-       * that are still readable; a sixth makes every label wrap.
-       */
-      /**
-       * Two series, four categories, and short labels.
+       * Two series, and a category count set by the form.
        *
-       * The band's width carries eight columns before the printed values start
-       * colliding, so four categories is the ceiling with two series and the
-       * fitter enforces it rather than trusting the count twice in the prompt.
-       * Every series is cut to the same categories as the first, because a
-       * second series with five points against the first's four would draw its
-       * extra column over the axis.
+       * Columns print a figure over every bar, and the band's width carries
+       * eight before those collide — so four categories with two series. A
+       * line prints figures only at its ends and can run to twelve, but one
+       * shorter than six is drawn as columns, because that is what it reads
+       * better as. The fitter enforces both rather than trusting the prompt.
+       * Every series is cut to the same count, because a second series with
+       * five points against the first's four would draw its extra column over
+       * the axis.
        */
-      chart: page.chart
-        ? {
-            ...page.chart,
-            title: trim.text(page.chart.title, 68, "chart title"),
-            note: trim.maybe(page.chart.note, 46, "chart note"),
-            footnote: trim.maybe(page.chart.footnote, 92, "chart footnote"),
-            series: page.chart.series.slice(0, 2).map((series) => ({
-              name: trim.text(series.name, 22, "series name"),
-              points: series.points.slice(0, 4).map((point) => ({
-                ...point,
-                label: trim.text(point.label, 10, "chart label"),
-              })),
-            })),
-          }
-        : null,
+      chart: page.chart ? fitSnapshotChart(page.chart, trim) : null,
       timeline: page.timeline.slice(0, 6).map((event) => ({
         ...event,
         text: trim.text(event.text, 62, "timeline step"),

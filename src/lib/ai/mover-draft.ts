@@ -426,6 +426,10 @@ const PAGE_SCHEMA = {
       type: "string",
       maxLength: 160,
       description:
+        "On a 'snapshot' page: under 88 characters, leading with the company's short name and the move as a whole " +
+        "percentage rounded from the share-move tile, and saying so when the stock moved against the news — " +
+        "'Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger'. No shorthand that " +
+        "needs the backstory to decode. " +
         "On a 'cover' page: the share-move headline, stating direction and magnitude the way the desk writes it — " +
         "'Shares Rise as Much as ~20.6% in Morning Trade After Record FY26 Results and a New $5 Million Share Buy-Back'. " +
         "On a 'market-vs-reality' page: what the company announced, or what initially looks like the important part.",
@@ -465,8 +469,9 @@ const PAGE_SCHEMA = {
             "'columns' for a few periods where the COMPARISON is the point - four financial years of revenue " +
             "against operating loss, three capital raises. This is the usual answer and the one the desk's own " +
             "sheet uses. 'line' only for a longer run where the SHAPE is the point and no single value matters " +
-            "- a cash balance drawn down month by month, a price series through a quarter. Below about six " +
-            "points a line is a worse column chart. There is no candlestick or OHLC form: this pipeline stores " +
+            "- a cash balance drawn down month by month, a price series through a quarter - with six to twelve " +
+            "points. Below six points a line is a worse column chart, and one sent with fewer is drawn as " +
+            "columns. There is no candlestick or OHLC form: this pipeline stores " +
             "one price per day, so the opens, highs and lows do not exist and must not be invented.",
         },
         title: {
@@ -483,7 +488,7 @@ const PAGE_SCHEMA = {
         },
         unit: {
           type: "string",
-          description: "What the axis numbers are: 'A$ million', '%', 'koz'. Always state it.",
+          description: "What the axis numbers are: '$ million', 'US$ million', '%', 'koz'. Always state it.",
         },
         footnote: {
           type: "string",
@@ -509,7 +514,11 @@ const PAGE_SCHEMA = {
               points: {
                 type: "array",
                 minItems: 2,
-                maxItems: 4,
+                maxItems: 12,
+                description:
+                  "Oldest first. 'columns': two to four points - figures print over every bar and a fifth " +
+                  "collides. 'line': six to twelve - only the first and last figures print. Beyond the cap the " +
+                  "oldest points are dropped.",
                 items: {
                   type: "object",
                   properties: {
@@ -1148,13 +1157,16 @@ EXPECTATIONS. Compare against consensus only if a reliable figure appears in the
 
 The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a summary of a longer note. Emit EXACTLY ONE page and its kind is 'snapshot'. There is no cover, no separate risks page, no closing page. Every part below is required:
 
-- companyName, then headline. The headline is the whole story in one line, under 88 characters: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing.
+- companyName, then headline. The headline is the whole story in one line, under 88 characters: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing. Three rules on top of that, all from analyst markups:
+  - LEAD WITH THE MOVE. Start with the company's short name, the direction and the size of the move as a whole percentage: "Tuas Sinks 16%", "PIA Gains 8%". Round the SAME figure as the share-move tile (-15.7% is "16%"), never a later intraday price — the sheet is a snapshot as at its stated time. Use a verb that carries direction: Sinks, Slides, Falls, Jumps, Surges, Gains.
+  - WHEN THE STOCK WENT AGAINST THE NEWS, SAY SO. A fall on a strong result or a rise on a weak one is the story, and the headline puts both halves in: "Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger". "FY26 Profit Rises 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" was sent back: it reads as a good-news headline on a stock that fell 16%, and it never says the stock fell.
+  - WRITE FOR A READER WHO HAS NOT FOLLOWED THE STORY. No compressed phrase that only makes sense if you already know the backstory — "Idle M1 Capital" presumes the reader knows money was raised for a deal that lapsed. Name the issue in words that stand alone ("M1 Fallout", "Lapsed Deal", "Regulator Probe") and leave the detail to the columns below.
 - FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
 - whyItMoved — two or three clauses on what happened TODAY.
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
 - timeline OR chart — one band, your choice, never both:
   - timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. Right when the steps are events with no common unit: proposal, approval, challenge, settlement.
-  - chart — one or TWO series of two to four figures, with a title, a unit, a one-line note saying what to notice, and an optional footnote for an accounting caveat. Right when what got the company here is a progression of NUMBERS: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. PREFER IT whenever such a series exists in the filings — a reader takes a shape in a second and will not read four dated lines saying the same thing, and two series side by side (revenue against the loss it is measured against) is the single most useful picture this sheet can carry. Choose 'columns' unless the series is long enough that its SHAPE is the finding, in which case 'line'. Losses are negative and draw below a zero baseline — do not flip their sign to make them plot upward. Every figure comes from the evidence: never interpolate a missing period, and never invent a series just to have a chart.
+  - chart — one or TWO series, with a title, a unit, a one-line note saying what to notice, and an optional footnote for an accounting caveat. Right when what got the company here is a progression of NUMBERS: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. PREFER IT whenever such a series exists in the filings — a reader takes a shape in a second and will not read four dated lines saying the same thing, and two series side by side (revenue against the loss it is measured against) is the single most useful picture this sheet can carry. Choose 'columns', with two to four figures, unless the series is long enough that its SHAPE is the finding — six to twelve points, a cash balance month by month — in which case 'line'. Oldest first. Losses are negative and draw below a zero baseline — do not flip their sign to make them plot upward. Every figure comes from the evidence: never interpolate a missing period, and never invent a series just to have a chart.
 - risks — three cards on what is still open AFTER today.
 - pullQuote — one line of judgement.
 
@@ -1162,7 +1174,7 @@ The two columns answer different questions and must never repeat each other. If 
 
 === 10. THE TILES AND THE LINES ===
 
-THE TILES CARRY THE NUMBERS. There are no charts, no tables and no prose blocks on this sheet — the four tiles are where every important figure goes, so choose them last, once you know what the story is. A tile whose number does not change the reader's understanding is a wasted quarter of the page.
+THE TILES CARRY THE NUMBERS. There are no tables and no prose blocks on this sheet, and the only chart is the optional one in the timeline band from section 9 — which carries a series, not the story's key figures. The four tiles are where every important figure goes, so choose them last, once you know what the story is. A tile whose number does not change the reader's understanding is a wasted quarter of the page.
 
 WRITE CLAUSES, NOT SENTENCES. The two columns and the timeline are set as lists, not paragraphs. "Settlement removes the legal overhang around the Buy-Back" — no lead-in, no "the Company announced that", no trailing full stop needed. Fifty-five to seventy characters: the sheet cuts anything past 76 mid-word, so aim under the limit rather than at it. The timeline steps are shorter still — under 62 characters, up to six of them — because they are set side by side along one continuous line and a long one collides with its neighbour.
 
@@ -1224,7 +1236,7 @@ What to verify, in order of how much damage it does:
 
 6. WHAT IS MISSING. A transaction page that lists what the company receives and not what it gives up. A named project with no economics against it when the filings give NPV, production, AISC or capex. A cash balance with no breakdown when one is disclosed. These are advisory findings, but say which page and what figure to add, because an incomplete note is how this report misleads without stating anything false.
 
-7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding.
+7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding. A headline that does not state the share move, states a percentage that does not round from the share-move tile, reads as good news on a stock that fell (or bad news on one that rose), or leans on shorthand only a reader of the backstory would decode — advisory, but give the rewritten headline.
 
 8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 84 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
 
@@ -1316,6 +1328,9 @@ function asSnapshotChart(value: unknown): SnapshotChart | null {
   if (series.length === 0) return null;
 
   return {
+    // Dropping this silently turned every line into columns; the fitter
+    // decides whether the series is long enough to be drawn as one.
+    form: raw.form === "line" ? "line" : "columns",
     title: asString(raw.title),
     note: asString(raw.note) || null,
     unit: asString(raw.unit) || null,

@@ -778,12 +778,32 @@ timeline step). Two dials, and only two — the type or the caps.
 **The "how we got here" band is a timeline OR a small chart.** They answer the
 same question and share one slot, so the sheet stays one page either way. Dated
 steps are right when the story is a sequence of events with no common unit
-(proposal, approval, challenge, settlement); a two-to-five column chart is right
-when it is a progression of figures in one unit — four guidance upgrades
-climbing through the year, three capital raises, production by half. The chart is
-drawn short — no taller than the timeline it replaces, which is what keeps the
-sheet to one page — so the printed values carry the precision and the columns
-carry the impression. The model picks; the renderer prefers the chart when both arrive.
+(proposal, approval, challenge, settlement); a chart is right when it is a
+progression of figures in one unit — four guidance upgrades climbing through the
+year, three capital raises, production by half. The chart is drawn short — no
+taller than the timeline it replaces, which is what keeps the sheet to one page —
+so the printed values carry the precision and the columns carry the impression.
+The model picks; the renderer prefers the chart when both arrive.
+
+The chart has two forms, and the fitter decides between them from the data
+rather than trusting the model. **Columns** take one or two series of two to four
+points, with a figure printed over every bar. A **line** takes six to twelve
+points and prints only its two end figures, because twelve figures along a line
+collide; past eight periods it labels every other one, counted back from the
+latest. A line sent with fewer than six points is drawn as columns, and a series
+over its cap loses its *oldest* points, since the series ends on the period that
+matters. `npm run report:preview -- stress-line` renders the line at its worst
+case. Until this was fixed the parser dropped `form` entirely, so every line the
+model asked for was drawn as columns, and the axis could stop one tick short of
+the tallest value (40 for a 42) and draw it above the plot.
+
+**The headline leads with the move.** An analyst sent back "FY26 Profit Rises
+277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" on a day Tuas fell
+16%: it read as good news and never said the stock fell. The prompt now asks for
+the short name, direction and whole-number move first (rounded from the
+share-move tile, not a later price), a "despite" framing when the stock went
+against the news, and no shorthand a reader needs the backstory to decode.
+The accuracy checker flags a headline that breaks any of these.
 
 **The share-move tile is composed by the renderer, not the model.** Its figure,
 the traded price and the time all come from the exchange feed and the clock, the
@@ -823,8 +843,9 @@ without an API call. `npm run report:preview -- snapshot out.pdf` renders the
 one-pager from a fixture holding the **real published PIA copy**, which is the
 only version of the question worth asking: a fixture written to flatter the grid
 renders beautifully and proves nothing. `-- fixture` still exercises every deck
-page kind, `-- stress` proves the worst case fits, and `-- <draftId>` renders a
-stored draft.
+page kind, `-- stress` proves the worst case fits (with `-- stress-timeline` and
+`-- stress-line` for the other two forms of the history band), and
+`-- <draftId>` renders a stored draft.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

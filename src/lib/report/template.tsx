@@ -2488,7 +2488,7 @@ function leadTile(
  * Modelled on what the desk publishes rather than on what was easy to draw: the
  * CVB sheet of 18 September 2026 plots revenue against operating loss across
  * four financial years, with a legend, a zero baseline that negatives hang
- * below, tick labels in A$ million, and a footnote saying the loss figure is
+ * below, tick labels in $ million, and a footnote saying the loss figure is
  * non-IFRS. All of that is load-bearing — a two-series chart without a legend is
  * a puzzle, and a chart with negative values and no visible zero is a lie.
  *
@@ -2506,9 +2506,12 @@ function niceTicks(min: number, max: number, count: number): number[] {
   const size = step * magnitude;
   const first = Math.floor(min / size) * size;
   const ticks: number[] = [];
-  for (let value = first; value <= max + size / 2; value += size) {
+  // Runs until a tick clears the maximum. Stopping at `max + size / 2` left
+  // the top tick under the tallest value (40 for a 42), so it drew above the plot.
+  for (let value = first; ; value += size) {
     // Floating-point accumulation prints "-1.0000000000000002" otherwise.
     ticks.push(Number(value.toFixed(6)));
+    if (value >= max - size * 1e-9) break;
   }
   return ticks;
 }
@@ -2538,6 +2541,7 @@ function SnapshotChartBand({
   const band = plotW / Math.max(1, categories.length);
   // Two series share a band; one series gets a wider column in the middle.
   const colW = series.length > 1 ? band * 0.26 : band * 0.4;
+  const isLine = chart.form === "line";
   const colour = (index: number) =>
     index === 0 ? theme.accent : PALETTE.cobalt;
 
@@ -2590,7 +2594,7 @@ function SnapshotChartBand({
             />
           ))}
 
-          {chart.form === "line" ? (
+          {isLine ? (
             <Svg
               style={{ position: "absolute", top: 0, left: 0 }}
               width={plotW}
@@ -2610,6 +2614,17 @@ function SnapshotChartBand({
                   fill="none"
                 />
               ))}
+              {series.map((s, index) =>
+                s.points.map((point, i) => (
+                  <Circle
+                    key={`${index}-${i}`}
+                    cx={band * i + band / 2}
+                    cy={y(point.value)}
+                    r={2.5}
+                    fill={colour(index)}
+                  />
+                )),
+              )}
             </Svg>
           ) : (
             series.map((s, seriesIndex) =>
@@ -2642,12 +2657,19 @@ function SnapshotChartBand({
               never changes the height of the column it belongs to. */}
           {series.map((s, seriesIndex) =>
             s.points.map((point, i) => {
+              // A line runs to twelve points and a figure on each would
+              // collide; its ends are what a reader compares.
+              if (isLine && i !== 0 && i !== s.points.length - 1) return null;
               const centre = band * i + band / 2;
               const offset =
-                series.length > 1
+                !isLine && series.length > 1
                   ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5)
                   : 0;
-              const above = point.value >= 0;
+              // A line's end figure sits on the side away from the plot edge,
+              // so the top value does not print into the legend.
+              const above = isLine
+                ? y(point.value) > SNAP_PLOT_H / 2
+                : point.value >= 0;
               const edge = y(point.value);
               return (
                 <Text
@@ -2674,7 +2696,12 @@ function SnapshotChartBand({
         <View style={{ width: plotW, flexDirection: "row" }}>
           {categories.map((label, index) => (
             <Text key={index} style={styles.snapChartLabel}>
-              {label}
+              {/* Past eight periods every label would wrap: show alternate
+                  ones, counted back from the latest so it is always named. */}
+              {categories.length <= 8 ||
+              (categories.length - 1 - index) % 2 === 0
+                ? label
+                : ""}
             </Text>
           ))}
         </View>
