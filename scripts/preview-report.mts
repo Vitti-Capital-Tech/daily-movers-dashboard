@@ -446,6 +446,7 @@ const STRESS_FIXTURE: ReportDoc = {
         series: [
           {
             name: "Revenue",
+            tone: "favourable",
             points: [
               { label: "FY23", value: 8.06, display: "$8.06m" },
               { label: "FY24", value: 6.53, display: "$6.53m" },
@@ -455,6 +456,7 @@ const STRESS_FIXTURE: ReportDoc = {
           },
           {
             name: "Operating Loss",
+            tone: "unfavourable",
             points: [
               { label: "FY23", value: -15.21, display: "-$15.21m" },
               { label: "FY24", value: -16.29, display: "-$16.29m" },

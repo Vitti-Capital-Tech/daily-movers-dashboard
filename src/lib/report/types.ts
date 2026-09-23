@@ -124,6 +124,14 @@ export type ReportChartPoint = {
 export type SnapshotChartSeries = {
   /** Legend label: "Revenue", "Operating Loss". */
   name: string;
+  /**
+   * Which way is good, and so the colour. A loss is `unfavourable` and draws
+   * coral, the colour reserved for what hurts; revenue is `favourable` and
+   * draws mint. Colouring by position instead put revenue in coral on every
+   * falling day, because the first series took the fall theme's accent.
+   * Absent on drafts stored before the field existed, which draw neutral.
+   */
+  tone?: "favourable" | "unfavourable" | "neutral";
   points: {
     /** Category, shared across series: "FY24", "1H26". */
     label: string;
@@ -153,9 +161,9 @@ export type SnapshotChart = {
    * would invite a model to invent four figures where it has one.
    */
   form?: "columns" | "line";
-  /** "Revenue vs Operating Loss | FY23 to FY26" — states what is plotted and over what. */
+  /** "Revenue tripled while losses narrowed" — the takeaway, not the topic. */
   title: string;
-  /** The one thing to notice: "FY26 revenue -28% YoY". */
+  /** The one specific change the eye should catch: "loss peaked in FY24 and halved". */
   note?: string | null;
   /** Axis unit: "$ million". */
   unit?: string | null;
@@ -714,12 +722,14 @@ export const REPORT_LIMITS = {
   /**
    * The snapshot chart's categories, by form.
    *
-   * Columns print a figure over every bar, so four categories is the ceiling
-   * with two series side by side. A line prints figures only at its ends, which
+   * Columns print a figure over every bar, so five categories for one series
+   * and four with two side by side. A line prints figures only at its ends, which
    * is what lets it carry a longer run — and below six points a line is a worse
    * column chart, so a shorter one is drawn as columns instead.
    */
-  snapshotColumnPoints: 4,
+  snapshotColumnPoints: 5,
+  /** Two series side by side print twice the figures in the same width. */
+  snapshotPairedColumnPoints: 4,
   snapshotLineMinPoints: 6,
   snapshotLinePoints: 12,
   /** 'management': the people who actually run it, not the whole board. */

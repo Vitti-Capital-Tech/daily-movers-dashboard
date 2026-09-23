@@ -466,35 +466,37 @@ const PAGE_SCHEMA = {
           type: "string",
           enum: ["columns", "line"],
           description:
-            "'columns' for a few periods where the COMPARISON is the point - four financial years of revenue " +
-            "against operating loss, three capital raises. This is the usual answer and the one the desk's own " +
-            "sheet uses. 'line' only for a longer run where the SHAPE is the point and no single value matters " +
-            "- a cash balance drawn down month by month, a price series through a quarter - with six to twelve " +
-            "points. Below six points a line is a worse column chart, and one sent with fewer is drawn as " +
-            "columns. There is no candlestick or OHLC form: this pipeline stores " +
-            "one price per day, so the opens, highs and lows do not exist and must not be invented.",
+            "'columns' (the usual answer): 2-5 periods, where comparing values is the point - at most 4 with " +
+            "two series. Four years of revenue vs operating loss; three funding rounds. 'line': 6-12 points, " +
+            "where the shape is the point and no single value matters - a cash balance drawn down month by " +
+            "month; a price through a quarter. A line with fewer than 6 points is drawn as columns anyway. " +
+            "There is no candlestick/OHLC form: the pipeline stores one price per day, so opens, highs and " +
+            "lows don't exist and must not be invented.",
         },
         title: {
           type: "string",
           description:
-            "What is plotted and over what period: 'Revenue vs Operating Loss | FY23 to FY26'. Printed in caps " +
-            "above the chart. Under 68 characters.",
+            "The takeaway, not the topic: 'Revenue tripled while losses narrowed' beats 'Revenue and operating " +
+            "loss'. Printed in caps above the chart. Under ~60 characters.",
         },
         note: {
           type: "string",
           description:
-            "The one thing to notice, set in the accent colour beside the title: 'FY26 revenue -28% YoY'. This " +
-            "is the chart's conclusion - a chart without one is decoration. Under 46 characters.",
+            "One sentence, the single thing the eye should catch, set in the accent colour beside the title. " +
+            "Point at a specific change - 'loss peaked in FY24 and halved' - not a restatement of the title. " +
+            "Under 46 characters.",
         },
         unit: {
           type: "string",
-          description: "What the axis numbers are: '$ million', 'US$ million', '%', 'koz'. Always state it.",
+          description:
+            "Short and exact: '$ million', 'US$ million', 'koz', 'tonnes 000'. Put the scale in the unit, not " +
+            "in each value. Australian dollars are '$', never 'A$'. Always state it.",
         },
         footnote: {
           type: "string",
           description:
-            "An accounting caveat where the figures need one: 'Operating Loss is a non-IFRS measure reported " +
-            "by the company.' Omit when there is nothing to qualify. Under 92 characters.",
+            "Only for a real caveat - restated figures, a changed accounting basis, a 9-month period, unaudited " +
+            "numbers, a missing period, a non-IFRS measure. Otherwise omit. Under 92 characters.",
         },
         series: {
           type: "array",
@@ -503,28 +505,39 @@ const PAGE_SCHEMA = {
           description:
             "One or two series. Two is how a contrast is shown - revenue against the loss it is measured " +
             "against - and both MUST carry the same category labels in the same order, because they are drawn " +
-            "side by side against one axis. Negative values are allowed and draw below a zero baseline.",
+            "side by side against one axis. Both share one unit; if they don't, chart only one. Losses stay " +
+            "negative and draw below the zero baseline - never flip the sign.",
           items: {
             type: "object",
             properties: {
               name: {
                 type: "string",
-                description: "Legend label: 'Revenue', 'Operating Loss'. Under 22 characters.",
+                description: "1-2 words: 'Revenue', 'Operating loss'. No units in names. Under 22 characters.",
+              },
+              tone: {
+                type: "string",
+                enum: ["favourable", "unfavourable", "neutral"],
+                description:
+                  "Sets the series colour. 'unfavourable' for a loss, a cost or a cash burn - drawn in the red " +
+                  "that marks what hurts. 'favourable' for revenue, profit, cash or production. 'neutral' for a " +
+                  "figure with no direction of its own, such as capital raised.",
               },
               points: {
                 type: "array",
                 minItems: 2,
                 maxItems: 12,
                 description:
-                  "Oldest first. 'columns': two to four points - figures print over every bar and a fifth " +
-                  "collides. 'line': six to twelve - only the first and last figures print. Beyond the cap the " +
-                  "oldest points are dropped.",
+                  "Oldest first. 'columns': 2-5 points, at most 4 with two series - figures print over every " +
+                  "bar. 'line': 6-12 - only the first and last figures print. Beyond the cap the oldest points " +
+                  "are dropped. Never interpolate a missing period. Same decimals on every value.",
                 items: {
                   type: "object",
                   properties: {
                     label: {
                       type: "string",
-                      description: "The period, short: 'FY24', '1H26', 'Jul-26'. Under 10 characters.",
+                      description:
+                        "Short and uniform, in the company's own fiscal labels: 'FY24', '1H25', 'Jul-26', " +
+                        "'Series A'. Under 10 characters.",
                     },
                     value: {
                       type: "number",
@@ -540,7 +553,7 @@ const PAGE_SCHEMA = {
                 },
               },
             },
-            required: ["name", "points"],
+            required: ["name", "tone", "points"],
           },
         },
       },
@@ -1166,7 +1179,32 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
 - timeline OR chart — one band, your choice, never both:
   - timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. Right when the steps are events with no common unit: proposal, approval, challenge, settlement.
-  - chart — one or TWO series, with a title, a unit, a one-line note saying what to notice, and an optional footnote for an accounting caveat. Right when what got the company here is a progression of NUMBERS: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. PREFER IT whenever such a series exists in the filings — a reader takes a shape in a second and will not read four dated lines saying the same thing, and two series side by side (revenue against the loss it is measured against) is the single most useful picture this sheet can carry. Choose 'columns', with two to four figures, unless the series is long enough that its SHAPE is the finding — six to twelve points, a cash balance month by month — in which case 'line'. Oldest first. Losses are negative and draw below a zero baseline — do not flip their sign to make them plot upward. Every figure comes from the evidence: never interpolate a missing period, and never invent a series just to have a chart.
+  - chart — a small chart of one or two series, with a title, a unit, a one-line note on what to notice, and an optional footnote for an accounting caveat.
+
+    WHEN TO USE IT
+    Use a chart whenever the filings contain a progression of numbers that explains how the company got here: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. Prefer it over dated text lines — a reader takes in a shape in a second, but won't read four lines saying the same thing. The most useful picture this sheet can carry is two series side by side: revenue against the loss measured against it.
+    Skip the chart if no such series exists. Never invent a series just to have one.
+
+    CHOOSING THE FORM
+    - 'columns' (the usual answer): 2–5 periods, where comparing values is the point — at most 4 when there are two series, because their figures collide past that. Four years of revenue vs operating loss; three funding rounds.
+    - 'line': 6–12 points, where the shape is the point and no single value matters. A cash balance drawn down month by month; a price through a quarter. A line with fewer than 6 points will be drawn as columns anyway.
+    - There is no candlestick/OHLC form. The pipeline stores one price per day, so opens, highs and lows don't exist and must not be invented.
+
+    DATA RULES
+    - Every figure comes from the evidence. Never interpolate a missing period — leave it out and mention the gap in the footnote if it matters.
+    - Order periods oldest first.
+    - Losses stay negative and draw below the zero baseline. Never flip the sign.
+    - Both series must share one unit (e.g. both $ million). If they don't, chart only one.
+    - Round consistently: same decimals across every value in the chart.
+    - Give every series a tone. 'unfavourable' for a loss, a cost, a cash burn or anything where up is bad — it is drawn in the red that marks what hurts. 'favourable' for revenue, profit, cash or production where up is good. 'neutral' for a figure with no direction of its own, such as capital raised or a share count.
+
+    MAKING IT READ WELL
+    - title: state the takeaway, not the topic. "Revenue tripled while losses narrowed" beats "Revenue and operating loss". Under ~60 characters.
+    - unit: short and exact, e.g. "$ million", "US$ million", "koz", "tonnes '000". Put scale in the unit, not in each value. Australian dollars are "$", never "A$".
+    - series names: 1–2 words each ("Revenue", "Operating loss"). No units in names.
+    - period labels: short and uniform — "FY23", "FY24", "1H25", "Seed", "Series A". Match the company's own fiscal labels.
+    - note: one sentence, the single thing the eye should catch. Point at a specific change ("loss peaked in FY24 and halved the next year"), not a restatement of the title.
+    - footnote: only for a real caveat — restated figures, a changed accounting basis, a 9-month period, unaudited numbers, a missing period. Otherwise omit.
 - risks — three cards on what is still open AFTER today.
 - pullQuote — one line of judgement.
 
@@ -1321,7 +1359,11 @@ function asSnapshotChart(value: unknown): SnapshotChart | null {
         })
         .filter((point): point is NonNullable<typeof point> => point !== null);
 
-      return { name: asString(item?.name), points };
+      const tone: "favourable" | "unfavourable" | "neutral" =
+        item?.tone === "favourable" || item?.tone === "unfavourable"
+          ? item.tone
+          : "neutral";
+      return { name: asString(item?.name), tone, points };
     })
     .filter((entry) => entry.points.length >= 2);
 

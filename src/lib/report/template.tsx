@@ -2542,8 +2542,16 @@ function SnapshotChartBand({
   // Two series share a band; one series gets a wider column in the middle.
   const colW = series.length > 1 ? band * 0.26 : band * 0.4;
   const isLine = chart.form === "line";
-  const colour = (index: number) =>
-    index === 0 ? theme.accent : PALETTE.cobalt;
+  // Colour follows what the series MEANS, not where it sits: by position the
+  // first series took the theme accent, which is coral on a falling day, so
+  // revenue drew in the colour reserved for losses. Two neutral series still
+  // need telling apart, hence cobalt then steel.
+  const colour = (index: number) => {
+    const tone = series[index]?.tone;
+    if (tone === "unfavourable") return PALETTE.coral;
+    if (tone === "favourable") return PALETTE.mint;
+    return index === 0 ? PALETTE.cobalt : PALETTE.steel;
+  };
 
   return (
     <View>

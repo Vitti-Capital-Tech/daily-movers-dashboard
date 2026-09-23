@@ -786,8 +786,8 @@ so the printed values carry the precision and the columns carry the impression.
 The model picks; the renderer prefers the chart when both arrive.
 
 The chart has two forms, and the fitter decides between them from the data
-rather than trusting the model. **Columns** take one or two series of two to four
-points, with a figure printed over every bar. A **line** takes six to twelve
+rather than trusting the model. **Columns** take two to five points for one
+series and four for two, with a figure printed over every bar. A **line** takes six to twelve
 points and prints only its two end figures, because twelve figures along a line
 collide; past eight periods it labels every other one, counted back from the
 latest. A line sent with fewer than six points is drawn as columns, and a series
@@ -796,6 +796,15 @@ matters. `npm run report:preview -- stress-line` renders the line at its worst
 case. Until this was fixed the parser dropped `form` entirely, so every line the
 model asked for was drawn as columns, and the axis could stop one tick short of
 the tallest value (40 for a 42) and draw it above the plot.
+
+**Chart colour follows meaning, not position.** Each series carries a `tone`:
+`unfavourable` (a loss, a cost, a cash burn) draws coral, `favourable` (revenue,
+profit, production) draws mint, and `neutral` draws cobalt, then steel. By
+position, the first series took the theme accent, which is coral on a falling
+day, so revenue was drawn in the colour reserved for losses. Drafts stored
+before the field existed draw neutral. The chart prompt in section 9 also asks
+for a takeaway title rather than a topic, one unit across both series, and the
+same decimals on every value.
 
 **The headline leads with the move.** An analyst sent back "FY26 Profit Rises
 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" on a day Tuas fell

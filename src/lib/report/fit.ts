@@ -133,7 +133,9 @@ function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
   const cap =
     form === "line"
       ? REPORT_LIMITS.snapshotLinePoints
-      : REPORT_LIMITS.snapshotColumnPoints;
+      : series.length > 1
+        ? REPORT_LIMITS.snapshotPairedColumnPoints
+        : REPORT_LIMITS.snapshotColumnPoints;
   if (chart.form === "line" && form === "columns") {
     trim.notes.push(
       `chart drawn as columns: a line needs ${REPORT_LIMITS.snapshotLineMinPoints} points, got ${longest}`,
@@ -151,6 +153,7 @@ function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
         trim.notes.push(`chart points cut from ${s.points.length} to the latest ${cap}`);
       }
       return {
+        ...s,
         name: trim.text(s.name, 22, "series name"),
         // The series runs oldest first and ends on the period that matters,
         // so a cut drops the oldest points rather than today's.
@@ -227,7 +230,8 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
        * Two series, and a category count set by the form.
        *
        * Columns print a figure over every bar, and the band's width carries
-       * eight before those collide — so four categories with two series. A
+       * eight before those collide — so four categories with two series, five
+       * with one. A
        * line prints figures only at its ends and can run to twelve, but one
        * shorter than six is drawn as columns, because that is what it reads
        * better as. The fitter enforces both rather than trusting the prompt.
