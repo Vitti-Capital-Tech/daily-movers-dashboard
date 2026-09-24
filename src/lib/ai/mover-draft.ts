@@ -36,7 +36,12 @@ import {
   type VolumeProfile,
 } from "@/lib/market/volume";
 
-import { fitReportPages } from "@/lib/report/fit";
+import {
+  applySnapshotRewrites,
+  fitReportPages,
+  snapshotOverruns,
+  type SnapshotOverrun,
+} from "@/lib/report/fit";
 import type { MoveWindow } from "@/lib/drafts/trading-day";
 
 import type { AccuracyFinding, AccuracyReview } from "@/lib/drafts/types";
@@ -433,7 +438,9 @@ const PAGE_SCHEMA = {
       type: "string",
       maxLength: 160,
       description:
-        "On a 'snapshot' page: under 88 characters, leading with the company's short name and the move as a whole " +
+        "On a 'snapshot' page: under 88 characters where you can, and never over 120 - a longer one is set in " +
+        "smaller type. It is always printed whole, so it must read as a complete line on its own. Lead with the " +
+        "company's short name and the move as a whole " +
         "percentage rounded from the share-move tile, and saying so when the stock moved against the news — " +
         "'Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger'. No shorthand that " +
         "needs the backstory to decode. " +
@@ -473,10 +480,10 @@ const PAGE_SCHEMA = {
           type: "string",
           enum: ["columns", "line"],
           description:
-            "'line' (the house default): a series through time, 2-12 points, every point dotted and labelled " +
-            "up to six - four years of revenue vs operating loss, guidance through the year. 'columns': 2-5 " +
-            "separate amounts side by side where time is not the axis, at most 4 with two series - capital " +
-            "raised by round, segment revenue. " +
+            "'line' - ALWAYS for a series through time (years, halves, quarters, months): 2-12 points, every " +
+            "point dotted and labelled up to six. Period labels are drawn as a line even if 'columns' is sent. " +
+            "'columns' only for 2-5 separate amounts that are not points in time, at most 4 with two series - " +
+            "capital raised by round, revenue by segment. " +
             "There is no candlestick/OHLC form: the pipeline stores one price per day, so opens, highs and " +
             "lows don't exist and must not be invented.",
         },
@@ -1178,7 +1185,7 @@ EXPECTATIONS. Compare against consensus only if a reliable figure appears in the
 
 The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a summary of a longer note. Emit EXACTLY ONE page and its kind is 'snapshot'. There is no cover, no separate risks page, no closing page. Every part below is required:
 
-- companyName, then headline. The headline is the whole story in one line, under 88 characters: what happened AND what it means. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing. Three rules on top of that, all from analyst markups:
+- companyName, then headline. The headline is the whole story in one line, under 88 characters where you can and never over 120: what happened AND what it means. It is always printed in full — past 100 characters it is set in smaller type, not cut — so write it as a complete line, and when it runs long, shorten the nouns ("FY27 Outlook Cut", "Deal Lapse"), not the "despite" half. Make it punchy: one active verb per half and no chain of "as ... and ... after ..." clauses. "OFX Jumps 18% as Equals Holds $1.00 Offer Despite FY27 Guidance Pull" (68), not "OFX Jumps 18% as Equals Reconfirms $1.00 Offer and Extends Exclusivity, Despite Weaker FY27 Outlook" (99). A headline over 90 characters is sent back to you to tighten. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing. Three rules on top of that, all from analyst markups:
   - LEAD WITH THE MOVE. Start with the company's short name, the direction and the size of the move as a whole percentage: "Tuas Sinks 16%", "PIA Gains 8%". Round the SAME figure as the share-move tile (-15.7% is "16%"), never a later intraday price — the sheet is a snapshot as at its stated time. Use a verb that carries direction: Sinks, Slides, Falls, Jumps, Surges, Gains.
   - WHEN THE STOCK WENT AGAINST THE NEWS, SAY SO. A fall on a strong result or a rise on a weak one is the story, and the headline puts both halves in: "Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger". "FY26 Profit Rises 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" was sent back: it reads as a good-news headline on a stock that fell 16%, and it never says the stock fell.
   - WRITE FOR A READER WHO HAS NOT FOLLOWED THE STORY. No compressed phrase that only makes sense if you already know the backstory — "Idle M1 Capital" presumes the reader knows money was raised for a deal that lapsed. Name the issue in words that stand alone ("M1 Fallout", "Lapsed Deal", "Regulator Probe") and leave the detail to the columns below.
@@ -1194,8 +1201,8 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
     If no such series exists, send "series": [] and the share price is drawn instead. Never invent a series just to have one.
 
     CHOOSING THE FORM
-    - 'line' (the house default, as on the CVB sheet): a series through time, 2–12 points — every point dotted and labelled up to six, only the ends past that. Four years of revenue against operating loss; guidance through the year; a cash balance month by month.
-    - 'columns': 2–5 separate amounts compared side by side, where time is not the axis — at most 4 when there are two series, because their figures collide past that. Capital raised by round; segment revenue.
+    - 'line' — ALWAYS for a series through time (financial years, halves, quarters, months), as on the CVB sheet: 2–12 points, every point dotted and labelled up to six, only the ends past that. Four years of revenue against operating loss; NOI by quarter; guidance through the year; a cash balance month by month. A chart whose labels are periods is drawn as a line even if you send 'columns'.
+    - 'columns': only for 2–5 separate amounts that are not points in time — at most 4 with two series. Capital raised by round ("Seed", "Series A"); revenue by segment.
     - There is no candlestick/OHLC form. The pipeline stores one price per day, so opens, highs and lows don't exist and must not be invented.
 
     DATA RULES
@@ -2271,8 +2278,7 @@ export async function writeReport(
      * measures against the limits the renderer lays out to — see
      * `src/lib/report/fit.ts`.
      */
-    const pages = fitReportPages(
-      dedupeManagementQuestion(
+    const written = dedupeManagementQuestion(
         (Array.isArray(raw.pages) ? raw.pages : [])
           .map((page, index) => {
             const normalised = normalisePage(page, companyName);
@@ -2294,9 +2300,14 @@ export async function writeReport(
             return normalised;
           })
           .filter((page): page is ReportPage => page !== null),
-      ),
-      row.ticker,
-    );
+      );
+
+    /**
+     * Lines over their budget are rewritten whole before the fitter sees them,
+     * so it only ever cuts what this pass could not fix. See `shortenOverruns`.
+     */
+    const shortened = await shortenOverruns(written, row.ticker, nextUsage);
+    const pages = fitReportPages(shortened.pages, row.ticker);
 
     const rawMovePct = Number(raw.movePct);
     /**
@@ -2371,11 +2382,166 @@ export async function writeReport(
         },
         citedIdsIds: asStringArray(raw.citedIdsIds),
       },
-      usage: nextUsage,
+      usage: shortened.usage,
     };
   } catch (error) {
     throw new Error(describeAnthropicError(error));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2b — lines over budget, rewritten rather than cut
+// ---------------------------------------------------------------------------
+
+const SHORTEN_TOOL: Anthropic.Tool = {
+  name: "shorten_lines",
+  description: "Returns each over-long line of the Daily Mover sheet rewritten to fit its budget.",
+  input_schema: {
+    type: "object",
+    properties: {
+      lines: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "The id the line was given, unchanged." },
+            text: { type: "string", description: "The rewritten line, within its character budget." },
+          },
+          required: ["id", "text"],
+        },
+      },
+    },
+    required: ["lines"],
+  },
+};
+
+const SHORTEN_SYSTEM = `You tighten lines on a one-page equity research sheet (Vitti Capital's Daily Mover) that are over their character budget. Each line is set in a fixed grid, and anything over budget would be cut mid-word on the printed page.
+
+For every line, return a rewrite that:
+- is at most its "max" characters, counted exactly, and reads as a complete line - never an ellipsis, never a trailing fragment;
+- keeps every figure, date, name and the meaning; cut words, not facts. Prefer shorter nouns and verbs over dropping a clause the reader needs;
+- adds nothing: no figure, name or claim that is not in the original line;
+- keeps the house style: Australian dollars as "$", no trailing full stop on clauses, timeline steps and risk labels.
+
+Headlines: keep the company's short name and the share move first ("OFX Jumps 18%"), keep a "despite" contrast when the original has one, and make it punchy - one active verb per half, no chains of "as ... and ... after ...". "OFX Jumps 18% as Equals Holds $1.00 Offer Despite FY27 Guidance Pull" beats "OFX Jumps 18% as Equals Reconfirms $1.00 Offer and Extends Exclusivity, Despite Weaker FY27 Outlook".
+Chart titles: the takeaway as a short label, not a sentence.`;
+
+/** Figures in a line, normalised so "$1,430m" and "1430" compare equal. */
+function figuresIn(text: string): Set<string> {
+  return new Set((text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => n.replace(/,/g, "")));
+}
+
+/**
+ * The one model call that turns over-budget lines into lines that fit.
+ *
+ * Before this the fitter cut them, which printed "Equals agrees $1.00/share
+ * cash offer via Transaction Process…" and a headline ending "Despite Weaker
+ * FY27…" — sentences nobody wrote, on a client document. A rewrite costs a
+ * few hundred tokens and no evidence is sent: the job is wording, not facts.
+ *
+ * A rewrite is accepted only if it is within budget, is not itself cut, and
+ * carries no figure the original did not — so the pass can shorten but never
+ * add. Anything refused, and any failure of the call, falls back to the fitter.
+ */
+/** Rounds of rewriting before a line is left to the fitter. */
+const SHORTEN_ROUNDS = 2;
+
+async function shortenOverruns(
+  pages: ReportPage[],
+  ticker: string,
+  usage: TokenUsage,
+): Promise<{ pages: ReportPage[]; usage: TokenUsage }> {
+  const overruns = snapshotOverruns(pages);
+  if (overruns.length === 0) return { pages, usage };
+
+  const byId = new Map<string, SnapshotOverrun>(overruns.map((line) => [line.id, line]));
+  const rewrites: Record<string, string> = {};
+  /** The last refused attempt per line, fed back so the next round can correct it. */
+  const lastTry: Record<string, string> = {};
+  let refused: string[] = [];
+  let nextUsage = usage;
+
+  try {
+    const anthropic = getAnthropicClient();
+    /**
+     * Two rounds, because models count characters badly: the first OFX test
+     * returned a 75-character timeline step for a 62-character budget. The
+     * second round is told exactly how long its attempt was.
+     */
+    for (let round = 0; round < SHORTEN_ROUNDS; round += 1) {
+      const pending = overruns.filter((line) => !(line.id in rewrites));
+      if (pending.length === 0) break;
+
+      const prompt =
+        `${pending.length} line(s) on the ${ticker} sheet are over budget. Rewrite each with shorten_lines.
+
+` +
+        JSON.stringify(
+          pending.map(({ id, what, text, max }) => ({
+            id,
+            what,
+            max,
+            length: text.length,
+            text,
+            ...(lastTry[id]
+              ? {
+                  yourLastAttempt: lastTry[id],
+                  itsLength: lastTry[id].length,
+                  note: `still ${lastTry[id].length - max} characters over; cut harder`,
+                }
+              : {}),
+          })),
+          null,
+          2,
+        );
+
+      const response = await anthropic.messages.create({
+        model: draftModel(),
+        max_tokens: 4000,
+        system: SHORTEN_SYSTEM,
+        messages: [{ role: "user", content: prompt }],
+        tools: [SHORTEN_TOOL],
+        tool_choice: { type: "tool", name: SHORTEN_TOOL.name },
+      });
+      nextUsage = addUsage(nextUsage, response.usage);
+
+      const toolUse = response.content.find(
+        (block): block is Anthropic.ToolUseBlock =>
+          block.type === "tool_use" && block.name === SHORTEN_TOOL.name,
+      );
+      const lines = (toolUse?.input as { lines?: unknown } | undefined)?.lines;
+
+      refused = [];
+      for (const entry of Array.isArray(lines) ? lines : []) {
+        const id = asString((entry as Record<string, unknown>)?.id);
+        const text = asString((entry as Record<string, unknown>)?.text).trim();
+        const original = byId.get(id);
+        if (!original || !text || id in rewrites) continue;
+
+        const originalFigures = figuresIn(original.text);
+        const added = [...figuresIn(text)].filter((figure) => !originalFigures.has(figure));
+        if (text.length > original.max || /…|\.\.\.$/.test(text) || added.length > 0) {
+          lastTry[id] = text;
+          refused.push(
+            `${id} (${text.length}/${original.max}${added.length ? `, new figures ${added.join(" ")}` : ""})`,
+          );
+          continue;
+        }
+        rewrites[id] = text;
+      }
+    }
+  } catch (error) {
+    console.warn(`draft ${ticker}: shortening pass failed, the fitter will cut instead`, error);
+  }
+
+  const missed = overruns.filter((line) => !(line.id in rewrites)).map((line) => line.id);
+  if (missed.length > 0) {
+    console.warn(
+      `draft ${ticker}: ${missed.length} over-budget line(s) not rewritten and left to the fitter: ` +
+        `${missed.join(", ")}${refused.length ? ` — refused: ${refused.join("; ")}` : ""}`,
+    );
+  }
+  return { pages: applySnapshotRewrites(pages, rewrites), usage: nextUsage };
 }
 
 // ---------------------------------------------------------------------------

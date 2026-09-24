@@ -123,43 +123,185 @@ function fitCallouts(
   }));
 }
 
+/**
+ * Every character budget on the snapshot, in one place.
+ *
+ * These are what the fixed grid lays out: a clause is one line at the column
+ * measure, a timeline step two lines in its sixth of the band, and so on. They
+ * are enforced twice. `snapshotOverruns` finds the lines over budget so the
+ * pipeline can have the model rewrite them whole (`shortenOverruns` in
+ * `mover-draft.ts`), and the fitter below cuts only what that pass left —
+ * because a line cut to fit ends "...via Transaction Process…", and that is
+ * a sentence nobody wrote.
+ */
+export const SNAPSHOT_CAPS = {
+  clause: 76,
+  timelineStep: 62,
+  riskLabel: 42,
+  riskText: 84,
+  pullQuote: 158,
+  sourceNote: REPORT_LIMITS.sourceNoteChars,
+  chartTitle: 68,
+  chartNote: 46,
+  chartFootnote: 92,
+  seriesName: 22,
+  pointLabel: 10,
+} as const;
+
+/**
+ * Where the rewrite pass aims tighter than the fitter cuts.
+ *
+ * A headline is never cut (the renderer sets a long one smaller), so its only
+ * budget is this one: past 90 characters it is a headline that says three
+ * things, and the desk wants one. Chart titles likewise read as a label, not
+ * a sentence, well before the 68 characters the card can physically hold.
+ */
+export const SNAPSHOT_TARGETS = {
+  headline: 90,
+  chartTitle: 56,
+} as const;
+
+/** One line over its budget, addressed so a rewrite can be put back. */
+export type SnapshotOverrun = {
+  /** "whyItMoved.0", "timeline.2", "risks.1.text", "chart.title"... */
+  id: string;
+  /** What the line is, for the rewrite prompt: "timeline step". */
+  what: string;
+  text: string;
+  max: number;
+};
+
+type SnapshotPage = Extract<ReportPage, { kind: "snapshot" }>;
+
+/**
+ * The lines on each snapshot that are over their budget. Only the items the
+ * fitter would keep are checked: a fourth risk is dropped whole, so rewriting
+ * it would be wasted.
+ */
+export function snapshotOverruns(pages: ReportPage[]): SnapshotOverrun[] {
+  const out: SnapshotOverrun[] = [];
+  const check = (id: string, what: string, text: string | null | undefined, max: number) => {
+    const value = text?.trim() ?? "";
+    if (value.length > max) out.push({ id, what, text: value, max });
+  };
+
+  const page = pages.find((p): p is SnapshotPage => p.kind === "snapshot");
+  if (!page) return out;
+
+  check("headline", "headline", page.headline, SNAPSHOT_TARGETS.headline);
+  page.whyItMoved.slice(0, 3).forEach((item, i) =>
+    check(`whyItMoved.${i}`, "'why it moved' clause", item, SNAPSHOT_CAPS.clause),
+  );
+  page.whatChangesNow.slice(0, 4).forEach((item, i) =>
+    check(`whatChangesNow.${i}`, "'what changes now' clause", item, SNAPSHOT_CAPS.clause),
+  );
+  page.timeline.slice(0, 6).forEach((event, i) =>
+    check(`timeline.${i}`, "timeline step", event.text, SNAPSHOT_CAPS.timelineStep),
+  );
+  page.risks.slice(0, 3).forEach((risk, i) => {
+    check(`risks.${i}.label`, "risk card label", risk.label, SNAPSHOT_CAPS.riskLabel);
+    check(`risks.${i}.text`, "risk card explanation", risk.text, SNAPSHOT_CAPS.riskText);
+  });
+  check("pullQuote", "closing Vitti view line", page.pullQuote, SNAPSHOT_CAPS.pullQuote);
+  check("sourceNote", "source line", page.sourceNote, SNAPSHOT_CAPS.sourceNote);
+  if (page.chart) {
+    check("chart.title", "chart title", page.chart.title, SNAPSHOT_TARGETS.chartTitle);
+    check("chart.note", "chart note", page.chart.note, SNAPSHOT_CAPS.chartNote);
+    check("chart.footnote", "chart footnote", page.chart.footnote, SNAPSHOT_CAPS.chartFootnote);
+    page.chart.series.slice(0, 2).forEach((series, i) =>
+      check(`chart.series.${i}`, "chart legend name", series.name, SNAPSHOT_CAPS.seriesName),
+    );
+  }
+  return out;
+}
+
+/** `snapshotOverruns` addresses, with their rewritten text put back. */
+export function applySnapshotRewrites(
+  pages: ReportPage[],
+  rewrites: Record<string, string>,
+): ReportPage[] {
+  const pick = (id: string, fallback: string) => rewrites[id] ?? fallback;
+  return pages.map((page) => {
+    if (page.kind !== "snapshot") return page;
+    return {
+      ...page,
+      headline: pick("headline", page.headline),
+      whyItMoved: page.whyItMoved.map((item, i) => pick(`whyItMoved.${i}`, item)),
+      whatChangesNow: page.whatChangesNow.map((item, i) => pick(`whatChangesNow.${i}`, item)),
+      timeline: page.timeline.map((event, i) => ({ ...event, text: pick(`timeline.${i}`, event.text) })),
+      risks: page.risks.map((risk, i) => ({
+        ...risk,
+        label: pick(`risks.${i}.label`, risk.label),
+        text: pick(`risks.${i}.text`, risk.text),
+      })),
+      pullQuote: pick("pullQuote", page.pullQuote),
+      sourceNote: page.sourceNote == null ? page.sourceNote : pick("sourceNote", page.sourceNote),
+      chart: page.chart
+        ? {
+            ...page.chart,
+            title: pick("chart.title", page.chart.title),
+            note: page.chart.note == null ? page.chart.note : pick("chart.note", page.chart.note),
+            footnote:
+              page.chart.footnote == null ? page.chart.footnote : pick("chart.footnote", page.chart.footnote),
+            series: page.chart.series.map((series, i) => ({
+              ...series,
+              name: pick(`chart.series.${i}`, series.name),
+            })),
+          }
+        : page.chart,
+    };
+  });
+}
+
+/**
+ * A category label that names a period: "FY26", "1Q27", "2H25", "Q3 FY26",
+ * "Jul-26", "Sep 2026", "2025". Anything else ("Seed", "Series A",
+ * "Australia") is a separate amount, not a point in time.
+ */
+const PERIOD_LABEL =
+  /^((FY|CY)\s?'?\d{2,4}|[1-4]Q\s?(FY)?\d{2,4}|Q[1-4](\s?(FY)?\s?'?\d{2,4})?|[12]H\s?(FY)?\d{2,4}|H[12](\s?(FY)?\s?'?\d{2,4})?|[A-Z][a-z]{2,8}[-\s']?'?\d{2,4}|\d{4})$/i;
+
 function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
   const series = chart.series.slice(0, 2);
-  const longest = Math.max(0, ...series.map((s) => s.points.length));
-  const form =
-    chart.form === "line" && longest >= REPORT_LIMITS.snapshotLineMinPoints
-      ? "line"
-      : "columns";
+  /**
+   * A series through time is a line, whatever the model asked for.
+   *
+   * The prompt names line as the house default and the model still sent
+   * OFX's quarterly NOI (1Q26, 4Q26, 1Q27) as three big columns on
+   * 24 September 2026. So the fitter decides from the labels: columns only
+   * survive for amounts that are not periods, such as capital by round.
+   */
+  const labels = series[0]?.points.map((point) => point.label.trim()) ?? [];
+  const periodic = labels.length > 0 && labels.every((label) => PERIOD_LABEL.test(label));
+  const form = chart.form === "columns" && !periodic ? "columns" : "line";
+  if (chart.form === "columns" && form === "line") {
+    trim.notes.push("chart drawn as a line: its categories are periods");
+  }
   const cap =
     form === "line"
       ? REPORT_LIMITS.snapshotLinePoints
       : series.length > 1
         ? REPORT_LIMITS.snapshotPairedColumnPoints
         : REPORT_LIMITS.snapshotColumnPoints;
-  if (chart.form === "line" && form === "columns") {
-    trim.notes.push(
-      `chart drawn as columns: a line needs ${REPORT_LIMITS.snapshotLineMinPoints} points, got ${longest}`,
-    );
-  }
 
   return {
     ...chart,
     form,
-    title: trim.text(chart.title, 68, "chart title"),
-    note: trim.maybe(chart.note, 46, "chart note"),
-    footnote: trim.maybe(chart.footnote, 92, "chart footnote"),
+    title: trim.text(chart.title, SNAPSHOT_CAPS.chartTitle, "chart title"),
+    note: trim.maybe(chart.note, SNAPSHOT_CAPS.chartNote, "chart note"),
+    footnote: trim.maybe(chart.footnote, SNAPSHOT_CAPS.chartFootnote, "chart footnote"),
     series: series.map((s) => {
       if (s.points.length > cap) {
         trim.notes.push(`chart points cut from ${s.points.length} to the latest ${cap}`);
       }
       return {
         ...s,
-        name: trim.text(s.name, 22, "series name"),
+        name: trim.text(s.name, SNAPSHOT_CAPS.seriesName, "series name"),
         // The series runs oldest first and ends on the period that matters,
         // so a cut drops the oldest points rather than today's.
         points: s.points.slice(-cap).map((point) => ({
           ...point,
-          label: trim.text(point.label, 10, "chart label"),
+          label: trim.text(point.label, SNAPSHOT_CAPS.pointLabel, "chart label"),
         })),
       };
     }),
@@ -218,14 +360,16 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
   if (page.kind === "snapshot") {
     return {
       ...page,
-      headline: trim.text(page.headline, 96, "snapshot headline"),
+      // Not a layout cap any more: the renderer sets a long headline smaller
+      // rather than cutting it (see `headlineSize`). This only stops a runaway.
+      headline: trim.text(page.headline, 170, "snapshot headline"),
       kpis: page.kpis.slice(0, 4),
       whyItMoved: page.whyItMoved
         .slice(0, 3)
-        .map((item) => trim.text(item, 76, "why it moved")),
+        .map((item) => trim.text(item, SNAPSHOT_CAPS.clause, "why it moved")),
       whatChangesNow: page.whatChangesNow
         .slice(0, 4)
-        .map((item) => trim.text(item, 76, "what changes now")),
+        .map((item) => trim.text(item, SNAPSHOT_CAPS.clause, "what changes now")),
       /**
        * Two series, and a category count set by the form.
        *
@@ -242,15 +386,14 @@ function fitPageBody(page: ReportPage, trim: Trimmer): ReportPage {
       chart: page.chart ? fitSnapshotChart(page.chart, trim) : null,
       timeline: page.timeline.slice(0, 6).map((event) => ({
         ...event,
-        text: trim.text(event.text, 62, "timeline step"),
+        text: trim.text(event.text, SNAPSHOT_CAPS.timelineStep, "timeline step"),
       })),
       risks: page.risks.slice(0, 3).map((risk) => ({
         ...risk,
-        label: trim.text(risk.label, 42, "risk label"),
-        text: trim.text(risk.text, 84, "risk detail"),
+        label: trim.text(risk.label, SNAPSHOT_CAPS.riskLabel, "risk label"),
+        text: trim.text(risk.text, SNAPSHOT_CAPS.riskText, "risk detail"),
       })),
-      pullQuote: trim.text(page.pullQuote, 158, "pull quote"),
-      sourceNote: trim.maybe(page.sourceNote, 150, "source note"),
+      pullQuote: trim.text(page.pullQuote, SNAPSHOT_CAPS.pullQuote, "pull quote"),
     };
   }
 

@@ -5,6 +5,7 @@ import {
   Circle,
   Document,
   Font,
+  G,
   Image,
   Line,
   Page,
@@ -2709,12 +2710,23 @@ function SnapshotChartBand({
   const values = series.flatMap((s) => s.points.map((point) => point.value));
   // Headroom past the extremes, so a figure printed above the highest point
   // or below the lowest has room and does not sit on the category labels.
-  const lowest = Math.min(...values, 0);
-  const highest = Math.max(...values, 0);
-  const headroom = (highest - lowest) * 0.2;
+  const isLine = chart.form === "line";
+  /**
+   * A line is fitted to its data; columns start from zero.
+   *
+   * A bar's length is its value, so it needs the zero. A line's slope is the
+   * point, and OFX's NOI moving $54.9m -> $43.5m -> $43.9m drawn on a 0-80
+   * axis was a flat line with nothing to read. Where the series cross zero,
+   * zero is inside the range anyway and keeps its dashed rule.
+   */
+  const crossesZero = Math.min(...values) < 0 && Math.max(...values) > 0;
+  const lowest = isLine && !crossesZero ? Math.min(...values) : Math.min(...values, 0);
+  const highest = isLine && !crossesZero ? Math.max(...values) : Math.max(...values, 0);
+  const headroom =
+    (highest - lowest || Math.abs(highest) * 0.2 || 1) * (isLine ? 0.28 : 0.2);
   const ticks = niceTicks(
-    lowest < 0 ? lowest - headroom : lowest,
-    highest > 0 ? highest + headroom : highest,
+    isLine || lowest < 0 ? lowest - headroom : lowest,
+    isLine || highest > 0 ? highest + headroom : highest,
     5,
   );
   const low = Math.min(...ticks);
@@ -2726,7 +2738,6 @@ function SnapshotChartBand({
   const zeroY = y(0);
   const band = plotW / Math.max(1, categories.length);
   const centre = (i: number) => band * i + band / 2;
-  const isLine = chart.form === "line";
   const colW = series.length > 1 ? band * 0.26 : band * 0.4;
 
   // Colour follows what the series MEANS, not where it sits: by position the
@@ -2788,6 +2799,19 @@ function SnapshotChartBand({
                 strokeDasharray="3,3"
               />
             ) : null}
+            {/* A lone line gets a faint fill to its baseline; two would
+                overlap into mud, so they stay as lines. */}
+            {isLine && series.length === 1 ? (
+              <Polygon
+                points={
+                  `${centre(0)},${H} ` +
+                  series[0].points.map((point, i) => `${centre(i)},${y(point.value)}`).join(" ") +
+                  ` ${centre(series[0].points.length - 1)},${H}`
+                }
+                fill={colour(0)}
+                fillOpacity={0.12}
+              />
+            ) : null}
             {isLine
               ? series.map((s, index) => (
                   <Polyline
@@ -2805,13 +2829,25 @@ function SnapshotChartBand({
             {isLine
               ? series.map((s, index) =>
                   s.points.map((point, i) => (
-                    <Circle
-                      key={`c${index}-${i}`}
-                      cx={centre(i)}
-                      cy={y(point.value)}
-                      r={4.2}
-                      fill={colour(index)}
-                    />
+                    <G key={`c${index}-${i}`}>
+                      {/* A soft halo and a card-coloured ring: the point reads
+                          as a marker to hover, not a dot of ink. */}
+                      <Circle
+                        cx={centre(i)}
+                        cy={y(point.value)}
+                        r={8}
+                        fill={colour(index)}
+                        fillOpacity={0.18}
+                      />
+                      <Circle
+                        cx={centre(i)}
+                        cy={y(point.value)}
+                        r={4.6}
+                        fill={colour(index)}
+                        stroke={PALETTE.navyDeep}
+                        strokeWidth={1.6}
+                      />
+                    </G>
                   )),
                 )
               : null}
@@ -3128,6 +3164,23 @@ function TimelineBand({
   );
 }
 
+/**
+ * The headline is set whole, never cut: a long one is set smaller instead.
+ *
+ * It used to be trimmed at 96 characters with an ellipsis, which printed
+ * "OFX Jumps 18% as Equals Reconfirms $1.00 Offer and Extends Exclusivity,
+ * Despite Weaker FY27…" and lost exactly the "despite" half an analyst had
+ * asked for. Each step keeps the headline to two lines at the sheet measure;
+ * the stress fixture proves the longest one the fitter lets through fits.
+ */
+function headlineSize(headline: string): number {
+  const length = headline.trim().length;
+  if (length <= 100) return 27.5;
+  if (length <= 125) return 24;
+  if (length <= 150) return 21;
+  return 19;
+}
+
 function SnapshotBody({
   doc,
   page,
@@ -3176,7 +3229,11 @@ function SnapshotBody({
     <View style={styles.snapBody}>
       <View>
         <Text style={styles.snapCompany}>{page.companyName}</Text>
-        <Text style={styles.snapHeadline}>{page.headline}</Text>
+        <Text
+          style={[styles.snapHeadline, { fontSize: headlineSize(page.headline) }]}
+        >
+          {page.headline}
+        </Text>
       </View>
 
       <View style={styles.snapTileRow}>

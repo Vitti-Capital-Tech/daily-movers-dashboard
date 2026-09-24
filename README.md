@@ -805,6 +805,14 @@ filled the required field every time. Three changes fix that:
   higher one is labelled above and the lower one below. **Columns** are for
   separate amounts compared side by side, such as capital raised by round: two
   to five, or four with two series.
+- **The fitter picks the form from the labels, not the model.** On
+  24 September 2026 the model sent OFX's quarterly NOI (1Q26, 4Q26, 1Q27) as
+  three big columns, despite a prompt naming line as the default. Now any chart
+  whose categories are all periods (`FY26`, `1Q27`, `2H25`, `Jul-26`,
+  `Sep 2026`, `2025`) is drawn as a line, and only non-period categories keep
+  columns. A line's axis is fitted to its data rather than to zero, so a slope
+  is visible: $54.9m to $43.5m on a 0-80 axis was a flat line. Points carry a
+  soft halo and a ring, and a lone series gets a faint fill.
 
 Fitting both bands onto one page cost the "ONE-PAGE SNAPSHOT" label (the CVB
 sheet has none), 3pt of headline size, and some padding. `npm run
@@ -836,6 +844,29 @@ the short name, direction and whole-number move first (rounded from the
 share-move tile, not a later price), a "despite" framing when the stock went
 against the news, and no shorthand a reader needs the backstory to decode.
 The accuracy checker flags a headline that breaks any of these.
+
+**The headline is printed whole.** It used to be cut at 96 characters with an
+ellipsis, and OFX's sheet of 24 September 2026 printed "...Despite Weaker
+FY27…", losing the half the rule above exists for. Now `headlineSize` sets a
+long headline smaller instead: 27.5pt up to 100 characters, then 24, 21 and 19.
+`fitReportPages` keeps only a 170-character runaway cap, and the stress fixture
+carries a 170-character headline to prove it still fits in two lines. The
+prompt still aims for under 88 characters and never over 120.
+
+**Lines over budget are rewritten, not cut.** Every character budget on the
+sheet lives in `SNAPSHOT_CAPS` (`src/lib/report/fit.ts`): clauses, timeline
+steps, risk cards, the Vitti view, the source line and the chart's labels.
+`SNAPSHOT_TARGETS` adds tighter targets for the headline (90) and the chart
+title (56), so a long heading is tightened even though it is never cut.
+Straight after the report call, `snapshotOverruns` lists every line over its
+budget, and `shortenOverruns` sends only those lines, with no evidence, to one
+small `shorten_lines` call. A rewrite is accepted only if it fits, is not
+itself cut, and carries no figure the original did not. Refused lines go back
+for a second round, told exactly how long the last attempt was, because the
+model counts characters badly (75 for a 62 budget the first time). Only what
+survives both rounds reaches the fitter's cut. On OFX's 24 September sheet it
+turned "…and Extends Exclusivity, Despite Weaker FY27…" and "…via Transaction
+Process…" into complete lines, for about 3,000 input and 360 output tokens.
 
 **The share-move tile is composed by the renderer, not the model.** Its figure,
 the traded price and the time all come from the exchange feed and the clock, the

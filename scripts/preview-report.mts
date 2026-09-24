@@ -395,7 +395,9 @@ const STRESS_FIXTURE: ReportDoc = {
     {
       kind: "snapshot",
       companyName: "Stress Test Holdings International Limited",
-      headline: pad("Shares Fall as Much as ~12.4% in Morning Trade After ", 110),
+      // At the fitter's runaway cap, so the smallest headline size is what
+      // is proven to fit.
+      headline: pad("Shares Fall as Much as ~12.4% in Morning Trade After ", 170),
       kpis: [
         { value: "-12.4%", label: "Share move (intraday)" },
         { value: "$1,234.5M", label: "New FY26 EBITDA guidance range" },

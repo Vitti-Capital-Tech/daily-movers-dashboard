@@ -746,7 +746,6 @@ export const REPORT_LIMITS = {
   snapshotColumnPoints: 5,
   /** Two series side by side print twice the figures in the same width. */
   snapshotPairedColumnPoints: 4,
-  snapshotLineMinPoints: 2,
   snapshotLinePoints: 12,
   /** 'management': the people who actually run it, not the whole board. */
   people: 4,
