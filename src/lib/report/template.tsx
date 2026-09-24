@@ -19,6 +19,7 @@ import {
 } from "@react-pdf/renderer";
 
 import { VITTI_MARK_PNG, VITTI_MARK_RATIO } from "./logo";
+import { layoutPriceBand, type PriceBandLayout } from "./price-band";
 import {
   CLOSING_SIGN_OFF,
   DISCLAIMER_HEADING,
@@ -30,6 +31,7 @@ import {
   MANAGEMENT_QUESTION_HEADING,
   type ReportCallout,
   type ReportChart,
+  type ReportTimelineEvent,
   type SnapshotChart,
   type ReportChartPoint,
   type ReportComparisonRow,
@@ -247,12 +249,21 @@ function pageKindLabel(kind: ReportPage["kind"]): string | null {
  * The chart band's coordinate space.
  *
  * The sheet is 1092 wide with a 46pt gutter each side, so the band is 1000pt
- * across; 46 of that is the tick-label gutter. 150pt of plot is what the taller
- * page bought — on the old 540pt sheet the whole band had to fit in 34.
+ * across; 46 of that is the tick-label gutter.
  */
 const SNAP_CHART_W = 1000;
 const SNAP_AXIS_W = 46;
-const SNAP_PLOT_H = 150;
+/** The numbered disc marking a timeline step on the price line. */
+const PRICE_MARKER = 15;
+/** The chart card: padding, the rotated unit, and the plot it leaves. */
+const CARD_PAD_X = 16;
+const CARD_PAD_Y = 9;
+const CHART_UNIT_W = 16;
+const CHART_RIGHT_PAD = 24;
+const CHART_PLOT_H = 92;
+const CARD_PLOT_W =
+  SNAP_CHART_W - CARD_PAD_X * 2 - CHART_UNIT_W - SNAP_AXIS_W - CHART_RIGHT_PAD;
+
 
 const styles = StyleSheet.create({
   page: {
@@ -712,7 +723,7 @@ const styles = StyleSheet.create({
   },
   snapHeadline: {
     fontFamily: "Times-Bold",
-    fontSize: 30.74,
+    fontSize: 27.5,
     lineHeight: 1.16,
     color: PALETTE.paper,
   },
@@ -735,7 +746,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderLeftWidth: 3,
     borderLeftColor: PALETTE.cardSoft,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     marginRight: 8,
   },
@@ -751,7 +762,7 @@ const styles = StyleSheet.create({
     color: PALETTE.faint,
     marginTop: 3,
   },
-  snapColumns: { flexDirection: "row", marginTop: 12 },
+  snapColumns: { flexDirection: "row", marginTop: 10 },
   snapColumn: { flexGrow: 1, flexBasis: 0, marginRight: 14 },
   /**
    * A hairline between the columns.
@@ -785,7 +796,7 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     fontSize: 11.53,
     letterSpacing: 2,
-    marginTop: 11,
+    marginTop: 9,
     marginBottom: 5,
   },
   /**
@@ -824,6 +835,85 @@ const styles = StyleSheet.create({
     lineHeight: 1.28,
     color: PALETTE.muted,
     marginTop: 1.5,
+  },
+  /** Chart card ------------------------------------------------------- */
+  chartCard: {
+    marginTop: 10,
+    backgroundColor: PALETTE.navyDeep,
+    borderWidth: 0.8,
+    borderColor: PALETTE.hairline,
+    borderRadius: 5,
+    paddingHorizontal: CARD_PAD_X,
+    paddingVertical: CARD_PAD_Y,
+  },
+  chartCardHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 7,
+  },
+  chartCardTitle: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 12.3,
+    letterSpacing: 1.6,
+  },
+  chartCardNote: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 10.4,
+    color: PALETTE.muted,
+    marginLeft: 10,
+  },
+  chartCardRight: { flexShrink: 0 },
+  chartCardUnit: {
+    fontSize: 9.6,
+    color: PALETTE.faint,
+    width: CHART_PLOT_H,
+    textAlign: "center",
+    transform: "rotate(-90deg)",
+  },
+  chartCardFoot: {
+    fontSize: 10.4,
+    color: PALETTE.faint,
+    marginTop: 6,
+  },
+  chartLegendItem: { flexDirection: "row", alignItems: "center", marginLeft: 16 },
+  chartLegendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 5 },
+  chartLegendLabel: { fontFamily: "Helvetica-Bold", fontSize: 10.8, color: PALETTE.body },
+  snapCategory: {
+    flexGrow: 1,
+    flexBasis: 0,
+    textAlign: "center",
+    fontFamily: "Helvetica-Bold",
+    fontSize: 11.2,
+    color: PALETTE.body,
+    marginTop: 6,
+  },
+  timelineDot: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** Price-and-events band ----------------------------------------------- */
+  priceMarker: {
+    position: "absolute",
+    width: PRICE_MARKER,
+    height: PRICE_MARKER,
+    borderRadius: PRICE_MARKER / 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  priceMarkerText: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8.6,
+    color: PALETTE.navy,
+  },
+  priceMonth: {
+    position: "absolute",
+    top: 3,
+    width: 60,
+    textAlign: "center",
+    fontSize: 10.2,
+    color: PALETTE.muted,
   },
   /** Chart band ------------------------------------------------------- */
   snapChartHead: { marginBottom: 7 },
@@ -2516,6 +2606,95 @@ function niceTicks(min: number, max: number, count: number): number[] {
   return ticks;
 }
 
+/**
+ * The chart card, drawn the way the desk's CVB sheet of 18 September 2026 draws
+ * it: a bordered card across the full measure, the title in the accent with
+ * the one-line note beside it, the legend top right, the unit set up the left
+ * edge, a dashed zero line, and every point dotted and labelled. No grid: the
+ * printed figures carry the precision, so gridlines would only add noise.
+ */
+
+function ChartCard({
+  title,
+  note,
+  right,
+  unit,
+  footnote,
+  theme,
+  children,
+}: {
+  title: string;
+  note?: string | null;
+  right?: ReactNode;
+  unit?: string | null;
+  footnote?: string | null;
+  theme: DeckTheme;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.chartCard}>
+      <View style={styles.chartCardHead}>
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            alignItems: "baseline",
+            flexShrink: 1,
+            marginRight: 16,
+          }}
+        >
+          <Text style={[styles.chartCardTitle, { color: theme.accent }]}>
+            {title.toUpperCase()}
+          </Text>
+          {note?.trim() ? (
+            <Text style={styles.chartCardNote}>{note.trim()}</Text>
+          ) : null}
+        </View>
+        <View style={styles.chartCardRight}>{right}</View>
+      </View>
+      <View style={{ flexDirection: "row" }}>
+        <View
+          style={{
+            width: CHART_UNIT_W,
+            height: CHART_PLOT_H,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {unit?.trim() ? (
+            <Text style={styles.chartCardUnit}>{unit.trim()}</Text>
+          ) : null}
+        </View>
+        <View>{children}</View>
+      </View>
+      {footnote?.trim() ? (
+        <Text style={styles.chartCardFoot}>{footnote.trim()}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Tick labels, right-aligned against the plot's left edge. */
+function AxisLabels({
+  ticks,
+  y,
+  format,
+}: {
+  ticks: number[];
+  y: (value: number) => number;
+  format: (value: number) => string;
+}) {
+  return (
+    <View style={{ width: SNAP_AXIS_W, height: CHART_PLOT_H }}>
+      {ticks.map((tick, index) => (
+        <Text key={index} style={[styles.snapAxisLabel, { top: y(tick) - 4 }]}>
+          {format(tick)}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function SnapshotChartBand({
   chart,
   theme,
@@ -2528,20 +2707,28 @@ function SnapshotChartBand({
 
   const categories = series[0].points.map((point) => point.label);
   const values = series.flatMap((s) => s.points.map((point) => point.value));
-  const ticks = niceTicks(Math.min(...values, 0), Math.max(...values, 0), 5);
+  // Headroom past the extremes, so a figure printed above the highest point
+  // or below the lowest has room and does not sit on the category labels.
+  const lowest = Math.min(...values, 0);
+  const highest = Math.max(...values, 0);
+  const headroom = (highest - lowest) * 0.2;
+  const ticks = niceTicks(
+    lowest < 0 ? lowest - headroom : lowest,
+    highest > 0 ? highest + headroom : highest,
+    5,
+  );
   const low = Math.min(...ticks);
   const high = Math.max(...ticks);
   const span = high - low || 1;
-
-  const y = (value: number) =>
-    SNAP_PLOT_H - ((value - low) / span) * SNAP_PLOT_H;
+  const plotW = CARD_PLOT_W;
+  const H = CHART_PLOT_H;
+  const y = (value: number) => H - ((value - low) / span) * H;
   const zeroY = y(0);
-
-  const plotW = SNAP_CHART_W - SNAP_AXIS_W;
   const band = plotW / Math.max(1, categories.length);
-  // Two series share a band; one series gets a wider column in the middle.
-  const colW = series.length > 1 ? band * 0.26 : band * 0.4;
+  const centre = (i: number) => band * i + band / 2;
   const isLine = chart.form === "line";
+  const colW = series.length > 1 ? band * 0.26 : band * 0.4;
+
   // Colour follows what the series MEANS, not where it sits: by position the
   // first series took the theme accent, which is coral on a falling day, so
   // revenue drew in the colour reserved for losses. Two neutral series still
@@ -2553,141 +2740,125 @@ function SnapshotChartBand({
     return index === 0 ? PALETTE.cobalt : PALETTE.steel;
   };
 
+  // A line labels every point while there is room, and only its ends after.
+  const labelAll = !isLine || categories.length <= 6;
+  // With two series, the higher one at each category is labelled above and
+  // the lower one below, so the two labels never meet between the lines.
+  const labelAbove = (seriesIndex: number, i: number) => {
+    const value = series[seriesIndex].points[i]?.value ?? 0;
+    if (!isLine) return value >= 0;
+    const other = series[1 - seriesIndex]?.points[i]?.value;
+    if (other === undefined) return y(value) > 16;
+    return value >= other;
+  };
+
+  const legend = (
+    <View style={{ flexDirection: "row" }}>
+      {series.map((s, index) => (
+        <View key={index} style={styles.chartLegendItem}>
+          <View style={[styles.chartLegendDot, { backgroundColor: colour(index) }]} />
+          <Text style={styles.chartLegendLabel}>{s.name}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
-    <View>
-      <View style={styles.snapChartHead}>
-        <Text style={styles.snapChartTitle}>{chart.title.toUpperCase()}</Text>
-        {chart.note?.trim() ? (
-          <Text style={[styles.snapChartNote, { color: theme.accent }]}>
-            {chart.note.trim()}
-          </Text>
-        ) : null}
-        <View style={styles.snapChartLegend}>
-          {series.map((s, index) => (
-            <View key={index} style={styles.snapLegendItem}>
-              <View
-                style={[styles.snapLegendSwatch, { backgroundColor: colour(index) }]}
-              />
-              <Text style={styles.snapLegendLabel}>{s.name}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
+    <ChartCard
+      title={chart.title}
+      note={chart.note}
+      right={legend}
+      unit={chart.unit}
+      footnote={chart.footnote}
+      theme={theme}
+    >
       <View style={{ flexDirection: "row" }}>
-        {/* Tick labels, right-aligned against the plot's left edge. */}
-        <View style={{ width: SNAP_AXIS_W, height: SNAP_PLOT_H }}>
-          {ticks.map((tick, index) => (
-            <Text
-              key={index}
-              style={[styles.snapAxisLabel, { top: y(tick) - 4 }]}
-            >
-              {tick}
-            </Text>
-          ))}
-        </View>
-
-        <View style={{ width: plotW, height: SNAP_PLOT_H, position: "relative" }}>
-          {ticks.map((tick, index) => (
-            <View
-              key={index}
-              style={[
-                styles.snapGrid,
-                {
-                  top: y(tick),
-                  backgroundColor:
-                    tick === 0 ? PALETTE.faint : PALETTE.hairline,
-                },
-              ]}
-            />
-          ))}
-
-          {isLine ? (
-            <Svg
-              style={{ position: "absolute", top: 0, left: 0 }}
-              width={plotW}
-              height={SNAP_PLOT_H}
-            >
-              {series.map((s, index) => (
-                <Polyline
-                  key={index}
-                  points={s.points
-                    .map(
-                      (point, i) =>
-                        `${band * i + band / 2},${y(point.value)}`,
-                    )
-                    .join(" ")}
-                  stroke={colour(index)}
-                  strokeWidth={2}
-                  fill="none"
-                />
-              ))}
-              {series.map((s, index) =>
-                s.points.map((point, i) => (
-                  <Circle
-                    key={`${index}-${i}`}
-                    cx={band * i + band / 2}
-                    cy={y(point.value)}
-                    r={2.5}
-                    fill={colour(index)}
+        <AxisLabels ticks={ticks} y={y} format={(tick) => String(tick)} />
+        <View style={{ width: plotW, height: H, position: "relative" }}>
+          <Svg style={{ position: "absolute", top: 0, left: 0 }} width={plotW} height={H}>
+            <Line x1={0} y1={H} x2={plotW} y2={H} stroke={PALETTE.faint} strokeWidth={0.8} />
+            {low < 0 && high > 0 ? (
+              <Line
+                x1={0}
+                y1={zeroY}
+                x2={plotW}
+                y2={zeroY}
+                stroke={PALETTE.faint}
+                strokeWidth={0.8}
+                strokeDasharray="3,3"
+              />
+            ) : null}
+            {isLine
+              ? series.map((s, index) => (
+                  <Polyline
+                    key={`l${index}`}
+                    points={s.points
+                      .map((point, i) => `${centre(i)},${y(point.value)}`)
+                      .join(" ")}
+                    stroke={colour(index)}
+                    strokeWidth={2.2}
+                    strokeLinejoin="round"
+                    fill="none"
                   />
-                )),
-              )}
-            </Svg>
-          ) : (
-            series.map((s, seriesIndex) =>
-              s.points.map((point, i) => {
-                const centre = band * i + band / 2;
-                const offset =
-                  series.length > 1
-                    ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5)
-                    : 0;
-                const top = Math.min(y(point.value), zeroY);
-                const height = Math.max(1.5, Math.abs(y(point.value) - zeroY));
-                return (
-                  <View
-                    key={`${seriesIndex}-${i}`}
-                    style={{
-                      position: "absolute",
-                      left: centre + offset - colW / 2,
-                      top,
-                      width: colW,
-                      height,
-                      backgroundColor: colour(seriesIndex),
-                    }}
-                  />
-                );
-              }),
-            )
-          )}
+                ))
+              : null}
+            {isLine
+              ? series.map((s, index) =>
+                  s.points.map((point, i) => (
+                    <Circle
+                      key={`c${index}-${i}`}
+                      cx={centre(i)}
+                      cy={y(point.value)}
+                      r={4.2}
+                      fill={colour(index)}
+                    />
+                  )),
+                )
+              : null}
+          </Svg>
 
-          {/* Printed figures sit outside the plot geometry, so a long value
-              never changes the height of the column it belongs to. */}
+          {!isLine
+            ? series.map((s, seriesIndex) =>
+                s.points.map((point, i) => {
+                  const offset =
+                    series.length > 1 ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5) : 0;
+                  const top = Math.min(y(point.value), zeroY);
+                  const height = Math.max(1.5, Math.abs(y(point.value) - zeroY));
+                  return (
+                    <View
+                      key={`${seriesIndex}-${i}`}
+                      style={{
+                        position: "absolute",
+                        left: centre(i) + offset - colW / 2,
+                        top,
+                        width: colW,
+                        height,
+                        backgroundColor: colour(seriesIndex),
+                        borderRadius: 1.5,
+                      }}
+                    />
+                  );
+                }),
+              )
+            : null}
+
           {series.map((s, seriesIndex) =>
             s.points.map((point, i) => {
-              // A line runs to twelve points and a figure on each would
-              // collide; its ends are what a reader compares.
-              if (isLine && i !== 0 && i !== s.points.length - 1) return null;
-              const centre = band * i + band / 2;
+              if (!labelAll && i !== 0 && i !== s.points.length - 1) return null;
               const offset =
-                !isLine && series.length > 1
-                  ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5)
-                  : 0;
-              // A line's end figure sits on the side away from the plot edge,
-              // so the top value does not print into the legend.
-              const above = isLine
-                ? y(point.value) > SNAP_PLOT_H / 2
-                : point.value >= 0;
+                !isLine && series.length > 1 ? (seriesIndex === 0 ? -1 : 1) * (colW / 2 + 1.5) : 0;
+              const above = labelAbove(seriesIndex, i);
               const edge = y(point.value);
+              const gap = isLine ? 8 : 2;
               return (
                 <Text
                   key={`v-${seriesIndex}-${i}`}
                   style={[
                     styles.snapChartValue,
                     {
-                      left: centre + offset - band / 2,
+                      left: centre(i) + offset - band / 2,
                       width: band,
-                      top: above ? edge - 11 : edge + 1.5,
+                      top: above ? edge - 11 - gap : edge + gap,
                     },
                   ]}
                 >
@@ -2699,29 +2870,260 @@ function SnapshotChartBand({
         </View>
       </View>
 
+      <View style={{ flexDirection: "row", marginLeft: SNAP_AXIS_W, width: plotW }}>
+        {categories.map((label, index) => (
+          <Text key={index} style={styles.snapCategory}>
+            {categories.length <= 8 || (categories.length - 1 - index) % 2 === 0
+              ? label
+              : ""}
+          </Text>
+        ))}
+      </View>
+    </ChartCard>
+  );
+}
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** "2026-02-05" → "Feb 2026". */
+function monthYear(iso: string): string {
+  const [year, month] = iso.split("-");
+  return `${MONTH_NAMES[Number(month) - 1] ?? ""} ${year}`;
+}
+
+/**
+ * Decimals from the tick step: "$12", "$2.50", "$0.018". A whole-dollar step
+ * prints whole dollars; a 2.5 step printed with none read "$3" for $2.50.
+ */
+function priceLabel(value: number, step: number): string {
+  const decimals = step >= 1 && Number.isInteger(step) ? 0 : step >= 0.01 ? 2 : 3;
+  return `$${value.toFixed(decimals)}`;
+}
+
+/**
+ * The chart card when the model supplied no series: the share price from the
+ * exchange feed over the timeline's own span.
+ *
+ * It exists because the model's chart is optional and, until this, no snapshot
+ * draft ever carried one. The timeline's steps are marked on the line with the
+ * same numbers the "How we got here" band prints under it, so the two bands
+ * read together: what happened, and what the price did about it.
+ */
+function PriceChartCard({
+  layout,
+  theme,
+}: {
+  layout: PriceBandLayout;
+  theme: DeckTheme;
+}) {
+  // Fitted to the data, not to zero: a line that moves 30% drawn from $0
+  // is a flat line. The padding keeps the extremes off the frame.
+  const spread = layout.high - layout.low || layout.high * 0.1 || 1;
+  const low = layout.low - spread * 0.16;
+  const high = layout.high + spread * 0.16;
+  const span = high - low;
+  // Enough ticks that at least three land inside the fitted range: with four,
+  // a $2-$8 line got a $5 step and one label.
+  let allTicks = niceTicks(low, high, 4);
+  for (let count = 5; count <= 9; count += 1) {
+    if (allTicks.filter((tick) => tick >= low && tick <= high).length >= 3) break;
+    allTicks = niceTicks(low, high, count);
+  }
+  const step = allTicks.length > 1 ? allTicks[1] - allTicks[0] : spread;
+  const ticks = allTicks.filter((tick) => tick >= low && tick <= high);
+
+  const plotW = CARD_PLOT_W;
+  const H = CHART_PLOT_H;
+  const y = (value: number) => H - ((value - low) / span) * H;
+  const x = (fraction: number) => fraction * plotW;
+
+  const change = layout.last.close / layout.first.close - 1;
+  const half = PRICE_MARKER / 2;
+  const lift = PRICE_MARKER + 3;
+
+  const line = layout.points
+    .map((point) => `${x(point.x).toFixed(1)},${y(point.close).toFixed(1)}`)
+    .join(" ");
+  const area =
+    `${x(layout.points[0].x).toFixed(1)},${H} ` +
+    line +
+    ` ${x(layout.todayX).toFixed(1)},${H}`;
+  const upcoming = layout.markers.filter((marker) => marker.upcoming);
+  const lastUpcomingX = upcoming.length
+    ? Math.max(...upcoming.map((marker) => marker.x))
+    : null;
+
+  return (
+    <ChartCard
+      title={`Share price  |  ${monthYear(layout.first.date)} to ${monthYear(layout.last.date)}`}
+      note={`${change >= 0 ? "+" : "-"}${Math.abs(change * 100).toFixed(0)}% over the period`}
+      right={<Text style={styles.chartLegendLabel}>Exchange feed · daily close</Text>}
+      theme={theme}
+    >
       <View style={{ flexDirection: "row" }}>
-        <View style={{ width: SNAP_AXIS_W }} />
-        <View style={{ width: plotW, flexDirection: "row" }}>
-          {categories.map((label, index) => (
-            <Text key={index} style={styles.snapChartLabel}>
-              {/* Past eight periods every label would wrap: show alternate
-                  ones, counted back from the latest so it is always named. */}
-              {categories.length <= 8 ||
-              (categories.length - 1 - index) % 2 === 0
-                ? label
-                : ""}
-            </Text>
-          ))}
+        <AxisLabels ticks={ticks} y={y} format={(tick) => priceLabel(tick, step)} />
+        <View style={{ width: plotW, height: H, position: "relative" }}>
+          <Svg style={{ position: "absolute", top: 0, left: 0 }} width={plotW} height={H}>
+            <Line x1={0} y1={H} x2={plotW} y2={H} stroke={PALETTE.faint} strokeWidth={0.8} />
+            {layout.markers.map((marker) => (
+              <Line
+                key={`d${marker.number}`}
+                x1={x(marker.x)}
+                y1={y(marker.close)}
+                x2={x(marker.x)}
+                y2={H}
+                stroke={PALETTE.faint}
+                strokeWidth={0.6}
+                strokeDasharray="2,2"
+              />
+            ))}
+            <Polygon points={area} fill={PALETTE.cobalt} fillOpacity={0.12} />
+            <Polyline
+              points={line}
+              stroke={PALETTE.cobalt}
+              strokeWidth={2}
+              strokeLinejoin="round"
+              fill="none"
+            />
+            {lastUpcomingX !== null ? (
+              <Line
+                x1={x(layout.todayX)}
+                y1={y(layout.last.close)}
+                x2={x(lastUpcomingX)}
+                y2={y(layout.last.close)}
+                stroke={PALETTE.muted}
+                strokeWidth={1.2}
+                strokeDasharray="3,3"
+              />
+            ) : null}
+            <Circle cx={x(layout.todayX)} cy={y(layout.last.close)} r={4.2} fill={PALETTE.cobalt} />
+          </Svg>
+
+          {layout.markers.map((marker) => {
+            const pointY = y(marker.close);
+            // Lifted markers go up, unless that would leave the plot, in
+            // which case they go down. A stem ties each back to its close.
+            const offset = marker.stack * lift;
+            const up = pointY - offset - half >= 0;
+            const centreY = up ? pointY - offset : pointY + offset;
+            const centreX = Math.min(Math.max(x(marker.x), half), plotW - half);
+            return (
+              <View key={marker.number}>
+                {marker.stack > 0 ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      left: centreX - 0.5,
+                      top: Math.min(pointY, centreY),
+                      width: 1,
+                      height: Math.abs(pointY - centreY),
+                      backgroundColor: theme.accent,
+                    }}
+                  />
+                ) : null}
+                <View
+                  style={[
+                    styles.priceMarker,
+                    { left: centreX - half, top: centreY - half },
+                    marker.upcoming
+                      ? { borderWidth: 1.4, borderColor: theme.accent, backgroundColor: PALETTE.card }
+                      : { backgroundColor: theme.accent },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.priceMarkerText,
+                      marker.upcoming ? { color: theme.accent } : {},
+                    ]}
+                  >
+                    {marker.number}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
       </View>
 
-      {chart.unit?.trim() || chart.footnote?.trim() ? (
-        <Text style={styles.snapChartFoot}>
-          {[chart.unit?.trim(), chart.footnote?.trim()]
-            .filter(Boolean)
-            .join("   ·   ")}
-        </Text>
-      ) : null}
+      <View style={{ marginLeft: SNAP_AXIS_W, width: plotW, height: 17, position: "relative" }}>
+        {layout.monthTicks.map((tick, index) => (
+          <Text
+            key={index}
+            style={[
+              styles.priceMonth,
+              { left: Math.min(Math.max(x(tick.x) - 30, -8), plotW - 52) },
+            ]}
+          >
+            {tick.label}
+          </Text>
+        ))}
+      </View>
+    </ChartCard>
+  );
+}
+
+/**
+ * "How we got here" as the desk draws it: one line across the measure in the
+ * accent, a dot where each step starts and one at the end, and the date and
+ * the step hanging under each. When the price card above marks the steps on
+ * the line, the dots carry the same numbers so the two can be read together.
+ */
+function TimelineBand({
+  events,
+  numbered,
+  theme,
+}: {
+  events: ReportTimelineEvent[];
+  numbered: boolean;
+  theme: DeckTheme;
+}) {
+  const size = numbered ? 13 : 8;
+  const lineTop = size / 2 - 0.75;
+  return (
+    <View>
+      <Text style={[styles.snapBandHead, { color: theme.accent }]}>
+        HOW WE GOT HERE
+      </Text>
+      <View style={styles.snapTrack}>
+        <View
+          style={[
+            styles.snapTrackLine,
+            { top: lineTop, backgroundColor: theme.accent },
+          ]}
+        />
+        <View
+          style={[
+            styles.timelineDot,
+            { right: 0, top: lineTop + 0.75 - 4, width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent },
+          ]}
+        />
+        {events.map((event, index) => (
+          <View key={index} style={[styles.snapStep, { paddingTop: size + 4 }]}>
+            <View
+              style={[
+                styles.timelineDot,
+                {
+                  left: 0,
+                  top: 0,
+                  width: size,
+                  height: size,
+                  borderRadius: size / 2,
+                  backgroundColor: theme.accent,
+                },
+              ]}
+            >
+              {numbered ? (
+                <Text style={styles.priceMarkerText}>{index + 1}</Text>
+              ) : null}
+            </View>
+            <Text style={styles.snapStepDate}>{event.date}</Text>
+            <Text style={styles.snapStepText}>{event.text}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -2756,10 +3158,23 @@ function SnapshotBody({
     </View>
   );
 
+  const modelChart =
+    page.chart && page.chart.series.some((series) => series.points.length >= 2)
+      ? page.chart
+      : null;
+  const priceBand =
+    !modelChart && doc.priceHistory
+      ? layoutPriceBand({
+          history: doc.priceHistory,
+          timeline: page.timeline,
+          moveDate: doc.moveDate,
+          reportPrice: doc.reportPrice,
+        })
+      : null;
+
   return (
     <View style={styles.snapBody}>
       <View>
-        <Text style={styles.snapLabel}>ONE-PAGE SNAPSHOT</Text>
         <Text style={styles.snapCompany}>{page.companyName}</Text>
         <Text style={styles.snapHeadline}>{page.headline}</Text>
       </View>
@@ -2794,36 +3209,28 @@ function SnapshotBody({
         })}
       </View>
 
+      {/**
+       * The chart card sits under the tiles, as on the desk's CVB sheet: the
+       * model's own series when it supplied one, otherwise the share price
+       * from the feed, so the sheet always carries a chart.
+       */}
+      {modelChart ? (
+        <SnapshotChartBand chart={modelChart} theme={theme} />
+      ) : priceBand ? (
+        <PriceChartCard layout={priceBand} theme={theme} />
+      ) : null}
+
       <View style={styles.snapColumns}>
         {column("Why it moved", page.whyItMoved, theme.accent)}
         {column("What changes now", page.whatChangesNow, PALETTE.cobalt, true)}
       </View>
 
-      {/**
-       * One band, two possible contents. The chart wins when the model supplied
-       * one, because it chose the figures over the dates deliberately.
-       */}
-      {page.chart && page.chart.series.length > 0 ? (
-        <View>
-          <SnapshotChartBand chart={page.chart} theme={theme} />
-        </View>
-      ) : page.timeline.length > 0 ? (
-        <View>
-          <Text style={[styles.snapBandHead, { color: theme.accent }]}>
-            HOW WE GOT HERE
-          </Text>
-          <View style={styles.snapTrack}>
-            <View
-              style={[styles.snapTrackLine, { backgroundColor: theme.accent }]}
-            />
-            {page.timeline.map((event, index) => (
-              <View key={index} style={styles.snapStep}>
-                <Text style={styles.snapStepDate}>{event.date}</Text>
-                <Text style={styles.snapStepText}>{event.text}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+      {page.timeline.length > 0 ? (
+        <TimelineBand
+          events={page.timeline}
+          numbered={!modelChart && priceBand !== null}
+          theme={theme}
+        />
       ) : null}
 
       {page.risks.length > 0 ? (

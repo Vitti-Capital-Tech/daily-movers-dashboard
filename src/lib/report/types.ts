@@ -554,8 +554,23 @@ export type ReportDoc = {
   moveTime?: string | null;
   /** Whether that reading is the official close rather than an intraday mark. */
   moveIsClose?: boolean | null;
+  /**
+   * Daily closes from the exchange feed, oldest first, attached by the
+   * pipeline just before render — never by the model.
+   *
+   * The snapshot draws its "How we got here" band from this: the share price
+   * as a line, with the timeline's dated steps placed on it as numbered
+   * markers. Until this existed no snapshot draft ever carried a chart,
+   * because the chart was the model's optional alternative to a required
+   * timeline and it always took the timeline. Absent on drafts stored before
+   * it, and on a day the feed failed; those fall back to the text timeline.
+   */
+  priceHistory?: PriceClose[] | null;
   pages: ReportPage[];
 };
+
+/** One session's close. YYYY-MM-DD, ASX local date. */
+export type PriceClose = { date: string; close: number };
 
 /** Page kinds the model is allowed to emit. `disclaimer` is not one of them. */
 export const REPORT_PAGE_KINDS = [
@@ -723,14 +738,15 @@ export const REPORT_LIMITS = {
    * The snapshot chart's categories, by form.
    *
    * Columns print a figure over every bar, so five categories for one series
-   * and four with two side by side. A line prints figures only at its ends, which
-   * is what lets it carry a longer run — and below six points a line is a worse
-   * column chart, so a shorter one is drawn as columns instead.
+   * and four with two side by side. A line is the house default (the CVB
+   * sheet draws four years of revenue against loss as one): it labels every
+   * point up to six and only its ends past that, which is what lets it carry
+   * a run of twelve.
    */
   snapshotColumnPoints: 5,
   /** Two series side by side print twice the figures in the same width. */
   snapshotPairedColumnPoints: 4,
-  snapshotLineMinPoints: 6,
+  snapshotLineMinPoints: 2,
   snapshotLinePoints: 12,
   /** 'management': the people who actually run it, not the whole board. */
   people: 4,

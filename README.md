@@ -775,27 +775,50 @@ scale is whatever that fixture will carry: currently about 6% above the original
 sizes, with the caps cut to match (76 characters a clause, 84 a risk, 36 a
 timeline step). Two dials, and only two — the type or the caps.
 
-**The "how we got here" band is a timeline OR a small chart.** They answer the
-same question and share one slot, so the sheet stays one page either way. Dated
-steps are right when the story is a sequence of events with no common unit
-(proposal, approval, challenge, settlement); a chart is right when it is a
-progression of figures in one unit — four guidance upgrades climbing through the
-year, three capital raises, production by half. The chart is drawn short — no
-taller than the timeline it replaces, which is what keeps the sheet to one page —
-so the printed values carry the precision and the columns carry the impression.
-The model picks; the renderer prefers the chart when both arrive.
+**Every sheet carries a chart, and the timeline has its own band.** The layout
+follows the desk's CVB sheet of 18 September 2026: tiles, then a chart card
+across the full measure, then the two columns, then *How we got here* as one
+line with a dot per step, then the risks.
 
-The chart has two forms, and the fitter decides between them from the data
-rather than trusting the model. **Columns** take two to five points for one
-series and four for two, with a figure printed over every bar. A **line** takes six to twelve
-points and prints only its two end figures, because twelve figures along a line
-collide; past eight periods it labels every other one, counted back from the
-latest. A line sent with fewer than six points is drawn as columns, and a series
-over its cap loses its *oldest* points, since the series ends on the period that
-matters. `npm run report:preview -- stress-line` renders the line at its worst
-case. Until this was fixed the parser dropped `form` entirely, so every line the
-model asked for was drawn as columns, and the axis could stop one tick short of
-the tallest value (40 for a 42) and draw it above the plot.
+Every snapshot draft up to 24 September 2026 came out with a text timeline and
+no chart, whatever the prompt said. The schema required `timeline`, left
+`chart` optional, and offered them as alternatives for one slot, so the model
+filled the required field every time. Three changes fix that:
+
+- **The chart is required and no longer competes with the timeline.** The
+  model fills `chart.series` whenever the filings hold a series, and sends
+  `"series": []` when they genuinely do not. That is an honest empty answer
+  rather than an invented series.
+- **An empty chart falls back to the share price from the exchange feed.**
+  `finishDraft` fetches two years of daily closes (`fetchPriceHistory`, one
+  request, never throws) and stores them as `priceHistory` just before render,
+  after every rewrite. `layoutPriceBand` fits the window to the timeline's own
+  span: from just before the first step to today, or to the next scheduled
+  step, at least 45 days and at most two years. Each step is marked on the line
+  with the same number its dot carries in the timeline band below. Steps a day
+  apart stack. An upcoming step sits hollow on a dotted run past today. A step
+  dated "FY26" has no marker.
+- **The chart card is drawn the CVB way.** Title in the accent with the note
+  beside it, legend top right, unit rotated up the left edge, a dashed zero
+  line, and no grid. **Line** is the house default: 2 to 12 points, every point
+  dotted and labelled up to six, only the ends past that. With two series, the
+  higher one is labelled above and the lower one below. **Columns** are for
+  separate amounts compared side by side, such as capital raised by round: two
+  to five, or four with two series.
+
+Fitting both bands onto one page cost the "ONE-PAGE SNAPSHOT" label (the CVB
+sheet has none), 3pt of headline size, and some padding. `npm run
+report:preview -- stress` (line), `-- stress-columns`, `-- stress-line` (twelve
+points), `-- stress-price` (the feed fallback) and `-- stress-timeline` all render
+the worst case on one sheet. `-- <draftId>` fetches the price history for a
+stored draft that predates it.
+
+The fitter still guards the counts: a series over its cap loses its *oldest*
+points, because the series ends on the period that matters. Two older bugs were
+fixed along the way. The parser used to drop `form`, so every line was drawn as
+columns. The axis could stop one tick short of the tallest value (40 for a 42)
+and draw it above the plot. Price-axis decimals follow the tick step, so a 2.5
+step prints `$2.50`, not `$3`.
 
 **Chart colour follows meaning, not position.** Each series carries a `tone`:
 `unfavourable` (a loss, a cost, a cash burn) draws coral, `favourable` (revenue,
@@ -852,9 +875,11 @@ without an API call. `npm run report:preview -- snapshot out.pdf` renders the
 one-pager from a fixture holding the **real published PIA copy**, which is the
 only version of the question worth asking: a fixture written to flatter the grid
 renders beautifully and proves nothing. `-- fixture` still exercises every deck
-page kind, `-- stress` proves the worst case fits (with `-- stress-timeline` and
-`-- stress-line` for the other two forms of the history band), and
-`-- <draftId>` renders a stored draft.
+page kind, `-- stress` proves the worst case fits with a line chart (with
+`-- stress-columns` and `-- stress-line` for the other chart shapes,
+`-- stress-price` for the share-price fallback, and `-- stress-timeline` with no
+chart at all), and `-- <draftId>` renders a
+stored draft, fetching its price history if it predates it.
 
 **Public holidays are detected, not tabulated.** A hardcoded holiday table needs
 maintaining every year and fails silently the first year nobody updates it. The

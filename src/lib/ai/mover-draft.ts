@@ -340,7 +340,12 @@ const PAGE_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          date: { type: "string", description: "'27 Jul 2026' — short form, as the filing dates it." },
+          date: {
+            type: "string",
+            description:
+              "'27 Jul 2026' — day, month and year, always. The step is placed on the share-price line by " +
+              "this date, so 'FY26', 'Q3' or 'mid-2026' cannot be plotted and prints as a caption only.",
+          },
           text: { type: "string", description: "What happened at that step, in a short phrase under 62 characters: 'FDA 510(k) clearance for CT-based BMD technology'." },
         },
         required: ["date", "text"],
@@ -350,8 +355,10 @@ const PAGE_SCHEMA = {
       description:
         "SNAPSHOT ONLY. 'How We Got Here': the dated steps that led to today, OLDEST FIRST, ending with today " +
         "and (where the filings give one) the next scheduled date. Use the EVENT CHAIN block in the evidence " +
-        "for this — it is the same sequence, already assembled. Up to SIX steps, each under 62 characters; they are " +
-        "set side by side along a rule and a long one wraps into its neighbour.",
+        "for this — it is the same sequence, already assembled. Up to SIX steps, each under 62 characters. " +
+        "ALWAYS supply it: the renderer draws the share price from the exchange feed across the band and places " +
+        "each step on that line as a numbered marker, with its text in a numbered caption underneath, so the " +
+        "reader sees every event against what the price did. Prefer the steps that plausibly moved the price.",
     },
     risks: {
       type: "array",
@@ -452,13 +459,13 @@ const PAGE_SCHEMA = {
     chart: {
       type: "object",
       description:
-        "OPTIONAL on a 'snapshot' page, and it REPLACES the timeline - supply one or the other, never both. " +
+        "REQUIRED on a 'snapshot' page: the chart card under the tiles. Fill 'series' whenever the filings " +
+        "hold a series; send 'series': [] when they genuinely do not, and the share price from the exchange " +
+        "feed is drawn in the same card instead. Always supply the timeline as well. " +
         "Use it when what got the company here is a PROGRESSION OF FIGURES rather than a sequence of events: " +
         "revenue and operating loss by financial year, capital raised by round, production by half, net debt " +
         "by period, guidance upgrades through the year. Prefer it whenever such a series exists in the filings, " +
         "because a reader takes a shape in a second and will not read four dated lines saying the same thing. " +
-        "Use 'timeline' instead when the steps are events with no common unit - proposal, approval, court " +
-        "challenge, settlement - because those do not plot. " +
         "EVERY figure must be read from the evidence; never interpolate a missing period, and never invent a " +
         "series to have a chart.",
       properties: {
@@ -466,10 +473,10 @@ const PAGE_SCHEMA = {
           type: "string",
           enum: ["columns", "line"],
           description:
-            "'columns' (the usual answer): 2-5 periods, where comparing values is the point - at most 4 with " +
-            "two series. Four years of revenue vs operating loss; three funding rounds. 'line': 6-12 points, " +
-            "where the shape is the point and no single value matters - a cash balance drawn down month by " +
-            "month; a price through a quarter. A line with fewer than 6 points is drawn as columns anyway. " +
+            "'line' (the house default): a series through time, 2-12 points, every point dotted and labelled " +
+            "up to six - four years of revenue vs operating loss, guidance through the year. 'columns': 2-5 " +
+            "separate amounts side by side where time is not the axis, at most 4 with two series - capital " +
+            "raised by round, segment revenue. " +
             "There is no candlestick/OHLC form: the pipeline stores one price per day, so opens, highs and " +
             "lows don't exist and must not be invented.",
         },
@@ -500,7 +507,7 @@ const PAGE_SCHEMA = {
         },
         series: {
           type: "array",
-          minItems: 1,
+          minItems: 0,
           maxItems: 2,
           description:
             "One or two series. Two is how a contrast is shown - revenue against the loss it is measured " +
@@ -945,6 +952,7 @@ const PAGE_SCHEMA = {
     "whyItMoved",
     "whatChangesNow",
     "timeline",
+    "chart",
     "risks",
     "pullQuote",
   ],
@@ -1177,17 +1185,17 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
 - FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
 - whyItMoved — two or three clauses on what happened TODAY.
 - whatChangesNow — up to four clauses on what today CHANGES from here: deadlines that move, people who arrive or leave, mandates that transfer, conditions that survive. Board and management change belongs here, and so does any date the reader has to diarise.
-- timeline OR chart — one band, your choice, never both:
-  - timeline — the dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. Right when the steps are events with no common unit: proposal, approval, challenge, settlement.
-  - chart — a small chart of one or two series, with a title, a unit, a one-line note on what to notice, and an optional footnote for an accounting caveat.
+- chart — ALWAYS SENT, set in a card straight under the tiles, as on the desk's CVB sheet of 18 September 2026. Put a series in it whenever the filings hold one (guidance below). When they genuinely do not, send it with "series": [] and the renderer draws the share price from the exchange feed in the same card instead, with the timeline's steps numbered on the line — so the sheet always carries a chart, and an empty series is the honest answer, never a reason to invent one.
+- timeline — ALWAYS. The dated steps that led here, OLDEST first, ending with today and the next scheduled date where the filings give one. The EVENT CHAIN block in the evidence is this sequence, already assembled. It is drawn as its own "How we got here" band under the two columns: one line with a dot per step and the date and text beneath. Date every step with day, month and year ("23 Jul 2026"): when the share-price chart is drawn, each step is also placed on the price line by that date, and "FY26" or "Q3" cannot be placed.
+  The chart, in detail — a small chart of one or two series, with a title, a unit, a one-line note on what to notice, and an optional footnote for an accounting caveat.
 
     WHEN TO USE IT
     Use a chart whenever the filings contain a progression of numbers that explains how the company got here: revenue against operating loss by financial year, capital raised by round, production by half, guidance upgrades through the year. Prefer it over dated text lines — a reader takes in a shape in a second, but won't read four lines saying the same thing. The most useful picture this sheet can carry is two series side by side: revenue against the loss measured against it.
-    Skip the chart if no such series exists. Never invent a series just to have one.
+    If no such series exists, send "series": [] and the share price is drawn instead. Never invent a series just to have one.
 
     CHOOSING THE FORM
-    - 'columns' (the usual answer): 2–5 periods, where comparing values is the point — at most 4 when there are two series, because their figures collide past that. Four years of revenue vs operating loss; three funding rounds.
-    - 'line': 6–12 points, where the shape is the point and no single value matters. A cash balance drawn down month by month; a price through a quarter. A line with fewer than 6 points will be drawn as columns anyway.
+    - 'line' (the house default, as on the CVB sheet): a series through time, 2–12 points — every point dotted and labelled up to six, only the ends past that. Four years of revenue against operating loss; guidance through the year; a cash balance month by month.
+    - 'columns': 2–5 separate amounts compared side by side, where time is not the axis — at most 4 when there are two series, because their figures collide past that. Capital raised by round; segment revenue.
     - There is no candlestick/OHLC form. The pipeline stores one price per day, so opens, highs and lows don't exist and must not be invented.
 
     DATA RULES

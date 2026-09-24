@@ -438,7 +438,7 @@ const STRESS_FIXTURE: ReportDoc = {
        * fitter cap, so this proves the worst case fits rather than a tidy one.
        */
       chart: {
-        form: "columns",
+        form: "line",
         title: pad("Revenue vs Operating Loss | FY23 to FY26 ", 68),
         note: pad("FY26 revenue -28% YoY ", 46),
         unit: "$ million",
@@ -472,6 +472,33 @@ const STRESS_FIXTURE: ReportDoc = {
   ],
 };
 
+/**
+ * Two years of weekday closes on a seeded random walk, ending in a jump on the
+ * move date. Deterministic, so the stress sheet renders identically each time.
+ */
+function syntheticHistory(moveDate: string): { date: string; close: number }[] {
+  const out: { date: string; close: number }[] = [];
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  // Penny-stock scale, to match the fixture's $0.018 tile and exercise
+  // three-decimal axis labels.
+  let close = 0.021;
+  const day = new Date(`${moveDate}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - 730);
+  const end = new Date(`${moveDate}T00:00:00Z`);
+  for (; day < end; day.setUTCDate(day.getUTCDate() + 1)) {
+    const weekday = day.getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    close = Math.max(0.008, close * (1 + (random() - 0.49) * 0.04));
+    close = Number(close.toFixed(4));
+    out.push({ date: day.toISOString().slice(0, 10), close });
+  }
+  return out;
+}
+
 async function loadDraft(id: number): Promise<ReportDoc> {
   const { getDb } = await import("../src/db");
   const { moverDrafts } = await import("../src/db/schema");
@@ -494,7 +521,34 @@ async function loadDraft(id: number): Promise<ReportDoc> {
    * already inside the current budget passes through untouched.
    */
   const doc = row.report as ReportDoc;
-  return { ...doc, pages: fitReportPages(doc.pages, `${doc.ticker} (stored)`) };
+
+  /**
+   * Drafts stored before the price line existed have no history, so it is
+   * fetched here the way `finishDraft` would fetch it today — otherwise every
+   * stored draft previews the old text timeline and proves nothing about the
+   * band a new draft gets.
+   */
+  let priceHistory = doc.priceHistory ?? null;
+  if (!priceHistory) {
+    const { marketData } = await import("../src/lib/market/index");
+    const from = new Date(`${doc.moveDate}T00:00:00Z`);
+    from.setUTCDate(from.getUTCDate() - 740);
+    const bars = await marketData
+      .fetchDailyBars(doc.ticker, from.toISOString().slice(0, 10))
+      .catch((error: unknown) => {
+        console.warn(`no price history for ${doc.ticker}:`, error);
+        return [];
+      });
+    priceHistory = bars
+      .filter((bar) => bar.date <= doc.moveDate)
+      .map((bar) => ({ date: bar.date, close: bar.close }));
+  }
+
+  return {
+    ...doc,
+    priceHistory,
+    pages: fitReportPages(doc.pages, `${doc.ticker} (stored)`),
+  };
 }
 
 const [target = "fixture", outArg] = process.argv.slice(2);
@@ -504,6 +558,51 @@ const doc = /^\d+$/.test(target)
     ? { ...SNAPSHOT_FIXTURE, pages: fitReportPages(SNAPSHOT_FIXTURE.pages, "PIA (snapshot)") }
     : target === "stress"
       ? { ...STRESS_FIXTURE, pages: fitReportPages(STRESS_FIXTURE.pages, "stress") }
+      : target === "stress-columns"
+        ? {
+            ...STRESS_FIXTURE,
+            pages: fitReportPages(
+              STRESS_FIXTURE.pages.map((page) =>
+                page.kind === "snapshot" && page.chart
+                  ? { ...page, chart: { ...page.chart, form: "columns" as const } }
+                  : page,
+              ),
+              "stress-columns",
+            ),
+          }
+      : target === "stress-price"
+        ? /**
+           * The price band at its worst: six full-length steps, two a day
+           * apart (stacked markers), two after the move date (upcoming, no
+           * marker), on two years of history.
+           */
+          {
+            ...STRESS_FIXTURE,
+            priceHistory: syntheticHistory(STRESS_FIXTURE.moveDate),
+            pages: fitReportPages(
+              STRESS_FIXTURE.pages.map((page) =>
+                page.kind === "snapshot"
+                  ? {
+                      ...page,
+                      // No model chart, so the card falls back to the price.
+                      chart: null,
+                      timeline: page.timeline.map((event, index) => ({
+                        ...event,
+                        date: [
+                          "11 Aug 2025",
+                          "3 Feb 2026",
+                          "15 Jul 2026",
+                          "16 Sep 2026",
+                          "17 Sep 2026",
+                          "30 Oct 2026",
+                        ][index] ?? event.date,
+                      })),
+                    }
+                  : page,
+              ),
+              "stress-price",
+            ),
+          }
       : target === "stress-timeline"
         ? /**
            * The same worst case with the chart removed, so the TIMELINE branch

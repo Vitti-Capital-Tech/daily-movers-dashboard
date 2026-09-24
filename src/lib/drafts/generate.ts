@@ -18,6 +18,7 @@ import {
   loadAnnouncementDocuments,
   type AnnouncementDocument,
 } from "@/lib/ai/announcement-text";
+import { fetchPriceHistory } from "@/lib/market/price-history";
 import { fetchVolumeProfile, type VolumeProfile } from "@/lib/market/volume";
 import {
   checkReport,
@@ -857,6 +858,19 @@ export async function finishDraft(
 
     throw new Error(reason);
   }
+
+  /**
+   * The price line under the timeline, from the feed rather than the model.
+   * Attached here, after every rewrite, so the stored document and the PDF
+   * carry the same series and a regenerate picks up the latest closes.
+   */
+  report = {
+    ...report,
+    doc: {
+      ...report.doc,
+      priceHistory: await fetchPriceHistory(row.ticker, moveDate),
+    },
+  };
 
   await setProgress(draftId, STAGES.rendering);
   const pdf = await renderReportPdf(report.doc);
