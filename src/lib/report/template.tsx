@@ -156,6 +156,8 @@ const PALETTE = {
   coralDeep: "#B03A31",
 
   cobalt: "#3355D8",
+  /** Outline icons on the snapshot: cobalt is too dark to read as a line. */
+  sky: "#6C93F0",
 
   /** Default chart bar: present, unemphasised, clearly not a verdict. */
   steel: "#5C7796",
@@ -717,16 +719,17 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   snapCompany: {
-    fontFamily: "Helvetica",
-    fontSize: 19.21,
-    color: PALETTE.muted,
-    marginBottom: 2,
+    fontFamily: "Times-Bold",
+    fontSize: 36,
+    lineHeight: 1.08,
+    color: PALETTE.paper,
   },
   snapHeadline: {
-    fontFamily: "Times-Bold",
-    fontSize: 27.5,
-    lineHeight: 1.16,
-    color: PALETTE.paper,
+    fontFamily: "Helvetica",
+    fontSize: 17.5,
+    lineHeight: 1.3,
+    color: PALETTE.body,
+    marginTop: 3,
   },
   snapTileRow: { flexDirection: "row", marginTop: 12 },
   /**
@@ -743,28 +746,41 @@ const styles = StyleSheet.create({
   snapTile: {
     flexGrow: 1,
     flexBasis: 0,
-    backgroundColor: PALETTE.card,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PALETTE.navyDeep,
+    borderWidth: 0.8,
+    borderColor: PALETTE.hairline,
     borderRadius: 5,
-    borderLeftWidth: 3,
-    borderLeftColor: PALETTE.cardSoft,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginRight: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginRight: 10,
   },
   snapTileValue: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 26.13,
+    fontSize: 23,
     color: PALETTE.paper,
   },
   snapTileLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 9.22,
-    letterSpacing: 1.5,
-    color: PALETTE.faint,
-    marginTop: 3,
+    fontSize: 8.6,
+    letterSpacing: 1,
+    lineHeight: 1.3,
+    color: PALETTE.muted,
+    marginTop: 2,
   },
-  snapColumns: { flexDirection: "row", marginTop: 10 },
-  snapColumn: { flexGrow: 1, flexBasis: 0, marginRight: 14 },
+  snapColumns: { flexDirection: "row", marginTop: 8 },
+  snapColumn: {
+    flexGrow: 1,
+    flexBasis: 0,
+    backgroundColor: PALETTE.navyDeep,
+    borderWidth: 0.8,
+    borderColor: PALETTE.hairline,
+    borderRadius: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginRight: 12,
+  },
   /**
    * A hairline between the columns.
    *
@@ -775,11 +791,10 @@ const styles = StyleSheet.create({
   snapColumnDivided: { paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: PALETTE.hairline },
   snapColHead: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 11.53,
-    letterSpacing: 2,
-    marginBottom: 5,
+    fontSize: 11.5,
+    letterSpacing: 1.6,
   },
-  snapItem: { flexDirection: "row", marginBottom: 3.5 },
+  snapItem: { flexDirection: "row", alignItems: "flex-start", marginBottom: 4 },
   snapItemNum: {
     fontFamily: "Helvetica-Bold",
     fontSize: 11.53,
@@ -789,7 +804,7 @@ const styles = StyleSheet.create({
   snapItemText: {
     flexGrow: 1,
     flexBasis: 0,
-    fontSize: 13.06,
+    fontSize: 12.2,
     lineHeight: 1.32,
     color: PALETTE.body,
   },
@@ -837,9 +852,54 @@ const styles = StyleSheet.create({
     color: PALETTE.muted,
     marginTop: 1.5,
   },
+  snapTileIcon: { width: 26, alignItems: "center", marginRight: 10 },
+  snapColHeadRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  snapColIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  snapItemDisc: {
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    marginTop: 1.5,
+  },
+  snapItemDiscText: { fontFamily: "Helvetica-Bold", fontSize: 7.6, color: PALETTE.paper },
+  snapRiskIcon: { width: 24, marginRight: 10, paddingTop: 1 },
+  snapSourceLead: { fontFamily: "Helvetica-Bold", color: PALETTE.muted },
+  snapFooter: {
+    position: "absolute",
+    bottom: EDGE_RULE + 8,
+    left: GUTTER,
+    right: GUTTER,
+    height: FOOTER_HEIGHT + 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 0.8,
+    borderColor: PALETTE.hairline,
+    borderRadius: 5,
+    paddingHorizontal: 14,
+  },
+  snapFooterByline: { fontFamily: "Helvetica-Bold", fontSize: 9.6, color: PALETTE.paper },
+  snapFooterDisclaimer: {
+    fontSize: 7.8,
+    lineHeight: 1.3,
+    color: PALETTE.muted,
+    textAlign: "right",
+    maxWidth: 470,
+  },
   /** Chart card ------------------------------------------------------- */
   chartCard: {
-    marginTop: 10,
+    marginTop: 8,
     backgroundColor: PALETTE.navyDeep,
     borderWidth: 0.8,
     borderColor: PALETTE.hairline,
@@ -965,13 +1025,14 @@ const styles = StyleSheet.create({
   snapRisk: {
     flexGrow: 1,
     flexBasis: 0,
-    backgroundColor: PALETTE.card,
+    flexDirection: "row",
+    backgroundColor: PALETTE.navyDeep,
+    borderWidth: 0.8,
+    borderColor: PALETTE.hairline,
     borderRadius: 5,
-    borderLeftWidth: 3,
-    borderLeftColor: PALETTE.coral,
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    marginRight: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 10,
   },
   snapRiskLabel: {
     fontFamily: "Helvetica-Bold",
@@ -989,11 +1050,12 @@ const styles = StyleSheet.create({
    * what the rest of this pass spends.
    */
   snapQuote: {
-    marginTop: 11,
-    paddingLeft: 12,
-    borderLeftWidth: 3,
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 0.8,
+    borderTopColor: PALETTE.hairline,
   },
-  snapQuoteLead: { fontFamily: "Helvetica-Bold" },
+  snapQuoteLead: { fontFamily: "Helvetica-Bold", fontStyle: "normal", color: PALETTE.paper },
   /**
    * Bigger than the deck's source line, and given room to breathe.
    *
@@ -1002,16 +1064,16 @@ const styles = StyleSheet.create({
    * that makes every figure on the sheet checkable, so it is set to be read.
    */
   snapSource: {
-    fontSize: 12.32,
+    fontSize: 10.2,
     lineHeight: 1.35,
-    color: PALETTE.muted,
-    marginTop: 8,
+    color: PALETTE.faint,
+    marginTop: 6,
   },
   snapQuoteText: {
-    fontFamily: "Times-Italic",
-    fontSize: 16.14,
-    lineHeight: 1.3,
-    color: PALETTE.paper,
+    fontFamily: "Helvetica-Oblique",
+    fontSize: 12.6,
+    lineHeight: 1.35,
+    color: PALETTE.body,
   },
   /** The compliance line, set small under the by-line on the one-pager. */
   snapDisclaimer: {
@@ -1072,8 +1134,13 @@ const styles = StyleSheet.create({
  * one is two or three primitives: at 13 points inside a disc, a recognisable
  * silhouette is all that survives anyway, and detail only muddies it.
  */
-function IconGlyph({ name }: { name: string }) {
-  const stroke = PALETTE.paper;
+function IconGlyph({
+  name,
+  stroke = PALETTE.paper,
+}: {
+  name: string;
+  stroke?: string;
+}) {
   switch (name) {
     case "cash":
       return (
@@ -1428,6 +1495,18 @@ function Chrome({ doc, theme }: { doc: ReportDoc; theme: DeckTheme }) {
  */
 function Footer({ doc, pageNumber }: { doc: ReportDoc; pageNumber: number }) {
   const snapshot = isSnapshotDoc(doc);
+  if (snapshot) {
+    // The CVB sheet's footer: a bordered box, the by-line bold on the left
+    // and the compliance line set right. One sheet, so no page counter.
+    return (
+      <View style={styles.snapFooter} fixed>
+        <Text style={styles.snapFooterByline}>
+          {`Daily Mover Snapshot  |  ${formatReportDate(doc.moveDate)}  |  Analyst: ${doc.analystName}`}
+        </Text>
+        <Text style={styles.snapFooterDisclaimer}>{ONE_PAGE_DISCLAIMER}</Text>
+      </View>
+    );
+  }
   return (
     <View style={styles.footer} fixed>
       <View>
@@ -3175,10 +3254,29 @@ function TimelineBand({
  */
 function headlineSize(headline: string): number {
   const length = headline.trim().length;
-  if (length <= 100) return 27.5;
-  if (length <= 125) return 24;
-  if (length <= 150) return 21;
-  return 19;
+  if (length <= 110) return 17.5;
+  if (length <= 150) return 16;
+  return 14.5;
+}
+
+/**
+ * A tile's icon from what its label measures, since tiles carry no icon of
+ * their own: the CVB sheet's link for a raise, bars for capital, a document
+ * for a result.
+ */
+function tileIcon(label: string): string {
+  const text = label.toLowerCase();
+  if (/raise|placement|offer|consideration|scheme|deal|acquisition|sale/.test(text)) return "contract";
+  if (/date|deadline|exclusivity|completion|maturity|due/.test(text)) return "timing";
+  if (/debt|cash|capital|funding|liquidity|dividend|buy-?back/.test(text)) return "cash";
+  if (/revenue|ebitda|npat|profit|loss|earnings|margin|income|result|guidance|noi/.test(text)) return "chart";
+  if (/production|output|volume|resource|reserve|grade/.test(text)) return "resource";
+  return "announcement";
+}
+
+/** The CVB sheet's three risk marks, in order, for cards without their own. */
+function riskIcon(index: number): string {
+  return ["warning", "timing", "people"][index] ?? "warning";
 }
 
 function SnapshotBody({
@@ -3190,21 +3288,33 @@ function SnapshotBody({
   page: Extract<ReportPage, { kind: "snapshot" }>;
   theme: DeckTheme;
 }) {
+  /**
+   * One of the two cards, as the CVB sheet sets them: an outlined icon beside
+   * the heading, and each point numbered in a filled disc of the card's colour.
+   */
   const column = (
     heading: string,
     items: string[],
     accent: string,
-    divided = false,
+    icon: string,
+    last = false,
   ) => (
-    <View style={[styles.snapColumn, divided ? styles.snapColumnDivided : {}]}>
-      <Text style={[styles.snapColHead, { color: accent }]}>
-        {heading.toUpperCase()}
-      </Text>
+    <View style={[styles.snapColumn, last ? { marginRight: 0 } : {}]}>
+      <View style={styles.snapColHeadRow}>
+        <View style={[styles.snapColIcon, { borderColor: accent }]}>
+          <Svg width={12} height={12} viewBox="0 0 14 14">
+            <IconGlyph name={icon} stroke={accent} />
+          </Svg>
+        </View>
+        <Text style={[styles.snapColHead, { color: accent }]}>
+          {heading.toUpperCase()}
+        </Text>
+      </View>
       {items.map((item, index) => (
         <View key={index} style={styles.snapItem}>
-          <Text style={[styles.snapItemNum, { color: accent }]}>
-            {index + 1}
-          </Text>
+          <View style={[styles.snapItemDisc, { backgroundColor: accent }]}>
+            <Text style={styles.snapItemDiscText}>{index + 1}</Text>
+          </View>
           <Rich style={styles.snapItemText}>{item}</Rich>
         </View>
       ))}
@@ -3227,7 +3337,13 @@ function SnapshotBody({
 
   return (
     <View style={styles.snapBody}>
+      {/**
+       * The CVB sheet's head: the label, the company set large in the serif,
+       * and the headline under it in the sans. The company is the thing a
+       * reader scanning a stack of these is looking for.
+       */}
       <View>
+        <Text style={styles.snapLabel}>ONE-PAGE SNAPSHOT</Text>
         <Text style={styles.snapCompany}>{page.companyName}</Text>
         <Text
           style={[styles.snapHeadline, { fontSize: headlineSize(page.headline) }]}
@@ -3242,25 +3358,37 @@ function SnapshotBody({
           // and the one tile the renderer composes itself. See `leadTile`.
           const lead = index === 0;
           const kpi = lead ? leadTile(doc, rawKpi) : rawKpi;
+          const falling = (doc.movePct ?? 0) < 0;
           return (
-            <View
-              key={index}
-              style={[
-                styles.snapTile,
-                lead ? { borderLeftColor: theme.accent } : {},
-              ]}
-            >
-              <Text
-                style={[
-                  styles.snapTileValue,
-                  lead ? { color: theme.accent } : {},
-                ]}
-              >
-                {kpi.value}
-              </Text>
-              <Text style={styles.snapTileLabel}>
-                {kpi.label.toUpperCase()}
-              </Text>
+            <View key={index} style={styles.snapTile}>
+              <View style={styles.snapTileIcon}>
+                {lead ? (
+                  // The direction, drawn: a sign alone is easy to miss.
+                  <Svg width={16} height={14} viewBox="0 0 16 14">
+                    <Polygon
+                      points={falling ? "1,2 15,2 8,13" : "1,12 15,12 8,1"}
+                      fill={theme.accent}
+                    />
+                  </Svg>
+                ) : (
+                  <Svg width={22} height={22} viewBox="0 0 14 14">
+                    <IconGlyph name={tileIcon(kpi.label)} stroke={PALETTE.sky} />
+                  </Svg>
+                )}
+              </View>
+              <View style={{ flexShrink: 1, flexGrow: 1, flexBasis: 0 }}>
+                <Text
+                  style={[
+                    styles.snapTileValue,
+                    lead ? { color: theme.accent } : {},
+                  ]}
+                >
+                  {kpi.value}
+                </Text>
+                <Text style={styles.snapTileLabel}>
+                  {kpi.label.toUpperCase()}
+                </Text>
+              </View>
             </View>
           );
         })}
@@ -3278,8 +3406,8 @@ function SnapshotBody({
       ) : null}
 
       <View style={styles.snapColumns}>
-        {column("Why it moved", page.whyItMoved, theme.accent)}
-        {column("What changes now", page.whatChangesNow, PALETTE.cobalt, true)}
+        {column("Why it moved", page.whyItMoved, theme.accent, "chart")}
+        {column("What changes now", page.whatChangesNow, PALETTE.sky, "operations", true)}
       </View>
 
       {page.timeline.length > 0 ? (
@@ -3297,9 +3425,21 @@ function SnapshotBody({
           </Text>
           <View style={styles.snapRiskRow}>
             {page.risks.map((risk, index) => (
-              <View key={index} style={styles.snapRisk}>
-                <Text style={styles.snapRiskLabel}>{risk.label}</Text>
-                <Text style={styles.snapRiskText}>{risk.text}</Text>
+              <View
+                key={index}
+                style={[styles.snapRisk, index === page.risks.length - 1 ? { marginRight: 0 } : {}]}
+              >
+                <View style={styles.snapRiskIcon}>
+                  <Svg width={22} height={22} viewBox="0 0 14 14">
+                    <IconGlyph name={risk.icon || riskIcon(index)} stroke={PALETTE.coral} />
+                  </Svg>
+                </View>
+                {/* flexBasis 0, or the text measures itself at full width and
+                    runs past the card's right edge. */}
+                <View style={{ flexShrink: 1, flexGrow: 1, flexBasis: 0 }}>
+                  <Text style={styles.snapRiskLabel}>{risk.label}</Text>
+                  <Text style={styles.snapRiskText}>{risk.text}</Text>
+                </View>
               </View>
             ))}
           </View>
@@ -3307,7 +3447,7 @@ function SnapshotBody({
       ) : null}
 
       {page.pullQuote?.trim() ? (
-        <View style={[styles.snapQuote, { borderLeftColor: theme.accent }]}>
+        <View style={styles.snapQuote}>
           {/**
            * No quotation marks.
            *
@@ -3317,16 +3457,17 @@ function SnapshotBody({
            * and set without quote marks.
            */}
           <Text style={styles.snapQuoteText}>
-            <Text style={[styles.snapQuoteLead, { color: theme.accent }]}>
-              Vitti view:{" "}
-            </Text>
+            <Text style={styles.snapQuoteLead}>Vitti view: </Text>
             {page.pullQuote.trim()}
           </Text>
         </View>
       ) : null}
 
       {page.sourceNote?.trim() ? (
-        <Text style={styles.snapSource}>{page.sourceNote.trim()}</Text>
+        <Text style={styles.snapSource}>
+          <Text style={styles.snapSourceLead}>Source: </Text>
+          {page.sourceNote.trim().replace(/^source:\s*/i, "")}
+        </Text>
       ) : null}
     </View>
   );

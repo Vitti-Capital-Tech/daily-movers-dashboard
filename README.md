@@ -775,6 +775,22 @@ scale is whatever that fixture will carry: currently about 6% above the original
 sizes, with the caps cut to match (76 characters a clause, 84 a risk, 36 a
 timeline step). Two dials, and only two — the type or the caps.
 
+**The sheet is laid out like the desk's CVB sheet of 18 September 2026**, which
+the desk asked to publish in from 29 September. From the top:
+- the "ONE-PAGE SNAPSHOT" label, the company name large in the serif, and the
+  headline under it in a smaller sans (17.5pt, stepping down when long);
+- four bordered tiles, each with an icon (`tileIcon` picks it from the label),
+  and a drawn ▲/▼ on the share move;
+- the chart card;
+- *Why it moved* and *What changes now* as two bordered cards, each with an
+  outlined icon head and numbered discs;
+- the dotted *How we got here* line;
+- three risk cards with an icon each (the model's own, or warning / timing /
+  people);
+- "Vitti view:" under a hairline, then a bold "Source:" line;
+- a bordered footer box, with the by-line on the left and the compliance line
+  on the right.
+
 **Every sheet carries a chart, and the timeline has its own band.** The layout
 follows the desk's CVB sheet of 18 September 2026: tiles, then a chart card
 across the full measure, then the two columns, then *How we got here* as one
