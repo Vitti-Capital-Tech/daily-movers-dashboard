@@ -853,6 +853,38 @@ long headline smaller instead: 27.5pt up to 100 characters, then 24, 21 and 19.
 carries a 170-character headline to prove it still fits in two lines. The
 prompt still aims for under 88 characters and never over 120.
 
+**The reasons are connected before they are written.** The Synlait sheet of
+28 September 2026 had the right facts and still shipped "FY26 Loss Narrows",
+when the reported loss had widened from $39.8m to $75.4m. It also led with the
+half-on-half swing instead of the beat against August guidance ($8.1m EBITDA
+against an expected -$2m to +$3m). Section 2B of the writer prompt now works in
+order:
+1. What the market already knew from the history filings and the filing index.
+2. The actual against the company's last guidance or expected range, with both
+   numbers.
+3. What is genuinely new today.
+4. A fixed ranking for *Why it moved*: guidance comparison first, then new
+   information, then the headline swing.
+
+Comparison periods and bases are never mixed, and every headline claim has to
+be proved by a figure on the sheet. Section 10B adds three analyst corrections:
+- give both ends of a change, not "nearly halved";
+- do not give several facilities one maturity;
+- do not repeat a *What changes now* line as a risk.
+
+The Accuracy Gate gets a new item 0, which makes three things **blocking**, so
+they force a rewrite:
+- a headline or comparison the figures contradict;
+- a comparison that mixes periods or bases;
+- prior guidance in the evidence that the report never compares against.
+
+The gate had found the Synlait headline error and marked it advisory, so the
+draft shipped. It also now sees the chart; before this it was given nothing of
+it. On the chart itself: tone comes from the series name (`EBITDA`, `revenue`,
+`profit` are favourable; `loss`, `cost`, `debt` unfavourable). Synlait's
+"Reported EBITDA" had been drawn in the loss colour. A two-period chart is two
+bars, and the note may run to 80 characters.
+
 **Lines over budget are rewritten, not cut.** Every character budget on the
 sheet lives in `SNAPSHOT_CAPS` (`src/lib/report/fit.ts`): clauses, timeline
 steps, risk cards, the Vitti view, the source line and the chart's labels.

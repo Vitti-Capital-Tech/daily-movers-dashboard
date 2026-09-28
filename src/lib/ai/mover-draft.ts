@@ -498,7 +498,7 @@ const PAGE_SCHEMA = {
           description:
             "One sentence, the single thing the eye should catch, set in the accent colour beside the title. " +
             "Point at a specific change - 'loss peaked in FY24 and halved' - not a restatement of the title. " +
-            "Under 46 characters.",
+            "Under 80 characters.",
         },
         unit: {
           type: "string",
@@ -1101,6 +1101,22 @@ Do not treat every number as equally important, and do not adopt the company's o
 
 Worked example of the standard: for IPD Group the insight was not "record FY26 revenue". It was that stripping out the Platinum Cables acquisition, revenue still rose 9.7%, EBITDA 11% and NPAT 12.2% — the existing business was growing too. Look for that kind of second-order fact in every report.
 
+=== 2B. BEFORE YOU WRITE "WHY IT MOVED": WHAT WAS KNOWN, WHAT IS NEW, AND AGAINST WHAT ===
+
+The Synlait sheet of 28 September 2026 had every right fact and still came back with a wrong headline and the wrong first reason, because the facts were not connected. Do these four steps, in order, before writing the headline or the columns.
+
+1. WHAT THE MARKET ALREADY KNEW. Go through the history filings and the filing index for what was public BEFORE today: guidance and trading updates, expected ranges, pre-announced results, deals already signed or completed, management changes already disclosed. None of that is a reason the stock moved TODAY. Synlait's North Island sale completed on 1 April; its effect on net debt is context, not news.
+
+2. THE ACTUAL AGAINST THE LAST THING THE COMPANY SAID. Find the most recent guidance, expected range or outlook the company gave for the period now reported, and set today's actual against it with both numbers: "FY26 reported EBITDA of $8.1m, above the -$2m to +$3m the company expected in August". A beat or a miss against the company's own last word is usually the single biggest reason for the move, and it is invisible unless you look for it. If no prior guidance exists, say nothing rather than invent one.
+
+3. WHAT IS GENUINELY NEW. New guidance, a new deal or a changed term, a figure the market could not have estimated, a surprise in the mix. Each 'why it moved' reason must be new today.
+
+4. RANK THE REASONS. whyItMoved is in this order: (a) the actual against prior guidance or expectation, when there is one; (b) the other genuinely new information, most price-relevant first; (c) the headline swing in the numbers. An event the market already knew goes in whatChangesNow or the timeline, never in whyItMoved, unless today changed its terms.
+
+COMPARISON PERIODS ARE NEVER MIXED. Every comparison names both periods and compares like with like: full year with full year, half with half (2H26 against 1H26, or against 2H25), reported with reported, underlying with underlying. A direction word — narrows, widens, improves, doubles, halves, turns — must be true for the exact periods and basis it is attached to. "FY26 Loss Narrows" was wrong: the REPORTED loss widened from $39.8m in FY25 to $75.4m in FY26. The improvement was second half against first half, and the headline should have said that.
+
+THE HEADLINE IS PROVED BY THE SHEET. Every claim in the headline must be supported by a figure on the sheet, for the same period and on the same basis. Check each word of it against the tiles before you finish.
+
 === 3. THE READER MUST UNDERSTAND THE COMPANY ===
 
 Before the analysis, the report has to establish what the company does, how it makes money, what it sells and to whom, and where it operates. Explain it as if to an intelligent reader who has never heard of it: "Automatic Number Plate Recognition reads a car's plate on entry and exit — no barriers needed" is the register. Use a concrete example when a financial or industry concept is hard.
@@ -1201,7 +1217,8 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
     If no such series exists, send "series": [] and the share price is drawn instead. Never invent a series just to have one.
 
     CHOOSING THE FORM
-    - 'line' — ALWAYS for a series through time (financial years, halves, quarters, months), as on the CVB sheet: 2–12 points, every point dotted and labelled up to six, only the ends past that. Four years of revenue against operating loss; NOI by quarter; guidance through the year; a cash balance month by month. A chart whose labels are periods is drawn as a line even if you send 'columns'.
+    - Two periods only (1H26 against 2H26): two bars, drawn as columns whatever you send — a before-and-after reads better as two bars than as one segment of line.
+    - 'line' — ALWAYS for a series through time of three or more points (financial years, halves, quarters, months), as on the CVB sheet: 3–12 points, every point dotted and labelled up to six, only the ends past that. Four years of revenue against operating loss; NOI by quarter; guidance through the year; a cash balance month by month. A chart whose labels are periods is drawn as a line even if you send 'columns'.
     - 'columns': only for 2–5 separate amounts that are not points in time — at most 4 with two series. Capital raised by round ("Seed", "Series A"); revenue by segment.
     - There is no candlestick/OHLC form. The pipeline stores one price per day, so opens, highs and lows don't exist and must not be invented.
 
@@ -1211,7 +1228,7 @@ The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a s
     - Losses stay negative and draw below the zero baseline. Never flip the sign.
     - Both series must share one unit (e.g. both $ million). If they don't, chart only one.
     - Round consistently: same decimals across every value in the chart.
-    - Give every series a tone. 'unfavourable' for a loss, a cost, a cash burn or anything where up is bad — it is drawn in the red that marks what hurts. 'favourable' for revenue, profit, cash or production where up is good. 'neutral' for a figure with no direction of its own, such as capital raised or a share count.
+    - Give every series a tone by what it MEASURES, not by whether its values are negative: EBITDA, revenue and profit are 'favourable' even in a year they are below zero. 'unfavourable' for a loss, a cost, a cash burn or anything where up is bad — it is drawn in the red that marks what hurts. 'favourable' for revenue, profit, cash or production where up is good. 'neutral' for a figure with no direction of its own, such as capital raised or a share count.
 
     MAKING IT READ WELL
     - title: state the takeaway, not the topic. "Revenue tripled while losses narrowed" beats "Revenue and operating loss". Under ~60 characters.
@@ -1253,15 +1270,23 @@ USE THE AUDITOR'S OWN CONSTRUCTION. Not "auditor flagged material uncertainty" b
 
 SAY WHY A FIGURE IS UNAVAILABLE, NOT JUST THAT IT IS. "No pro-forma cash figure yet" tells a reader nothing. "No company-provided current cash figure yet reflects the full $7.36m raise and subsequent operating cash flows" explains why the number cannot simply be added to the last balance, which is the thing the reader was about to do wrong.
 
+SHOW BOTH ENDS, NOT A WORD FOR THE CHANGE. "Net debt nearly halved" is a judgement the reader has to trust. "Net debt fell from $472.1m at HY26 to $215.0m at FY26 after the North Island sale" is a fact they can check, and it carries both dates.
+
+DO NOT GIVE SEVERAL INSTRUMENTS ONE TERM. "NZ$320m facilities mature 2027" implied every facility had the same maturity; they did not. Where facilities, notes or tranches have different terms, describe what they share, not a term only some have: "preparing to refinance banking facilities that mature during 2027".
+
 === 11. RISKS ===
 
 Three cards, and they are never optional. Real risks specific to this company and specific to what is STILL UNRESOLVED after today's news — a consent still required, a threshold still to be met, a participation rate still unknown, a condition precedent still outstanding, funding still to be raised, or the fact that the shares have just re-rated. Label each in three or four words and explain it in one sentence under 78 characters.
+
+A risk must not repeat a line from whatChangesNow: the Synlait sheet listed the permanent-CEO search in both, and wasted a card. Prefer the company-specific operating and financial risks the filings give: a major customer's volumes moving elsewhere (a2MC moving production to Pōkeno) and what must replace them, operating cash flow still negative despite the earnings recovery, a covenant, a concentration.
 
 Do not pad with generic market risk to look balanced, and do not exaggerate one for the same reason. A snapshot whose risks are "market volatility" and "execution risk" is promotional material with a risk heading on it.
 
 === 12. THE CLOSING LINE ===
 
 One sentence, set in italic at the foot of the sheet. The renderer prefixes it with "Vitti view:" and sets it WITHOUT quotation marks, because it is the desk's analysis and not a quote from the company - so do not write "Vitti view" yourself, do not wrap it in quotation marks, and do not attribute it to anyone. Keep it broad enough to be true: where viability depends on several things - regulatory progress, sales conversion, cost control and further funding - do not narrow it to one of them. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 148 characters. The compliance line is appended automatically; never write it.
+
+After a turnaround, the question the line should ask is whether the improvement becomes sustainable earnings and cash flow: "Synlait has shown its second half can recover; the test now is whether that becomes earnings and cash flow that last."
 
 === 13. LENGTH — READ THIS TWICE ===
 
@@ -1277,6 +1302,8 @@ If you are given a drafted report and the report_accuracy_gate tool, you are the
 
 What to verify, in order of how much damage it does:
 
+0. THE HEADLINE AND THE REASONS — check these first, because they are what the reader takes away. BLOCKING: a headline claim the figures contradict or do not support; a direction word (narrows, improves, doubles, halves) that is false for the periods or basis it is attached to; any comparison that mixes periods (full year against half) or bases (reported against underlying). Synlait's "FY26 Loss Narrows" when the reported loss widened from $39.8m to $75.4m is the example — it was flagged and marked advisory, so it shipped; it is blocking. ALSO BLOCKING: prior guidance or an expected range for the reported period exists in the evidence and the report never sets the actual against it. ADVISORY: a 'why it moved' reason that was already public before today (check the filing index), or reasons in the wrong order (the guidance comparison belongs first).
+
 1. EVERY NUMBER. Take each figure in the report — tiles, chart points, comparison tables, timeline captions, stat lines, numbers in prose — and find it in the evidence. Revenue and its growth, gross profit and margin, EBITDA and underlying EBITDA, EBIT, NPAT, EPS, operating costs, operating and free cash flow, cash conversion, cash, debt, net debt, leverage, net assets, dividends, guidance old and new, consideration and its parts, earn-outs and deferred amounts, royalty values and their discount rates, contract values, NPV, production, AISC, capex, customer and supplier concentration, goodwill, segment figures, resources and reserves, trial results, financing terms. A figure that is not in the evidence, and is not identified in the report as the writer's own calculation, is a BLOCKING finding. So is one that contradicts the evidence, and so is a total the writer summed from the company's figures and presented as the company's own.
 
 2. THE SOURCE LINES. Every page must have one, and it must name a document that is actually in the evidence and actually contains the page's figures. A page whose source line names the wrong filing is a blocking finding: it is the one thing a reviewer will trust without re-reading.
@@ -1289,7 +1316,7 @@ What to verify, in order of how much damage it does:
 
 6. WHAT IS MISSING. A transaction page that lists what the company receives and not what it gives up. A named project with no economics against it when the filings give NPV, production, AISC or capex. A cash balance with no breakdown when one is disclosed. These are advisory findings, but say which page and what figure to add, because an incomplete note is how this report misleads without stating anything false.
 
-7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding. A headline that does not state the share move, states a percentage that does not round from the share-move tile, reads as good news on a stock that fell (or bad news on one that rose), or leans on shorthand only a reader of the backstory would decode — advisory, but give the rewritten headline.
+7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding. A headline that does not state the share move, states a percentage that does not round from the share-move tile, reads as good news on a stock that fell (or bad news on one that rose), or leans on shorthand only a reader of the backstory would decode — advisory, but give the rewritten headline. A headline that is factually wrong is not a house-rule matter: it is item 0, and blocking.
 
 8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 84 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
 
@@ -2613,6 +2640,26 @@ function formatReportForReview(doc: ReportDoc): string {
             "WHAT CHANGES NOW:",
             ...page.whatChangesNow.map((item, index) => `  ${index + 1}. ${item}`),
           );
+          /**
+           * The chart, which the checker used to be shown nothing of: on
+           * Synlait's sheet it reported "the chart is not shown in the drafted
+           * text" and could not verify a single point.
+           */
+          if (page.chart && page.chart.series.length > 0) {
+            body.push(
+              `CHART (${page.chart.form ?? "columns"}): ${page.chart.title}` +
+                (page.chart.note ? ` — note: ${page.chart.note}` : "") +
+                (page.chart.unit ? ` [${page.chart.unit}]` : ""),
+              ...page.chart.series.map(
+                (series) =>
+                  `  ${series.name} (${series.tone ?? "neutral"}): ` +
+                  series.points.map((point) => `${point.label} ${point.display ?? point.value}`).join(", "),
+              ),
+            );
+            if (page.chart.footnote) body.push(`  footnote: ${page.chart.footnote}`);
+          } else {
+            body.push("CHART: none from the writer - the share price from the exchange feed is drawn instead.");
+          }
           body.push(
             "HOW WE GOT HERE:",
             ...page.timeline.map((event) => `  ${event.date} — ${event.text}`),
@@ -2793,8 +2840,10 @@ const ACCURACY_TOOL: Anthropic.Tool = {
                 "written as unconditional or as already received, proceeds written as cash in hand rather than " +
                 "expected on completion, a pro-forma position written in the present tense, an intraday move " +
                 "described as a close, a headline contract value presented as guaranteed revenue, " +
-                "acquisition-driven growth called organic, a future outcome stated as certain, or a claim that " +
-                "goes further than the filing supports. 'advisory' for everything that does not make it wrong: " +
+                "acquisition-driven growth called organic, a future outcome stated as certain, a claim that " +
+                "goes further than the filing supports, a headline claim the figures contradict, a comparison " +
+                "mixing periods or bases, or prior guidance in the evidence that the report never compares the " +
+                "actual against. 'advisory' for everything that does not make it wrong: " +
                 "a missing figure the filings would have given, a market reading written as a fact, a repeated " +
                 "point, an over-long page, 'A$' instead of '$', a banned filler phrase, past tense for something " +
                 "still true, a chart whose conclusion only restates its own numbers, an undisclosed calculation.",

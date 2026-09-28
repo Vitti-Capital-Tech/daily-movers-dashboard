@@ -142,7 +142,9 @@ export const SNAPSHOT_CAPS = {
   pullQuote: 158,
   sourceNote: REPORT_LIMITS.sourceNoteChars,
   chartTitle: 68,
-  chartNote: 46,
+  // The card's header wraps, so the note can be a whole sentence; at 46 it
+  // cut Synlait's "…reversed to a $42.8m 2H26…".
+  chartNote: 80,
   chartFootnote: 92,
   seriesName: 22,
   pointLabel: 10,
@@ -261,6 +263,26 @@ export function applySnapshotRewrites(
 const PERIOD_LABEL =
   /^((FY|CY)\s?'?\d{2,4}|[1-4]Q\s?(FY)?\d{2,4}|Q[1-4](\s?(FY)?\s?'?\d{2,4})?|[12]H\s?(FY)?\d{2,4}|H[12](\s?(FY)?\s?'?\d{2,4})?|[A-Z][a-z]{2,8}[-\s']?'?\d{2,4}|\d{4})$/i;
 
+/**
+ * A series' tone from what it measures, where the name says so.
+ *
+ * The model marked Synlait's "Reported EBITDA" unfavourable and it drew in
+ * the loss colour — EBITDA going up is good, even when some of it is below
+ * zero. A name that states the measure settles the tone; only an ambiguous
+ * name keeps the model's.
+ */
+const UNFAVOURABLE_SERIES = /\b(loss|losses|cost|costs|expense|expenses|burn|debt|net debt|impairment|write-?down|churn|outflow)\b/i;
+const FAVOURABLE_SERIES = /\b(revenue|sales|income|ebitda|ebit|npat|profit|earnings|margin|cash|production|output|volume|customers|users|arr|nta|dividend)\b/i;
+
+function toneFor(
+  name: string,
+  tone: SnapshotChart["series"][number]["tone"],
+): SnapshotChart["series"][number]["tone"] {
+  if (UNFAVOURABLE_SERIES.test(name)) return "unfavourable";
+  if (FAVOURABLE_SERIES.test(name)) return "favourable";
+  return tone ?? "neutral";
+}
+
 function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
   const series = chart.series.slice(0, 2);
   /**
@@ -273,7 +295,10 @@ function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
    */
   const labels = series[0]?.points.map((point) => point.label.trim()) ?? [];
   const periodic = labels.length > 0 && labels.every((label) => PERIOD_LABEL.test(label));
-  const form = chart.form === "columns" && !periodic ? "columns" : "line";
+  // Two periods are a before-and-after, which two bars show better than a
+  // single segment of line: the analyst's note on Synlait's 1H26 -> 2H26 swing.
+  const form =
+    labels.length <= 2 ? "columns" : chart.form === "columns" && !periodic ? "columns" : "line";
   if (chart.form === "columns" && form === "line") {
     trim.notes.push("chart drawn as a line: its categories are periods");
   }
@@ -296,6 +321,7 @@ function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
       }
       return {
         ...s,
+        tone: toneFor(s.name, s.tone),
         name: trim.text(s.name, SNAPSHOT_CAPS.seriesName, "series name"),
         // The series runs oldest first and ends on the period that matters,
         // so a cut drops the oldest points rather than today's.
