@@ -440,9 +440,9 @@ const PAGE_SCHEMA = {
       description:
         "On a 'snapshot' page: under 88 characters where you can, and never over 120 - a longer one is set in " +
         "smaller type. It is always printed whole, so it must read as a complete line on its own. Lead with the " +
-        "company's short name and the move as a whole " +
-        "percentage rounded from the share-move tile, and saying so when the stock moved against the news — " +
-        "'Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger'. No shorthand that " +
+        "company's short name and the move exactly as the share-move tile prints it, to one decimal, and " +
+        "saying so when the stock moved against the news — " +
+        "'Tuas Sinks 15.7% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger'. No shorthand that " +
         "needs the backstory to decode. " +
         "On a 'cover' page: the share-move headline, stating direction and magnitude the way the desk writes it — " +
         "'Shares Rise as Much as ~20.6% in Morning Trade After Record FY26 Results and a New $5 Million Share Buy-Back'. " +
@@ -1107,7 +1107,7 @@ The Synlait sheet of 28 September 2026 had every right fact and still came back 
 
 1. WHAT THE MARKET ALREADY KNEW. Go through the history filings and the filing index for what was public BEFORE today: guidance and trading updates, expected ranges, pre-announced results, deals already signed or completed, management changes already disclosed. None of that is a reason the stock moved TODAY. Synlait's North Island sale completed on 1 April; its effect on net debt is context, not news.
 
-2. THE ACTUAL AGAINST THE LAST THING THE COMPANY SAID. Find the most recent guidance, expected range or outlook the company gave for the period now reported, and set today's actual against it with both numbers: "FY26 reported EBITDA of $8.1m, above the -$2m to +$3m the company expected in August". A beat or a miss against the company's own last word is usually the single biggest reason for the move, and it is invisible unless you look for it. If no prior guidance exists, say nothing rather than invent one.
+2. THE ACTUAL AGAINST THE LAST THING THE COMPANY SAID. Find the most recent guidance, expected range or outlook the company gave for the period now reported, and set today's actual against it with both numbers: "FY26 reported EBITDA of $8.1m, above the -$2m to +$3m the company expected in August". A beat or a miss against the company's own last word is usually the single biggest reason for the move, and it is invisible unless you look for it. So is the SIZE of new guidance against the same period a year earlier: Codan's H1 FY27 Communications revenue guidance of $400m-$410m against $221.8m in H1 FY26 was probably the clearest reason the stock jumped, and the draft left it out. If no prior guidance exists, say nothing rather than invent one.
 
 3. WHAT IS GENUINELY NEW. New guidance, a new deal or a changed term, a figure the market could not have estimated, a surprise in the mix. Each 'why it moved' reason must be new today.
 
@@ -1134,6 +1134,12 @@ Before the analysis, the report has to establish what the company does, how it m
 === 5. WORDS THAT CHANGE THE MEANING — THE MOST COMMON WAY THIS REPORT GOES WRONG ===
 
 The desk's standing complaint is not arithmetic. It is a sentence that is true of a different transaction from the one that was announced. Be literal about what the filing says.
+
+GUIDANCE IS NOT A RESULT. A figure the company expects, forecasts or guides to is not a figure it has reported, and the words must say which. The Codan sheet of 29 September 2026 was sent back on every one of these:
+- "H1 FY27 NPAT Tops $160m" — $160m+ was guidance ("not less than $160m") for a half not yet reported. Write "NPAT Guidance Hits $160m+" or "guides to H1 FY27 NPAT of at least $160m".
+- "Conflict-region demand now ~50% of Comms revenue" — it was a forecast mix. Write "expected to represent ~50% of H1 FY27 Comms revenue".
+- The same for a guided margin ("~40% H1 Communications EBIT margin expected"), a guided revenue range, a target.
+Label every guided figure as guidance wherever it appears — headline, tiles ("H1 FY27 NPAT GUIDANCE"), clauses, risks, chart points ("H1 FY27E") and the chart's footnote. And do not undersell it the other way: guidance the company has issued is confirmed guidance. "Unconfirmed" was wrong on Codan; the footnote should read "H1 FY27E is company guidance ('not less than $160m'), not a reported actual".
 
 CONDITIONALITY. "Binding" means the parties are committed to each other. It does NOT mean the deal is done, and it does not make the money certain. If completion needs regulatory, shareholder, ministerial or foreign-investment approval, or the satisfaction of conditions precedent, the report says so on the page where the figure appears — and "unconditional" is then simply the wrong word. Only write "unconditional" if the filing uses it of the thing you are describing. Distinguish: agreed / binding but conditional / unconditional / completed. Four different states, four different sentences.
 
@@ -1202,8 +1208,8 @@ EXPECTATIONS. Compare against consensus only if a reliable figure appears in the
 The Daily Mover is a SINGLE 16:9 page. Not a deck, not a shortened deck, not a summary of a longer note. Emit EXACTLY ONE page and its kind is 'snapshot'. There is no cover, no separate risks page, no closing page. Every part below is required:
 
 - companyName, then headline. The headline is the whole story in one line, under 88 characters where you can and never over 120: what happened AND what it means. It is always printed in full — past 100 characters it is set in smaller type, not cut — so write it as a complete line, and when it runs long, shorten the nouns ("FY27 Outlook Cut", "Deal Lapse"), not the "despite" half. Make it punchy: one active verb per half and no chain of "as ... and ... after ..." clauses. "OFX Jumps 18% as Equals Holds $1.00 Offer Despite FY27 Guidance Pull" (68), not "OFX Jumps 18% as Equals Reconfirms $1.00 Offer and Extends Exclusivity, Despite Weaker FY27 Outlook" (99). A headline over 90 characters is sent back to you to tighten. "Buy-Back Settlement Clears Path for Antipodes Manager Transition" — not "PIA Announces Settlement of Proceedings", which names the event and says nothing. Three rules on top of that, all from analyst markups:
-  - LEAD WITH THE MOVE. Start with the company's short name, the direction and the size of the move as a whole percentage: "Tuas Sinks 16%", "PIA Gains 8%". Round the SAME figure as the share-move tile (-15.7% is "16%"), never a later intraday price — the sheet is a snapshot as at its stated time. Use a verb that carries direction: Sinks, Slides, Falls, Jumps, Surges, Gains.
-  - WHEN THE STOCK WENT AGAINST THE NEWS, SAY SO. A fall on a strong result or a rise on a weak one is the story, and the headline puts both halves in: "Tuas Sinks 16% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger". "FY26 Profit Rises 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" was sent back: it reads as a good-news headline on a stock that fell 16%, and it never says the stock fell.
+  - LEAD WITH THE MOVE. Start with the company's short name, the direction and the size of the move exactly as the share-move tile prints it, to one decimal: "Codan Jumps 16.5%", "Tuas Sinks 15.7%". Not rounded — the Codan sheet printed "Jumps 16%" over a +16.5% tile and was sent back so the two agree — and never a later intraday price, because the sheet is a snapshot as at its stated time. (The renderer corrects the figure if it differs, but write it right.) Use a verb that carries direction: Sinks, Slides, Falls, Jumps, Surges, Gains.
+  - WHEN THE STOCK WENT AGAINST THE NEWS, SAY SO. A fall on a strong result or a rise on a weak one is the story, and the headline puts both halves in: "Tuas Sinks 15.7% Despite 277% Profit Jump as M1 Fallout and Spectrum Probe Linger". "FY26 Profit Rises 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" was sent back: it reads as a good-news headline on a stock that fell 16%, and it never says the stock fell.
   - WRITE FOR A READER WHO HAS NOT FOLLOWED THE STORY. No compressed phrase that only makes sense if you already know the backstory — "Idle M1 Capital" presumes the reader knows money was raised for a deal that lapsed. Name the issue in words that stand alone ("M1 Fallout", "Lapsed Deal", "Regulator Probe") and leave the detail to the columns below.
 - FOUR KPI tiles. The first is always the share move, labelled with its window. The other three are the figures that actually decide the story — an NTA or net asset figure per share, a volume multiple, the next completion date, the headline consideration, a production or margin number. Choose figures a reader would otherwise have to dig the filings for. Label each in three or four words.
 - whyItMoved — two or three clauses on what happened TODAY.
@@ -1268,6 +1274,10 @@ NO SUPERLATIVES WHERE THE EVIDENCE SUPPORTS A QUALIFIER. "The next cash catalyst
 
 USE THE AUDITOR'S OWN CONSTRUCTION. Not "auditor flagged material uncertainty" but "the auditor noted material uncertainty related to going concern". Going concern is a defined term and a paraphrase of it reads as editorialising about solvency.
 
+USE THE COMPANY'S OWN QUALIFIER, NOT A SHARPER ONE. Codan said demand from conflict regions is "difficult to forecast beyond three months". "Visibility under 3 months" and "<3-month forecast horizon" say something narrower; write "limited visibility beyond three months". Codan said it was "working to mitigate potential supply-chain-related constraints". "Emerging electronics supply constraints on fulfilment" added a component the company never named and an effect it never reported; write "potential supply-chain constraints as order momentum builds". A paraphrase may be shorter than the filing, never more specific or more certain.
+
+A DATE IS NOT AN AGENDA. The Annual Report confirmed Codan's AGM on 20 October 2026; nothing said a business update would be given there. "AGM business update due 20 October" invented the agenda. Write "Codan AGM scheduled for 20 October 2026", and describe what happens at a scheduled event only when a filing says so.
+
 SAY WHY A FIGURE IS UNAVAILABLE, NOT JUST THAT IT IS. "No pro-forma cash figure yet" tells a reader nothing. "No company-provided current cash figure yet reflects the full $7.36m raise and subsequent operating cash flows" explains why the number cannot simply be added to the last balance, which is the thing the reader was about to do wrong.
 
 SHOW BOTH ENDS, NOT A WORD FOR THE CHANGE. "Net debt nearly halved" is a judgement the reader has to trust. "Net debt fell from $472.1m at HY26 to $215.0m at FY26 after the North Island sale" is a fact they can check, and it carries both dates.
@@ -1286,7 +1296,7 @@ Do not pad with generic market risk to look balanced, and do not exaggerate one 
 
 One sentence, set in italic at the foot of the sheet. The renderer prefixes it with "Vitti view:" and sets it WITHOUT quotation marks, because it is the desk's analysis and not a quote from the company - so do not write "Vitti view" yourself, do not wrap it in quotation marks, and do not attribute it to anyone. Keep it broad enough to be true: where viability depends on several things - regulatory progress, sales conversion, cost control and further funding - do not narrow it to one of them. It is the desk's read — what the day settles and what it leaves open — not a summary of the page above it and never a recommendation. "PIA has settled the fight over how shareholders get to choose; it hasn't yet shown what the portfolio looks like once they've chosen." Under 148 characters. The compliance line is appended automatically; never write it.
 
-After a turnaround, the question the line should ask is whether the improvement becomes sustainable earnings and cash flow: "Synlait has shown its second half can recover; the test now is whether that becomes earnings and cash flow that last."
+The line is judgement, but it is no stronger than the filings. "Demand is real and larger than guided in August" and "even to the company" went further than Codan said; the desk's rewrite was "Codan's H1 FY27 outlook has strengthened materially since August, but limited visibility on conflict-region demand leaves H2 revenue and margin sustainability uncertain." After a turnaround, the question the line should ask is whether the improvement becomes sustainable earnings and cash flow: "Synlait has shown its second half can recover; the test now is whether that becomes earnings and cash flow that last."
 
 === 13. LENGTH — READ THIS TWICE ===
 
@@ -1302,7 +1312,7 @@ If you are given a drafted report and the report_accuracy_gate tool, you are the
 
 What to verify, in order of how much damage it does:
 
-0. THE HEADLINE AND THE REASONS — check these first, because they are what the reader takes away. BLOCKING: a headline claim the figures contradict or do not support; a direction word (narrows, improves, doubles, halves) that is false for the periods or basis it is attached to; any comparison that mixes periods (full year against half) or bases (reported against underlying). Synlait's "FY26 Loss Narrows" when the reported loss widened from $39.8m to $75.4m is the example — it was flagged and marked advisory, so it shipped; it is blocking. ALSO BLOCKING: prior guidance or an expected range for the reported period exists in the evidence and the report never sets the actual against it. ADVISORY: a 'why it moved' reason that was already public before today (check the filing index), or reasons in the wrong order (the guidance comparison belongs first).
+0. THE HEADLINE AND THE REASONS — check these first, because they are what the reader takes away. BLOCKING: a headline claim the figures contradict or do not support; a direction word (narrows, improves, doubles, halves) that is false for the periods or basis it is attached to; any comparison that mixes periods (full year against half) or bases (reported against underlying). Synlait's "FY26 Loss Narrows" when the reported loss widened from $39.8m to $75.4m is the example — it was flagged and marked advisory, so it shipped; it is blocking. ALSO BLOCKING: prior guidance or an expected range for the reported period exists in the evidence and the report never sets the actual against it; guidance, a forecast or an expected figure written as a reported result anywhere on the sheet (Codan's "NPAT Tops $160m" for "not less than $160m" guidance, "~50% of Comms revenue now conflict-linked" for a forecast mix); a paraphrase more specific or more certain than the filing's wording (a component, an effect or an agenda the company did not state); and a headline percentage that differs from the share-move tile. ADVISORY: a 'why it moved' reason that was already public before today (check the filing index), or reasons in the wrong order (the guidance comparison belongs first).
 
 1. EVERY NUMBER. Take each figure in the report — tiles, chart points, comparison tables, timeline captions, stat lines, numbers in prose — and find it in the evidence. Revenue and its growth, gross profit and margin, EBITDA and underlying EBITDA, EBIT, NPAT, EPS, operating costs, operating and free cash flow, cash conversion, cash, debt, net debt, leverage, net assets, dividends, guidance old and new, consideration and its parts, earn-outs and deferred amounts, royalty values and their discount rates, contract values, NPV, production, AISC, capex, customer and supplier concentration, goodwill, segment figures, resources and reserves, trial results, financing terms. A figure that is not in the evidence, and is not identified in the report as the writer's own calculation, is a BLOCKING finding. So is one that contradicts the evidence, and so is a total the writer summed from the company's figures and presented as the company's own.
 
@@ -1316,7 +1326,7 @@ What to verify, in order of how much damage it does:
 
 6. WHAT IS MISSING. A transaction page that lists what the company receives and not what it gives up. A named project with no economics against it when the filings give NPV, production, AISC or capex. A cash balance with no breakdown when one is disclosed. These are advisory findings, but say which page and what figure to add, because an incomplete note is how this report misleads without stating anything false.
 
-7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding. A headline that does not state the share move, states a percentage that does not round from the share-move tile, reads as good news on a stock that fell (or bad news on one that rose), or leans on shorthand only a reader of the backstory would decode — advisory, but give the rewritten headline. A headline that is factually wrong is not a house-rule matter: it is item 0, and blocking.
+7. HOUSE RULES — sections 6, 7 and 9. Currency, tense, banned filler openers, charts whose conclusion only restates their own numbers, page headings that name a category instead of stating a finding. A headline that does not state the share move, states a percentage different from the share-move tile, reads as good news on a stock that fell (or bad news on one that rose), or leans on shorthand only a reader of the backstory would decode — advisory, but give the rewritten headline. A headline that is factually wrong is not a house-rule matter: it is item 0, and blocking.
 
 8. REPETITION AND OVERFLOW — sections 7, 9 and 13. The same point in both columns, a clause written as a sentence, a timeline step longer than five words, a risk card whose explanation runs past about 84 characters, more than four tiles, more than three risks, or anything that would not fit the sheet. Findings, not blocking on their own — but say exactly which line to cut, because overflow on this format is invisible: it does not wrap onto a second page, it disappears off the bottom edge.
 
@@ -1380,6 +1390,29 @@ function asCallouts(value: unknown): ReportCallout[] {
  * A chart with one usable series still draws; a chart with none is dropped so
  * the renderer falls back to the timeline rather than printing an empty axis.
  */
+/**
+ * The headline's move, set to the figure the share-move tile prints.
+ *
+ * The tile is composed from the feed (`leadTile`, one decimal) and the headline
+ * is written by the model, which rounds: Codan's sheet read "Jumps 16%" over a
+ * "+16.5%" tile and an analyst had to reconcile them by hand. Only the first
+ * percentage in the opening words is touched, and only when it is plainly the
+ * move (within a point of it), so a "277% Profit Jump" later in the line is
+ * never rewritten.
+ */
+function syncHeadlineMove(pages: ReportPage[], movePct: number): ReportPage[] {
+  const figure = `${Math.abs(movePct).toFixed(1)}%`;
+  return pages.map((page) => {
+    if (page.kind !== "snapshot") return page;
+    const match = /(~?)(\d+(?:\.\d+)?)%/.exec(page.headline);
+    if (!match || match.index > 40) return page;
+    if (Math.abs(Number(match[2]) - Math.abs(movePct)) >= 1) return page;
+    const headline =
+      page.headline.slice(0, match.index) + figure + page.headline.slice(match.index + match[0].length);
+    return headline === page.headline ? page : { ...page, headline };
+  });
+}
+
 function asSnapshotChart(value: unknown): SnapshotChart | null {
   const raw = value as Record<string, unknown>;
   if (!raw || typeof raw !== "object") return null;
@@ -2354,6 +2387,7 @@ export async function writeReport(
 
     const reportPrice = Number(raw.reportPrice);
     const catalystSlug = asString(raw.catalystSlug);
+    const headlinedPages = syncHeadlineMove(pages, movePct);
 
     return {
       report: {
@@ -2374,7 +2408,7 @@ export async function writeReport(
           reportPrice: row.last,
           moveTime: input.moveWindow?.localTime ?? null,
           moveIsClose: input.moveWindow?.isClose ?? null,
-          pages,
+          pages: headlinedPages,
         },
         mover: {
           ticker: row.ticker,
@@ -2841,7 +2875,8 @@ const ACCURACY_TOOL: Anthropic.Tool = {
                 "expected on completion, a pro-forma position written in the present tense, an intraday move " +
                 "described as a close, a headline contract value presented as guaranteed revenue, " +
                 "acquisition-driven growth called organic, a future outcome stated as certain, a claim that " +
-                "goes further than the filing supports, a headline claim the figures contradict, a comparison " +
+                "goes further than the filing supports, guidance or a forecast written as a reported result, a " +
+                "paraphrase more specific or certain than the filing, a headline claim the figures contradict, a comparison " +
                 "mixing periods or bases, or prior guidance in the evidence that the report never compares the " +
                 "actual against. 'advisory' for everything that does not make it wrong: " +
                 "a missing figure the filings would have given, a market reading written as a fact, a repeated " +

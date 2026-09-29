@@ -856,8 +856,8 @@ same decimals on every value.
 **The headline leads with the move.** An analyst sent back "FY26 Profit Rises
 277% as Idle M1 Capital and Spectrum Probe Cloud Outlook" on a day Tuas fell
 16%: it read as good news and never said the stock fell. The prompt now asks for
-the short name, direction and whole-number move first (rounded from the
-share-move tile, not a later price), a "despite" framing when the stock went
+the short name, direction and move first (the share-move tile's own figure to
+one decimal, not a later price; see below), a "despite" framing when the stock went
 against the news, and no shorthand a reader needs the backstory to decode.
 The accuracy checker flags a headline that breaks any of these.
 
@@ -900,6 +900,30 @@ it. On the chart itself: tone comes from the series name (`EBITDA`, `revenue`,
 `profit` are favourable; `loss`, `cost`, `debt` unfavourable). Synlait's
 "Reported EBITDA" had been drawn in the loss colour. A two-period chart is two
 bars, and the note may run to 80 characters.
+
+**Guidance is never written as a result.** The Codan sheet of 29 September
+2026 said "H1 FY27 NPAT Tops $160m" for guidance of "not less than $160m", and
+wrote a forecast revenue mix as if it were reported. It also sharpened the
+company's wording in two places:
+- "difficult to forecast beyond three months" became "visibility under 3
+  months";
+- "potential supply-chain-related constraints" became "electronics supply
+  constraints on fulfilment".
+
+It turned a scheduled AGM into a "business update". Section 5 of the prompt
+now has a *Guidance is not a result* rule: label every guided figure as
+guidance, and do not call issued guidance "unconfirmed". Section 10B adds *use
+the company's own qualifier* and *a date is not an agenda*. The gate treats
+each of these faults as blocking. The Vitti view may be no stronger than the
+filings. Section 2B also asks for the size of new guidance against the same
+period a year earlier (Codan's $400m-$410m Comms revenue guidance against
+$221.8m).
+
+**The headline carries the tile's move, to one decimal.** This replaces the
+earlier whole-number rule, because the Codan analyst wanted "Jumps 16.5%" to
+match the +16.5% tile. `syncHeadlineMove` enforces it after the model writes.
+It rewrites only the first percentage in the opening 40 characters, and only
+when it is within a point of the move, so "277% Profit Jump" is never touched.
 
 **Lines over budget are rewritten, not cut.** Every character budget on the
 sheet lives in `SNAPSHOT_CAPS` (`src/lib/report/fit.ts`): clauses, timeline
