@@ -272,7 +272,7 @@ const PERIOD_LABEL =
  * name keeps the model's.
  */
 const UNFAVOURABLE_SERIES = /\b(loss|losses|cost|costs|expense|expenses|burn|debt|net debt|impairment|write-?down|churn|outflow)\b/i;
-const FAVOURABLE_SERIES = /\b(revenue|sales|income|ebitda|ebit|npat|profit|earnings|margin|cash|production|output|volume|customers|users|arr|nta|dividend)\b/i;
+const FAVOURABLE_SERIES = /\b(revenue|sales|income|ebitda|ebit|npat|profit|earnings|margin|cash|production|output|volume|reserves?|resources?|ounces|customers|users|arr|nta|dividend)\b/i;
 
 function toneFor(
   name: string,
@@ -283,8 +283,32 @@ function toneFor(
   return tone ?? "neutral";
 }
 
-function fitSnapshotChart(chart: SnapshotChart, trim: Trimmer): SnapshotChart {
-  const series = chart.series.slice(0, 2);
+/**
+ * Two series share one axis, so past this ratio the smaller is a flat line.
+ * BC8 drew 2.31Moz of Resources beside 272koz of Reserves and footnoted the
+ * problem instead of fixing it; the second series is dropped instead.
+ */
+const MAX_SERIES_SCALE_RATIO = 4;
+
+function fitSnapshotChart(input: SnapshotChart, trim: Trimmer): SnapshotChart {
+  let chart = input;
+  let series = chart.series.slice(0, 2);
+  if (series.length === 2) {
+    const size = (s: (typeof series)[number]) =>
+      Math.max(0, ...s.points.map((point) => Math.abs(point.value)));
+    const [a, b] = [size(series[0]), size(series[1])];
+    if (Math.min(a, b) > 0 && Math.max(a, b) / Math.min(a, b) > MAX_SERIES_SCALE_RATIO) {
+      trim.notes.push(
+        `chart series "${series[1].name}" dropped: ${Math.round(Math.max(a, b) / Math.min(a, b))}x the scale of "${series[0].name}"`,
+      );
+      // A footnote about the dropped series ("shown together for direction,
+      // not ratio") now describes a chart that is not there.
+      if (chart.footnote && /together|different scale|ratio/i.test(chart.footnote)) {
+        chart = { ...chart, footnote: null };
+      }
+      series = [series[0]];
+    }
+  }
   /**
    * A series through time is a line, whatever the model asked for.
    *

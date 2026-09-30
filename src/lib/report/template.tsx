@@ -3406,7 +3406,9 @@ function SnapshotBody({
       ) : null}
 
       <View style={styles.snapColumns}>
-        {column("Why it moved", page.whyItMoved, theme.accent, "chart")}
+        {/* An inference, and headed as one: the desk states observations,
+            and no filing says why a stock moved (BC8 markup, 30 Sep 2026). */}
+        {column("What may have driven the move", page.whyItMoved, theme.accent, "chart")}
         {column("What changes now", page.whatChangesNow, PALETTE.sky, "operations", true)}
       </View>
 

@@ -901,6 +901,30 @@ it. On the chart itself: tone comes from the series name (`EBITDA`, `revenue`,
 "Reported EBITDA" had been drawn in the loss colour. A two-period chart is two
 bars, and the note may run to 80 characters.
 
+**Observation, not advice.** The desk publishes a story about a stock, not a
+view on it, and the BC8 markup of 30 September 2026 tightened the tone
+everywhere. Section 1 of the prompt now has a tone rule:
+- no buy, sell or hold language, and none of its cousins;
+- market causation is always an inference;
+- neutral risk labels ("H2 cost improvement execution", not "unproven");
+- plain headline verbs (Falls, not Sinks);
+- a Vitti view that says where attention is likely to go.
+
+The left column is now headed **"What may have driven the move"**. Section 10B
+adds four faults from the same markup:
+- keep the scope word ("wholly owned" production);
+- use the company's stated reason, not an inferred one;
+- do not narrow a cause to two named pits;
+- give a budget its full name, share and purpose.
+
+The gate blocks a dropped scope word and a cause the filing does not give. Two
+things are now enforced in code:
+- `spellOutUnits` writes currency amounts as "$30-35 million" in body text
+  before the length pass;
+- the fitter drops a second chart series more than 4x the scale of the first,
+  because BC8 plotted 2.31Moz of Resources beside 272koz of Reserves on one
+  axis and footnoted the problem.
+
 **Guidance is never written as a result.** The Codan sheet of 29 September
 2026 said "H1 FY27 NPAT Tops $160m" for guidance of "not less than $160m", and
 wrote a forecast revenue mix as if it were reported. It also sharpened the
