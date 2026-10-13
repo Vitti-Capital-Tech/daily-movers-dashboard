@@ -446,6 +446,16 @@ export const moverDrafts = pgTable(
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     /** Why an analyst rejected it -- the feedback loop for the prompt. */
     reviewNote: text("review_note"),
+
+    /**
+     * When the draft PDF and its sources were emailed out (see
+     * `lib/drafts/email.ts`). Also the claim: the sender sets it before
+     * sending, so the post-draft trigger and the backup sweep can never both
+     * send the same draft. Cleared again if the send fails.
+     */
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    /** Why the last send failed; null once one succeeds. */
+    emailError: text("email_error"),
   },
   (t) => [
     // The review queue: newest first, usually filtered to `pending`.

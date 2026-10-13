@@ -1,6 +1,7 @@
 import { after, type NextRequest } from "next/server";
 
 import { isDbConfigured } from "@/db";
+import { cronAuthHeader, isAuthorisedCron } from "@/lib/cron-auth";
 import {
   generateDraft,
   reapStaleGenerating,
@@ -67,17 +68,6 @@ import { exchangeClock, MARKET_OPEN_MINUTES } from "@/lib/drafts/trading-day";
  * queries worth keeping.
  */
 
-/**
- * Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when that environment
- * variable is set. Without it the endpoint would be an unauthenticated way for
- * anyone to spend the desk's Claude budget, so a missing secret disables the
- * route rather than leaving it open.
- */
-function isAuthorisedCron(request: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
-}
 
 /**
  * The local-time window a firing must fall inside to count.
@@ -193,6 +183,8 @@ export async function GET(request: NextRequest) {
    * is for — and the draft row is already visible in the review queue while it
    * works.
    */
+  const origin = request.nextUrl.origin;
+
   after(async () => {
     const outcome = await generateDraft({
       actorEmail: null,
@@ -204,6 +196,27 @@ export async function GET(request: NextRequest) {
       console.log(
         `scheduled draft ${outcome.draftId} written for ${outcome.ticker} (${clock.date})`,
       );
+
+      /**
+       * Mail the draft out from a fresh invocation rather than from here. The
+       * pipeline has already spent most of this one's 300 seconds, and the
+       * email re-downloads every source filing from the ASX. The email route
+       * answers at once and does its work in its own `after()`, so this fetch
+       * is quick. If it fails, the sweep in `drizzle/cron-setup.sql` sends it.
+       */
+      try {
+        const response = await fetch(
+          `${origin}/api/cron/draft-email?id=${outcome.draftId}`,
+          { headers: cronAuthHeader(), cache: "no-store" },
+        );
+        if (!response.ok) {
+          console.error(
+            `draft email hand-off for ${outcome.draftId} answered ${response.status}`,
+          );
+        }
+      } catch (error) {
+        console.error(`draft email hand-off for ${outcome.draftId} failed`, error);
+      }
     } else {
       console.error(
         `scheduled draft for ${clock.date} failed: ${outcome.reason}`,

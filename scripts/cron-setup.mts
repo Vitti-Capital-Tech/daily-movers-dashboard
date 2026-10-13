@@ -142,7 +142,7 @@ const jobs = await verify<
   { jobname: string; schedule: string; active: boolean; command: string }[]
 >`
   select jobname, schedule, active, command
-  from cron.job where jobname like 'daily-mover-draft%'
+  from cron.job where jobname like 'daily-mover-%'
   order by jobname
 `;
 const [tz] = await verify<{ tz: string }[]>`select current_setting('cron.timezone', true) as tz`;
@@ -150,7 +150,11 @@ await verify.end({ timeout: 5 });
 
 // The old single 'daily-mover-draft' job must be gone, or it would still fire
 // at 06:00 IST alongside the new pair.
-const EXPECTED = ["daily-mover-draft-aedt", "daily-mover-draft-aest"];
+const EXPECTED = [
+  "daily-mover-draft-aedt",
+  "daily-mover-draft-aest",
+  "daily-mover-email-sweep",
+];
 const names = jobs.map((job) => job.jobname);
 if (names.join() !== EXPECTED.join()) {
   console.error(
@@ -160,7 +164,7 @@ if (names.join() !== EXPECTED.join()) {
   process.exit(1);
 }
 
-console.log("\nScheduled for 10:45 Sydney, Mon-Fri:");
+console.log("\nScheduled (drafts at 10:45 Sydney, email sweep at 01:15 UTC), Mon-Fri:");
 for (const job of jobs) {
   console.log(`  ${job.jobname}: ${job.schedule} ${tz?.tz ?? "UTC"}  active=${job.active}`);
 }

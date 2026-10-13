@@ -219,6 +219,19 @@ takes two to five minutes. Note that `cron.job_run_details` records success as
 soon as the request is *queued*, because pg_net is asynchronous; the HTTP status
 is in `net._http_response`. Both queries are in `drizzle/cron-setup.sql`.
 
+**The draft email.** When a scheduled draft lands, the draft route calls
+`/api/cron/draft-email?id=<id>`. That route mails the draft PDF and a ZIP of
+every source filing through Resend to `DRAFT_EMAIL_TO`. Over 20MB, the ZIP is
+left off and the body's source links are used instead. The email work runs in
+its own invocation, because the pipeline has already used most of the 300
+seconds and the ZIP re-downloads every filing from the ASX. A pg_cron sweep,
+`daily-mover-email-sweep` at 01:15 UTC (12:15 AEDT / 11:15 AEST), calls the same
+route with no id and sends anything the hand-off missed. `mover_drafts.emailed_at`
+is claimed before each send and cleared if the send fails, with the reason in
+`email_error`, so nothing goes out twice. This covers scheduled drafts only. It
+is off until `RESEND_API_KEY`, `DRAFT_EMAIL_FROM` and `DRAFT_EMAIL_TO` are all
+set, and the sender's domain must be verified in Resend.
+
 **`maxDuration` is 300 seconds**, the Hobby ceiling and every plan's default. A
 higher value fails the *build* on Hobby rather than failing at runtime. A run
 measured at 120 seconds before the Accuracy Gate and about 200 with it, on
@@ -374,6 +387,9 @@ deliberately. All data access is meant to go through Drizzle server-side.
 | `ANTHROPIC_MODEL` | Optional. Extraction model; defaults to `claude-sonnet-4-6` |
 | `ANTHROPIC_DRAFT_MODEL` | Optional. Drafting model; defaults to `claude-sonnet-5` |
 | `CRON_SECRET` | **Required for the scheduled draft.** Without it `/api/cron/daily-mover` refuses every request |
+| `RESEND_API_KEY` | Optional. Resend key for the draft email; the email is off without it |
+| `DRAFT_EMAIL_FROM` | Optional. Sender, on a Resend-verified domain, e.g. `Vitti Daily Mover <reports@vitti.capital>` |
+| `DRAFT_EMAIL_TO` | Optional. Comma-separated recipients of the draft email |
 
 > Paste values **without** surrounding quotes. Vercel stores them verbatim, so
 > `"postgres://…"` becomes a different string and fails to parse. Env vars are

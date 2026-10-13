@@ -122,6 +122,65 @@ select cron.schedule(
 );
 --> statement-breakpoint
 
+-- THE DRAFT EMAIL SWEEP
+--
+-- The draft route emails each scheduled draft itself as soon as it lands, by
+-- calling /api/cron/draft-email?id=<id>. This job is the safety net for a
+-- hand-off that never arrived or a Resend send that failed: once a day it calls
+-- the same route with no id, which mails every recent pending scheduled draft
+-- that has not been sent yet. `mover_drafts.emailed_at` keeps it from sending
+-- anything twice.
+--
+-- 01:15 UTC is 12:15 Sydney under AEDT and 11:15 under AEST: comfortably after
+-- the 10:45 draft in both seasons, so one expression serves all year.
+--
+-- The URL is derived from the draft route's Vault secret rather than stored a
+-- second time, so `npm run db:cron -- <url>` still re-points everything at once.
+create or replace function public.trigger_draft_email()
+returns bigint
+language plpgsql
+security definer
+set search_path = public, vault, net, extensions
+as $fn$
+declare
+  draft_url   text;
+  cron_secret text;
+  request_id  bigint;
+begin
+  select decrypted_secret into draft_url
+    from vault.decrypted_secrets
+    where name = 'daily_mover_cron_url';
+
+  select decrypted_secret into cron_secret
+    from vault.decrypted_secrets
+    where name = 'daily_mover_cron_secret';
+
+  if draft_url is null or cron_secret is null then
+    raise exception
+      'vault secrets daily_mover_cron_url / daily_mover_cron_secret are missing; run: npm run db:cron';
+  end if;
+
+  select net.http_get(
+    url := regexp_replace(draft_url, '/api/cron/daily-mover.*$', '/api/cron/draft-email'),
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || cron_secret,
+      'User-Agent', 'pg_cron-draft-email'
+    ),
+    timeout_milliseconds := 30000
+  ) into request_id;
+
+  return request_id;
+end;
+$fn$;
+--> statement-breakpoint
+
+select cron.schedule(
+  'daily-mover-email-sweep',
+  '15 1 * * 1-5',
+  $job$select public.trigger_draft_email();$job$
+);
+--> statement-breakpoint
+
 -- OBSERVABILITY
 --
 -- pg_net is asynchronous: http_get returns a request id immediately and the
@@ -134,12 +193,19 @@ select cron.schedule(
 --
 --   select jobid, status, return_message, start_time
 --     from cron.job_run_details
---     where jobid in (select jobid from cron.job where jobname like 'daily-mover-draft%')
+--     where jobid in (select jobid from cron.job where jobname like 'daily-mover-%')
 --     order by start_time desc limit 10;
 --
 -- A 200 with `{"ran": false}` in the body is not a failure -- see the route's
 -- skip guards (weekend, already published, already drafted, outside the window).
+-- Whether a draft was mailed is on the row itself:
+--
+--   select id, ticker, emailed_at, email_error
+--     from mover_drafts where trigger = 'cron'
+--     order by created_at desc limit 5;
 --
 -- To stop the jobs:  select cron.unschedule('daily-mover-draft-aedt');
 --                    select cron.unschedule('daily-mover-draft-aest');
+--                    select cron.unschedule('daily-mover-email-sweep');
 -- To fire it by hand: select public.trigger_daily_mover();
+--                     select public.trigger_draft_email();
