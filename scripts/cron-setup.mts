@@ -12,7 +12,7 @@
  *      Vault from .env.local. They go to Vault rather than into the job command
  *      because `cron.job.command` is plain text in the dashboard and in dumps.
  *   2. Apply drizzle/cron-setup.sql -- extensions, the wrapper function, and the
- *      00:30 UTC (06:00 IST) schedule.
+ *      10:45 Sydney schedule (two UTC jobs, one per side of daylight saving).
  *
  * Why not Vercel Cron: Hobby schedules with ±59 minutes of precision and this
  * job ran ~29 minutes late every day. See drizzle/cron-setup.sql.
@@ -135,27 +135,35 @@ if (applied.status !== 0) process.exit(applied.status ?? 1);
 /**
  * Read the schedule back from the database rather than printing what was asked
  * for. `cron.schedule` silently accepts an expression the daemon later rejects,
- * and this is the only place the difference would show up before 06:00 IST.
+ * and this is the only place the difference would show up before 10:45 Sydney.
  */
 const verify = postgres(databaseUrl, { prepare: false, ssl: "require", max: 1 });
-const [job] = await verify<
+const jobs = await verify<
   { jobname: string; schedule: string; active: boolean; command: string }[]
 >`
   select jobname, schedule, active, command
-  from cron.job where jobname = 'daily-mover-draft'
+  from cron.job where jobname like 'daily-mover-draft%'
+  order by jobname
 `;
 const [tz] = await verify<{ tz: string }[]>`select current_setting('cron.timezone', true) as tz`;
 await verify.end({ timeout: 5 });
 
-if (!job) {
-  console.error("\nThe job was not created. Check the errors above.");
+// The old single 'daily-mover-draft' job must be gone, or it would still fire
+// at 06:00 IST alongside the new pair.
+const EXPECTED = ["daily-mover-draft-aedt", "daily-mover-draft-aest"];
+const names = jobs.map((job) => job.jobname);
+if (names.join() !== EXPECTED.join()) {
+  console.error(
+    `\nExpected jobs ${EXPECTED.join(", ")}; found ${names.join(", ") || "none"}.` +
+      " Check the errors above.",
+  );
   process.exit(1);
 }
 
-console.log(
-  `\nScheduled "${job.jobname}": ${job.schedule} ${tz?.tz ?? "UTC"}` +
-    ` — 06:00 IST, Mon-Fri. active=${job.active}`,
-);
+console.log("\nScheduled for 10:45 Sydney, Mon-Fri:");
+for (const job of jobs) {
+  console.log(`  ${job.jobname}: ${job.schedule} ${tz?.tz ?? "UTC"}  active=${job.active}`);
+}
 console.log(
   "\nVerify tomorrow morning with:\n" +
     "  select status_code, created from net._http_response order by created desc limit 5;\n" +

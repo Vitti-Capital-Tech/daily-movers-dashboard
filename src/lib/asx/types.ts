@@ -60,10 +60,10 @@ export type ScreenCriteria = {
  *
  * **A turnover floor stopped being affordable when the schedule moved.** The
  * draft used to be screened at 11:15 Sydney, an hour and a quarter into the
- * session; it is now screened at 10:30, thirty minutes in. Turnover is
- * cumulative from the open, so the same stock has roughly a quarter of the
- * dollars against its name at 10:30 that it had at 11:15. A $1m floor applied
- * half an hour into trading does not select for liquidity — it selects for
+ * session; it is now screened at 10:45, forty-five minutes in. Turnover is
+ * cumulative from the open, so the same stock has well under half the dollars
+ * against its name at 10:45 that it had at 11:15. A $1m floor applied that
+ * early in trading does not select for liquidity — it selects for
  * whatever happened to trade first, and on a quiet morning it empties the board
  * entirely. Hence zero: the turnover *figure* is still computed, printed on
  * every candidate, and weighed by the selection prompt as a share of market
@@ -84,7 +84,7 @@ export type ScreenCriteria = {
  * non-zero floor the form will accept is $100k.
  */
 export const DEFAULT_SCREEN: ScreenCriteria = {
-  /** Not a gate. See above: at 10:30 a dollar floor selects for luck, not size. */
+  /** Not a gate. See above: at 10:45 a dollar floor selects for luck, not size. */
   minTurnover: 0,
   /** Market capitalisation floor — the only structural filter left. */
   minMarketCap: 5_000_000,

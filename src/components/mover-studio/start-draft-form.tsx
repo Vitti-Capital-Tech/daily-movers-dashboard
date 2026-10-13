@@ -95,7 +95,7 @@ export function StartDraftForm({
               rather than falling back to the defaults on the server. */}
           <div className={`space-y-3 ${showScreen ? "" : "hidden"}`}>
             <p className="text-[11px] text-muted-foreground">
-              Saved when you start a draft. The scheduled 06:00 IST run uses
+              Saved when you start a draft. The scheduled 10:45 Sydney run uses
               these too — they are not just for this one draft.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

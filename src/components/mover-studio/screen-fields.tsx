@@ -26,7 +26,7 @@ export const SCREEN_FIELDS: ScreenField[] = [
   {
     name: "minTurnover",
     label: "Min turnover (A$)",
-    hint: "Dollar value traded today. Currently 0: turnover accrues from the open, and the 10:30 screen is too early for a dollar floor to mean much.",
+    hint: "Dollar value traded today. Currently 0: turnover accrues from the open, and the 10:45 screen is too early for a dollar floor to mean much.",
     ...SCREEN_LIMITS.minTurnover,
   },
   {

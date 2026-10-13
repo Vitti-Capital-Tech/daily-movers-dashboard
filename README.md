@@ -76,7 +76,7 @@ account password.
 | `npm run db:seed` | Idempotent seed |
 | `npm run db:studio` | Drizzle Studio |
 | `npm run storage:setup` | Create Supabase private storage bucket |
-| `npm run db:cron -- <url>` | Point pg_cron at the deployed Daily Mover route (06:00 IST). URL remembered after the first run |
+| `npm run db:cron -- <url>` | Point pg_cron at the deployed Daily Mover route (10:45 Sydney). URL remembered after the first run |
 | `npm run reports:download` | Batch download all attached PDF reports to a local folder |
 | `npm run report:preview` | Render the report template to a PDF locally — the fixture, or `-- <draftId>` from the database. No API call |
 | `npm run logo:build` | Regenerate `lib/report/logo.ts` from `public/logo.jpeg` after the asset changes |
@@ -84,7 +84,7 @@ account password.
 
 ## Mover Studio
 
-Each weekday **at 06:00 IST — 10:30 in Sydney, half an hour into the session**
+Each weekday **at 10:45 Sydney time — three quarters of an hour into the session**
 — Claude drafts that day's Daily Mover and leaves it in a review queue at
 `/mover-studio` for an analyst to approve or reject. Approving files it in the
 archive exactly as a manual upload would.
@@ -188,29 +188,33 @@ fails, so a settings problem can never be why a draft didn't happen.
 
 **Who calls it: Supabase `pg_cron`, not Vercel.** `vercel.json` has no `crons`
 key. The schedule lives in [`drizzle/cron-setup.sql`](drizzle/cron-setup.sql) as
-a single pg_cron job at `30 0 * * 1-5` UTC, and `pg_net` makes the HTTP call with
-the cron secret. Set it up once with `npm run db:cron -- https://your-app.vercel.app`.
+two pg_cron jobs — `45 23 * * 0-4` and `45 0 * * 1-5` UTC — and `pg_net` makes
+the HTTP call with the cron secret. Set it up once with
+`npm run db:cron -- https://your-app.vercel.app`.
 
 Vercel Cron was dropped because the Hobby plan schedules with ±59 minutes of
 precision — the nominal time is the *earliest* a job can run, not when it runs —
 and this one landed about 29 minutes late every day. pg_cron fires on the minute.
 
-**Why one schedule, where Vercel needed two.** India has no daylight saving, so
-06:00 IST is 00:30 UTC on every day of the year. The old pair existed only so
-that an hour of slop would still land inside the Sydney session on both sides of
-the AEST/AEDT switch; with minute precision there is nothing to straddle.
+**Why two jobs.** The run is pinned to 10:45 Sydney time, pg_cron only reads
+UTC, and Sydney observes daylight saving: 10:45 is 23:45 UTC the previous day
+under AEDT (Oct–Apr) and 00:45 UTC under AEST (Apr–Oct). Both jobs fire all
+year, and the route turns the out-of-season one away: under AEST the 23:45 UTC
+firing is 09:45 in Sydney, before the window opens; under AEDT the 00:45 UTC
+firing is 11:45, after the day's cron row already exists. (Until Oct 2026 this
+was a single 06:00 IST job at `30 0 * * 1-5`.)
 
 **Why the window opens at the bell.** The handler still checks that the firing
-lands between 10:00 and 15:00 Sydney time. 00:30 UTC is 10:30 in Sydney under
-AEST and 11:30 under AEDT, so the floor has to be at or below 10:30 — the old
-11:00 floor would have silently skipped every AEST day, six months of the year.
-It does not go lower than 10:00 because there is no continuous trading to screen
-before the open. Dedupe is not the window's job: the partial unique index on
-`(move_date) WHERE trigger = 'cron'` is what makes a second caller a no-op, which
-is why adding a Vercel cron back as a fallback would need no code change.
+lands between 10:00 and 15:00 Sydney time. The floor has to be at or below
+10:45 so the real firing runs, and above 09:45 so the off-season AEDT job is
+skipped under AEST — the open satisfies both, and there is no continuous trading
+to screen before it anyway. Dedupe is not the window's job: the partial unique
+index on `(move_date) WHERE trigger = 'cron'` is what makes a second caller a
+no-op, which is why adding a Vercel cron back as a fallback would need no code
+change.
 
-**What "exactly 06:00" means.** pg_cron starts the job within a second of 00:30
-UTC. The request is exact; the draft is not — generation runs in `after()` and
+**What "exactly 10:45" means.** pg_cron starts the job within a second of the
+scheduled minute. The request is exact; the draft is not — generation runs in `after()` and
 takes two to five minutes. Note that `cron.job_run_details` records success as
 soon as the request is *queued*, because pg_net is asynchronous; the HTTP status
 is in `net._http_response`. Both queries are in `drizzle/cron-setup.sql`.
@@ -546,8 +550,8 @@ raw top-20 gainers were nearly all nano-caps: +47% on $107k of turnover, +27% on
 **$2,451**. No prompt fixes a shortlist made of those. The floors went $500k/$20m
 → $1m/$75m → **no turnover floor and $5m market cap**, and the last move is a
 consequence of the schedule rather than a change of mind: turnover is cumulative
-from the open, and the board is now screened at 10:30 Sydney instead of 11:15, so
-a dollar floor half an hour into the session selects for whatever traded first
+from the open, and the board is now screened at 10:45 Sydney instead of 11:15, so
+a dollar floor that early in the session selects for whatever traded first
 and empties the board on a quiet morning. Turnover is still computed and still
 printed on every candidate — it is just no longer a gate, which leaves the $5m
 market-cap floor as the only structural filter. The selection prompt weighs the

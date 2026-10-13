@@ -13,49 +13,49 @@ import { exchangeClock, MARKET_OPEN_MINUTES } from "@/lib/drafts/trading-day";
  *
  * ## Who calls this, and when
  *
- * **Supabase `pg_cron`, at 00:30 UTC on weekdays — 06:00 IST.** Not Vercel Cron:
+ * **Supabase `pg_cron`, at 10:45 Sydney time on weekdays.** Not Vercel Cron:
  * `vercel.json` has no `crons` key any more. See `drizzle/cron-setup.sql`, which
  * is the schedule's single source of truth, and `npm run db:cron`.
  *
  * The move was about precision. Vercel's Hobby plan schedules with **±59
  * minutes**, so the nominal time is the earliest a job can run rather than when
- * it runs, and this one landed about 29 minutes late every day. The desk wants
- * the draft finished and waiting at 06:00, and "somewhere in the 06:00 hour"
- * does not deliver that. pg_cron fires on the minute.
+ * it runs, and this one landed about 29 minutes late every day. pg_cron fires
+ * on the minute.
  *
- * It is also now **one** schedule where `vercel.json` needed two. India has no
- * daylight saving, so 06:00 IST is 00:30 UTC on every day of the year; the pair
- * only ever existed so that an hour of slop would still land inside the Sydney
- * session on both sides of the AEST/AEDT switch. With minute precision there is
- * nothing to straddle, and nothing to change when daylight saving does.
+ * pg_cron only reads UTC and Sydney observes daylight saving, so 10:45 local is
+ * **two** jobs: `45 23 * * 0-4` (AEDT) and `45 0 * * 1-5` (AEST). Each fires all
+ * year; the out-of-season one is turned away by this route — under AEST the
+ * 23:45 UTC firing is 09:45 Sydney, before the window opens, and under AEDT the
+ * 00:45 UTC firing is 11:45, by which time the day's cron row exists. Until Oct
+ * 2026 this was one job at 06:00 IST (00:30 UTC), i.e. 10:30 or 11:30 Sydney
+ * depending on the season.
  *
  * The route does not care who calls it. It is idempotent, it authenticates with
  * `CRON_SECRET` whoever presents it, and the window gate below still runs — so
  * adding a Vercel cron back as a belt-and-braces second caller would need no
  * code change, just an entry in `vercel.json`.
  *
- * ## What 06:00 IST actually means for the report
+ * ## What 10:45 Sydney actually means for the report
  *
- * ASX continuous trading runs 10:00 to 16:00 local, so 06:00 IST is **half an
- * hour after the open under AEST** — the earliest this report has been drafted.
+ * ASX continuous trading runs 10:00 to 16:00 local, so 10:45 is **three
+ * quarters of an hour after the open**, every day of the year.
  * Price-sensitive announcements cluster before the open, so the filings that
- * explain the morning's moves are already out, but the session has five and a
- * half hours left to run: the board's percentage is an **intraday** figure, the
+ * explain the morning's moves are already out, but the session has more than
+ * five hours left to run: the board's percentage is an **intraday** figure, the
  * day's final move will differ, and the report has to say so. That is not a
  * prompt instruction — `describeMoveWindow` reads the clock the board was taken
  * on and the market data block states the window, because the first SBM draft
  * wrote "Shares Closed Up ~17.8%" for a figure taken at midday.
  *
- * The earlier the run, the thinner the board, and this is the thin end of it: a
- * mover needs $1m of turnover to pass the screen, and half an hour after the
- * open many of the day's real movers have not traded that yet — some sessions
- * will screen a board the old 11:15 run would not have recognised. That is the
- * trade the desk asked for: coverage given up for a draft that is already
- * waiting when the desk sits down.
+ * The earlier the run, the thinner the board: three quarters of an hour after
+ * the open many of the day's real movers have not traded much yet — some
+ * sessions will screen a board the old 11:15 run would not have recognised.
+ * That is the trade the desk asked for: coverage given up for a draft that is
+ * already waiting when the desk sits down.
  *
- * ## What "exactly 06:00" is and is not
+ * ## What "exactly 10:45" is and is not
  *
- * pg_cron starts the job within a second of 00:30 UTC. What follows is not
+ * pg_cron starts the job within a second of the scheduled minute. What follows is not
  * instant: `pg_net` dispatches the HTTP request asynchronously, and a cold
  * Vercel function takes a few seconds to answer. So the *request* is exact and
  * the draft is not — generation runs in `after()` and takes two to five minutes,
@@ -82,16 +82,19 @@ function isAuthorisedCron(request: NextRequest): boolean {
 /**
  * The local-time window a firing must fall inside to count.
  *
- * Wide on purpose, and it **starts at the opening bell** rather than an hour in.
- * That floor is forced by the 06:00 IST schedule: 00:30 UTC is 10:30 in Sydney
- * under AEST and 11:30 under AEDT. The 11:00 start this had when the job ran at
- * 06:45 IST would reject the AEST firing outright — for the six months of the
- * year Sydney is on AEST, every day would be skipped with a cheerful `ok: true`,
- * which is the quietest possible way for this to break.
+ * Wide on purpose, and it **starts at the opening bell**. The floor is
+ * load-bearing in both directions for the 10:45 Sydney schedule:
  *
- * The floor is the open itself and not lower, because before 10:00 there is no
- * continuous trading to screen: the board would be an opening auction, not a
- * session. The end stays at 15:00, so the window still spans the session and
+ * - It must sit at or below 10:45, or the real firing is skipped with a
+ *   cheerful `ok: true` — the quietest possible way for this to break.
+ * - It must sit above 09:45, because that is when the AEDT job (23:45 UTC)
+ *   lands while Sydney is on AEST. The floor is what turns that off-season
+ *   firing into a no-op; without it, the AEST half of the year would draft an
+ *   hour early, before the open.
+ *
+ * The open itself satisfies both, and nothing earlier makes sense anyway:
+ * before 10:00 there is no continuous trading to screen, only an opening
+ * auction. The end stays at 15:00, so the window still spans the session and
  * still admits a manual or backfill trigger at any sane hour.
  *
  * Dedupe does not live here and never did. The partial unique index on

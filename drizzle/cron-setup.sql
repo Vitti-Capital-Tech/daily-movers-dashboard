@@ -12,17 +12,14 @@
 -- finished and waiting at 06:00 IST, and "somewhere in the 06:00 hour" does not
 -- deliver that. pg_cron fires on the minute.
 --
--- WHY THIS IS ONE JOB WHERE vercel.json NEEDED TWO
---
--- India does not observe daylight saving, so 06:00 IST is 00:30 UTC on every day
--- of the year and a single UTC expression is correct all year. The Vercel pair
--- existed only because ±59 minutes of slop had to straddle Sydney's DST switch;
--- with minute precision there is nothing to straddle. The handler's Sydney
--- window gate still runs and still guards a mis-fire -- 00:30 UTC is 10:30 in
--- Sydney under AEST and 11:30 under AEDT, and both sit inside it.
+-- The run was a single 06:00 IST job (00:30 UTC) until Oct 2026, when the desk
+-- pinned it to 10:45 Sydney time instead. See "10:45 SYDNEY" below for why that
+-- takes two jobs. The handler's Sydney window gate still runs and still guards a
+-- mis-fire.
 --
 -- pg_cron reads schedules in the server's `cron.timezone`, which is UTC on
--- Supabase. The expression below is therefore UTC. Do not "correct" it to 06:00.
+-- Supabase. The expressions below are therefore UTC. Do not "correct" them to
+-- Sydney time.
 
 -- Both extensions ship with Supabase but are off until asked for. pg_cron is
 -- non-relocatable (it installs into pg_catalog and creates the `cron` schema
@@ -88,11 +85,39 @@ end;
 $fn$;
 --> statement-breakpoint
 
+-- 10:45 SYDNEY, WHICH TAKES TWO JOBS
+--
+-- The desk now wants the run pinned to 10:45 Sydney time, not 06:00 IST. Sydney
+-- observes daylight saving and pg_cron only reads UTC, so one wall-clock time is
+-- two UTC expressions:
+--
+--   AEDT (UTC+11, Oct-Apr): 10:45 Mon-Fri = 23:45 UTC Sun-Thu  -> '45 23 * * 0-4'
+--   AEST (UTC+10, Apr-Oct): 10:45 Mon-Fri = 00:45 UTC Mon-Fri  -> '45 0 * * 1-5'
+--
+-- Both jobs fire all year. The out-of-season one is harmless because of the
+-- route's own guards: under AEST the 23:45 UTC firing is 09:45 in Sydney, before
+-- the 10:00 window floor, so it answers `ran: false`; under AEDT the 00:45 UTC
+-- firing is 11:45, after the 10:45 run has written the day's cron row, so
+-- `shouldRunScheduled` finds it and skips. If the 10:45 request was lost
+-- outright, that 11:45 firing doubles as a one-hour-late retry.
+--
+-- The old single 06:00 IST job is removed first. `cron.unschedule(name)` raises
+-- when the name is missing, so it goes through `cron.job` to stay re-runnable.
+select cron.unschedule(jobid) from cron.job where jobname = 'daily-mover-draft';
+--> statement-breakpoint
+
 -- `cron.schedule` upserts on the job name, so re-running this file re-points the
--- existing job rather than stacking up duplicates that would each fire.
+-- existing jobs rather than stacking up duplicates that would each fire.
 select cron.schedule(
-  'daily-mover-draft',
-  '30 0 * * 1-5',
+  'daily-mover-draft-aedt',
+  '45 23 * * 0-4',
+  $job$select public.trigger_daily_mover();$job$
+);
+--> statement-breakpoint
+
+select cron.schedule(
+  'daily-mover-draft-aest',
+  '45 0 * * 1-5',
   $job$select public.trigger_daily_mover();$job$
 );
 --> statement-breakpoint
@@ -109,11 +134,12 @@ select cron.schedule(
 --
 --   select jobid, status, return_message, start_time
 --     from cron.job_run_details
---     where jobid = (select jobid from cron.job where jobname = 'daily-mover-draft')
+--     where jobid in (select jobid from cron.job where jobname like 'daily-mover-draft%')
 --     order by start_time desc limit 10;
 --
 -- A 200 with `{"ran": false}` in the body is not a failure -- see the route's
 -- skip guards (weekend, already published, already drafted, outside the window).
 --
--- To stop the job:   select cron.unschedule('daily-mover-draft');
+-- To stop the jobs:  select cron.unschedule('daily-mover-draft-aedt');
+--                    select cron.unschedule('daily-mover-draft-aest');
 -- To fire it by hand: select public.trigger_daily_mover();
